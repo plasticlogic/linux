@@ -2079,7 +2079,7 @@ static void mx50_suspend_enter()
 		/* Enable the Pull/keeper */
 		mxc_iomux_v3_setup_pad(iomux_setting);
 		gpio_request(DCDC_EN, "dcdc-en");
-		gpio_direction_output(DCDC_EN, 1);
+		gpio_direction_output(DCDC_EN, 0);
 	}
 
 	/* Set PADCTRL to 0 for all IOMUX. */
@@ -2113,7 +2113,7 @@ static void mx50_suspend_exit()
 		/* Enable the Pull/keeper */
 		mxc_iomux_v3_setup_pad(iomux_setting);
 		gpio_request(DCDC_EN, "dcdc-en");
-		gpio_direction_output(DCDC_EN, 0);
+		gpio_direction_output(DCDC_EN, 1);
 	}
 
 	mxc_iomux_v3_setup_multiple_pads(suspend_exit_pads,
