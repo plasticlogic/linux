@@ -627,5 +627,16 @@ config TILE_SROM
 	  device appear much like a simple EEPROM, and knows
 	  how to partition a single ROM for multiple purposes.
 
+config PMETER
+	tristate "Performance meter"
+        default n
+        help
+          This provides a simple and fast logging mechanism especially tailored
+          to measure the performance of the system.  It uses a circular buffer
+          to store events that can be reported by drivers or the rest of the
+          kernel as well as user-land applications with simple write
+          operations.  The data can be extracted and flushsed with a read
+          operation.
+
 endmenu
 
