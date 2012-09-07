@@ -706,11 +706,15 @@ void epdc_init_settings(struct mxc_epdc_fb_data *fb_data)
 	reg_val |= EPDC_CTRL_LUT_DATA_SWIZZLE_NO_SWAP;
 	__raw_writel(reg_val, EPDC_CTRL_SET);
 
-	/* EPDC_FORMAT - 2bit TFT and 4bit Buf pixel format */
-	reg_val = EPDC_FORMAT_TFT_PIXEL_FORMAT_2BIT
-	    | EPDC_FORMAT_BUF_PIXEL_FORMAT_P4N
+	/* EPDC_FORMAT - 4bit Buf pixel format */
+	reg_val =
+	    EPDC_FORMAT_BUF_PIXEL_FORMAT_P4N
 	    | ((0x0 << EPDC_FORMAT_DEFAULT_TFT_PIXEL_OFFSET) &
 	       EPDC_FORMAT_DEFAULT_TFT_PIXEL_MASK);
+	if (epdc_mode->tft_4bpp)
+		reg_val |= EPDC_FORMAT_TFT_PIXEL_FORMAT_4BIT;
+	else
+		reg_val |= EPDC_FORMAT_TFT_PIXEL_FORMAT_2BIT;
 	__raw_writel(reg_val, EPDC_FORMAT);
 
 	/* EPDC_FIFOCTRL (disabled) */
@@ -738,13 +742,14 @@ void epdc_init_settings(struct mxc_epdc_fb_data *fb_data)
 	 * LVDS_MODE_CE = DISABLED
 	 * LVDS_MODE = DISABLED
 	 * DUAL_SCAN = DISABLED
-	 * SDDO_WIDTH = 8bit
 	 * PIXELS_PER_SDCLK = 4
 	 */
 	reg_val =
 	    ((epdc_mode->vscan_holdoff << EPDC_TCE_CTRL_VSCAN_HOLDOFF_OFFSET) &
 	     EPDC_TCE_CTRL_VSCAN_HOLDOFF_MASK)
 	    | EPDC_TCE_CTRL_PIXELS_PER_SDCLK_4;
+	if (epdc_mode->sddo_16_bits)
+		reg_val |= EPDC_TCE_CTRL_SDDO_WIDTH_16BIT;
 	__raw_writel(reg_val, EPDC_TCE_CTRL);
 
 	/* EPDC_TCE_HSCAN */
@@ -794,7 +799,6 @@ void epdc_init_settings(struct mxc_epdc_fb_data *fb_data)
 	 * SDCLK_HOLD = 1
 	 * SDSHR = 1
 	 * NUM_CE = 1
-	 * SDDO_REFORMAT = FLIP_PIXELS
 	 * SDDO_INVERT = DISABLED
 	 * PIXELS_PER_CE = display horizontal resolution
 	 */
@@ -804,18 +808,21 @@ void epdc_init_settings(struct mxc_epdc_fb_data *fb_data)
 	reg_val = EPDC_TCE_SDCFG_SDCLK_HOLD | EPDC_TCE_SDCFG_SDSHR
 	    | ((num_ce << EPDC_TCE_SDCFG_NUM_CE_OFFSET) &
 	       EPDC_TCE_SDCFG_NUM_CE_MASK)
-	    | EPDC_TCE_SDCFG_SDDO_REFORMAT_FLIP_PIXELS
 	    | ((epdc_mode->vmode->xres/num_ce << EPDC_TCE_SDCFG_PIXELS_PER_CE_OFFSET) &
 	       EPDC_TCE_SDCFG_PIXELS_PER_CE_MASK);
+	if (epdc_mode->sddo_flip_bits)
+		reg_val |= EPDC_TCE_SDCFG_SDDO_REFORMAT_FLIP_PIXELS;
 	__raw_writel(reg_val, EPDC_TCE_SDCFG);
 
 	/*
 	 * EPDC_TCE_GDCFG
 	 * GDRL = 1
-	 * GDOE_MODE = 0;
-	 * GDSP_MODE = 0;
 	 */
 	reg_val = EPDC_TCE_SDCFG_GDRL;
+	if (epdc_mode->gdsp_frame_sync)
+		reg_val |= EPDC_TCE_SDCFG_GDSP_MODE_FRAME_SYNC;
+	if (epdc_mode->gdoe_delayed_gclk)
+		reg_val |= EPDC_TCE_SDCFG_GDOE_MODE_DELAYED_GDCLK;
 	__raw_writel(reg_val, EPDC_TCE_GDCFG);
 
 	/*
@@ -823,12 +830,13 @@ void epdc_init_settings(struct mxc_epdc_fb_data *fb_data)
 	 * SDCE_POL = ACTIVE LOW
 	 * SDLE_POL = ACTIVE HIGH
 	 * SDOE_POL = ACTIVE HIGH
-	 * GDOE_POL = ACTIVE HIGH
-	 * GDSP_POL = ACTIVE LOW
 	 */
 	reg_val = EPDC_TCE_POLARITY_SDLE_POL_ACTIVE_HIGH
-	    | EPDC_TCE_POLARITY_SDOE_POL_ACTIVE_HIGH
-	    | EPDC_TCE_POLARITY_GDOE_POL_ACTIVE_HIGH;
+	    | EPDC_TCE_POLARITY_SDOE_POL_ACTIVE_HIGH;
+	if (epdc_mode->gdoe_active_high)
+		reg_val |= EPDC_TCE_POLARITY_GDOE_POL_ACTIVE_HIGH;
+	if (epdc_mode->gdsp_active_high)
+		reg_val |= EPDC_TCE_POLARITY_GDSP_POL_ACTIVE_HIGH;
 	__raw_writel(reg_val, EPDC_TCE_POLARITY);
 
 	/* EPDC_IRQ_MASK */

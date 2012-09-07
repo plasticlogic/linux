@@ -357,9 +357,16 @@ struct mxc_epdc_fb_mode {
 	int sdoez_delay;
 	int gdclk_hp_offs;
 	int gdsp_offs;
+	bool gdsp_frame_sync;
+	bool gdsp_active_high;
 	int gdoe_offs;
+	bool gdoe_delayed_gclk;
+	bool gdoe_active_high;
 	int gdclk_offs;
 	int num_ce;
+	bool sddo_16_bits;
+	bool sddo_flip_bits;
+	bool tft_4bpp;
 };
 
 struct mxc_epdc_fb_platform_data {
