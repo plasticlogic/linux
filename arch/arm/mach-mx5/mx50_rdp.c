@@ -87,6 +87,16 @@
 #define EPDC_D5		(2*32 + 5)	/*GPIO_3_5 */
 #define EPDC_D6		(2*32 + 6)	/*GPIO_3_6 */
 #define EPDC_D7		(2*32 + 7)	/*GPIO_3_7 */
+#ifdef CONFIG_FB_MXC_EPDC_16_SDDO
+#define EPDC_D8		(2*32 + 8)	/*GPIO_3_8 */
+#define EPDC_D9		(2*32 + 9)	/*GPIO_3_9 */
+#define EPDC_D10	(2*32 + 10)	/*GPIO_3_10 */
+#define EPDC_D11	(2*32 + 11)	/*GPIO_3_11 */
+#define EPDC_D12	(2*32 + 12)	/*GPIO_3_12 */
+#define EPDC_D13	(2*32 + 13)	/*GPIO_3_13 */
+#define EPDC_D14	(2*32 + 14)	/*GPIO_3_14 */
+#define EPDC_D15	(2*32 + 15)	/*GPIO_3_15 */
+#endif
 #define EPDC_GDCLK	(2*32 + 16)	/*GPIO_3_16 */
 #define EPDC_GDSP	(2*32 + 17)	/*GPIO_3_17 */
 #define EPDC_GDOE	(2*32 + 18)	/*GPIO_3_18 */
@@ -222,27 +232,6 @@ static iomux_v3_cfg_t mx50_rdp[] = {
 	MX50_PAD_I2C2_SDA__I2C2_SDA,
 
 	/* EPDC pins */
-	MX50_PAD_EPDC_D0__EPDC_D0,
-	MX50_PAD_EPDC_D1__EPDC_D1,
-	MX50_PAD_EPDC_D2__EPDC_D2,
-	MX50_PAD_EPDC_D3__EPDC_D3,
-	MX50_PAD_EPDC_D4__EPDC_D4,
-	MX50_PAD_EPDC_D5__EPDC_D5,
-	MX50_PAD_EPDC_D6__EPDC_D6,
-	MX50_PAD_EPDC_D7__EPDC_D7,
-	MX50_PAD_EPDC_GDCLK__EPDC_GDCLK,
-	MX50_PAD_EPDC_GDSP__EPDC_GDSP,
-	MX50_PAD_EPDC_GDOE__EPDC_GDOE	,
-	MX50_PAD_EPDC_GDRL__EPDC_GDRL,
-	MX50_PAD_EPDC_SDCLK__EPDC_SDCLK,
-	MX50_PAD_EPDC_SDOE__EPDC_SDOE,
-	MX50_PAD_EPDC_SDLE__EPDC_SDLE,
-	MX50_PAD_EPDC_SDSHR__EPDC_SDSHR,
-	MX50_PAD_EPDC_BDR0__EPDC_BDR0,
-	MX50_PAD_EPDC_SDCE0__EPDC_SDCE0,
-	MX50_PAD_EPDC_SDCE1__EPDC_SDCE1,
-	MX50_PAD_EPDC_SDCE2__EPDC_SDCE2,
-
 	MX50_PAD_EPDC_PWRSTAT__GPIO_3_28,
 	MX50_PAD_EPDC_VCOM0__GPIO_4_21,
 
@@ -807,6 +796,16 @@ static int epdc_get_pins(void)
 	ret |= gpio_request(EPDC_D5, "epdc_d5");
 	ret |= gpio_request(EPDC_D6, "epdc_d6");
 	ret |= gpio_request(EPDC_D7, "epdc_d7");
+#ifdef CONFIG_FB_MXC_EPDC_16_SDDO
+	ret |= gpio_request(EPDC_D8, "epdc_d8");
+	ret |= gpio_request(EPDC_D9, "epdc_d9");
+	ret |= gpio_request(EPDC_D10, "epdc_d10");
+	ret |= gpio_request(EPDC_D11, "epdc_d11");
+	ret |= gpio_request(EPDC_D12, "epdc_d12");
+	ret |= gpio_request(EPDC_D13, "epdc_d13");
+	ret |= gpio_request(EPDC_D14, "epdc_d14");
+	ret |= gpio_request(EPDC_D15, "epdc_d15");
+#endif /* CONFIG_FB_MXC_EPDC_16_SDDO */
 	ret |= gpio_request(EPDC_GDCLK, "epdc_gdclk");
 	ret |= gpio_request(EPDC_GDSP, "epdc_gdsp");
 	ret |= gpio_request(EPDC_GDOE, "epdc_gdoe");
@@ -833,6 +832,16 @@ static void epdc_put_pins(void)
 	gpio_free(EPDC_D5);
 	gpio_free(EPDC_D6);
 	gpio_free(EPDC_D7);
+#ifdef CONFIG_FB_MXC_EPDC_16_SDDO
+	gpio_free(EPDC_D8);
+	gpio_free(EPDC_D9);
+	gpio_free(EPDC_D10);
+	gpio_free(EPDC_D11);
+	gpio_free(EPDC_D12);
+	gpio_free(EPDC_D13);
+	gpio_free(EPDC_D14);
+	gpio_free(EPDC_D15);
+#endif /* CONFIG_FB_MXC_EPDC_16_SDDO */
 	gpio_free(EPDC_GDCLK);
 	gpio_free(EPDC_GDSP);
 	gpio_free(EPDC_GDOE);
@@ -856,6 +865,16 @@ static iomux_v3_cfg_t mx50_epdc_pads_enabled[] = {
 	MX50_PAD_EPDC_D5__EPDC_D5,
 	MX50_PAD_EPDC_D6__EPDC_D6,
 	MX50_PAD_EPDC_D7__EPDC_D7,
+#ifdef CONFIG_FB_MXC_EPDC_16_SDDO
+	MX50_PAD_EPDC_D8__EPDC_D8,
+	MX50_PAD_EPDC_D9__EPDC_D9,
+	MX50_PAD_EPDC_D10__EPDC_D10,
+	MX50_PAD_EPDC_D11__EPDC_D11,
+	MX50_PAD_EPDC_D12__EPDC_D12,
+	MX50_PAD_EPDC_D13__EPDC_D13,
+	MX50_PAD_EPDC_D14__EPDC_D14,
+	MX50_PAD_EPDC_D15__EPDC_D15,
+#endif /* CONFIG_FB_MXC_EPDC_16_SDDO */
 	MX50_PAD_EPDC_GDCLK__EPDC_GDCLK,
 	MX50_PAD_EPDC_GDSP__EPDC_GDSP,
 	MX50_PAD_EPDC_GDOE__EPDC_GDOE,
@@ -879,6 +898,16 @@ static iomux_v3_cfg_t mx50_epdc_pads_disabled[] = {
 	MX50_PAD_EPDC_D5__GPIO_3_5,
 	MX50_PAD_EPDC_D6__GPIO_3_6,
 	MX50_PAD_EPDC_D7__GPIO_3_7,
+#ifdef CONFIG_FB_MXC_EPDC_16_SDDO
+	MX50_PAD_EPDC_D8__GPIO_3_8,
+	MX50_PAD_EPDC_D9__GPIO_3_9,
+	MX50_PAD_EPDC_D10__GPIO_3_10,
+	MX50_PAD_EPDC_D11__GPIO_3_11,
+	MX50_PAD_EPDC_D12__GPIO_3_12,
+	MX50_PAD_EPDC_D13__GPIO_3_13,
+	MX50_PAD_EPDC_D14__GPIO_3_14,
+	MX50_PAD_EPDC_D15__GPIO_3_15,
+#endif /* CONFIG_FB_MXC_EPDC_16_SDDO */
 	MX50_PAD_EPDC_GDCLK__GPIO_3_16,
 	MX50_PAD_EPDC_GDSP__GPIO_3_17,
 	MX50_PAD_EPDC_GDOE__GPIO_3_18,
@@ -907,6 +936,16 @@ static void epdc_enable_pins(void)
 	gpio_direction_input(EPDC_D5);
 	gpio_direction_input(EPDC_D6);
 	gpio_direction_input(EPDC_D7);
+#ifdef CONFIG_FB_MXC_EPDC_16_SDDO
+	gpio_direction_input(EPDC_D8);
+	gpio_direction_input(EPDC_D9);
+	gpio_direction_input(EPDC_D10);
+	gpio_direction_input(EPDC_D11);
+	gpio_direction_input(EPDC_D12);
+	gpio_direction_input(EPDC_D13);
+	gpio_direction_input(EPDC_D14);
+	gpio_direction_input(EPDC_D15);
+#endif /* CONFIG_FB_MXC_EPDC_16_SDDO */
 	gpio_direction_input(EPDC_GDCLK);
 	gpio_direction_input(EPDC_GDSP);
 	gpio_direction_input(EPDC_GDOE);
@@ -936,6 +975,16 @@ static void epdc_disable_pins(void)
 	gpio_direction_output(EPDC_D5, 0);
 	gpio_direction_output(EPDC_D6, 0);
 	gpio_direction_output(EPDC_D7, 0);
+#ifdef CONFIG_FB_MXC_EPDC_16_SDDO
+	gpio_direction_output(EPDC_D8, 0);
+	gpio_direction_output(EPDC_D9, 0);
+	gpio_direction_output(EPDC_D10, 0);
+	gpio_direction_output(EPDC_D11, 0);
+	gpio_direction_output(EPDC_D12, 0);
+	gpio_direction_output(EPDC_D13, 0);
+	gpio_direction_output(EPDC_D14, 0);
+	gpio_direction_output(EPDC_D15, 0);
+#endif /* CONFIG_FB_MXC_EPDC_16_SDDO */
 	gpio_direction_output(EPDC_GDCLK, 0);
 	gpio_direction_output(EPDC_GDSP, 0);
 	gpio_direction_output(EPDC_GDOE, 0);
