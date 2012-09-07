@@ -1003,43 +1003,43 @@ static struct fb_videomode e97_v110_mode = {
 
 static struct mxc_epdc_fb_mode panel_modes[] = {
 	{
-		&e60_v110_mode,
-		4,	/* vscan_holdoff */
-		10,	/* sdoed_width */
-		20,	/* sdoed_delay */
-		10,	/* sdoez_width */
-		20,	/* sdoez_delay */
-		428,	/* gdclk_hp_offs */
-		20,	/* gdsp_offs */
-		0,	/* gdoe_offs */
-		1,	/* gdclk_offs */
-		1,	/* num_ce */
+		.vmode = &e60_v110_mode,
+		.vscan_holdoff = 4,
+		.sdoed_width = 10,
+		.sdoed_delay = 20,
+		.sdoez_width = 10,
+		.sdoez_delay = 20,
+		.gdclk_hp_offs = 428,
+		.gdsp_offs = 20,
+		.gdoe_offs = 0,
+		.gdclk_offs = 1,
+		.num_ce = 1,
 	},
 	{
-		&e60_v220_mode,
-		4,	/* vscan_holdoff */
-		10,	/* sdoed_width */
-		20,	/* sdoed_delay */
-		10,	/* sdoez_width */
-		20,	/* sdoez_delay */
-		428,	/* gdclk_hp_offs */
-		20,	/* gdsp_offs */
-		0,	/* gdoe_offs */
-		1,	/* gdclk_offs */
-		1,	/* num_ce */
+		.vmode = &e60_v220_mode,
+		.vscan_holdoff = 4,
+		.sdoed_width = 10,
+		.sdoed_delay = 20,
+		.sdoez_width = 10,
+		.sdoez_delay = 20,
+		.gdclk_hp_offs = 428,
+		.gdsp_offs = 20,
+		.gdoe_offs = 0,
+		.gdclk_offs = 1,
+		.num_ce = 1,
 	},
 	{
-		&e97_v110_mode,
-		8,	/* vscan_holdoff */
-		10,	/* sdoed_width */
-		20,	/* sdoed_delay */
-		10,	/* sdoez_width */
-		20,	/* sdoez_delay */
-		632,	/* gdclk_hp_offs */
-		20,	/* gdsp_offs */
-		0,	/* gdoe_offs */
-		1,	/* gdclk_offs */
-		3,	/* num_ce */
+		.vmode = &e97_v110_mode,
+		.vscan_holdoff = 8,
+		.sdoed_width = 10,
+		.sdoed_delay = 20,
+		.sdoez_width = 10,
+		.sdoez_delay = 20,
+		.gdclk_hp_offs = 632,
+		.gdsp_offs = 20,
+		.gdoe_offs = 0,
+		.gdclk_offs = 1,
+		.num_ce = 3,
 	}
 };
 
