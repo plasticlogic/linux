@@ -59,7 +59,6 @@
 
 #define NUM_SCREENS_MIN	2
 #define EPDC_NUM_LUTS 16
-#define EPDC_MAX_NUM_UPDATES 20
 #define INVALID_LUT -1
 
 #define DEFAULT_TEMP_INDEX	0
@@ -2839,7 +2838,7 @@ static bool is_free_list_full(struct mxc_epdc_fb_data *fb_data)
 		count++;
 
 	/* Check to see if all buffers are in this list */
-	if (count == EPDC_MAX_NUM_UPDATES)
+	if (count == CONFIG_FB_MXC_EPDC_MAX_UPDATES)
 		return true;
 	else
 		return false;
@@ -3699,7 +3698,7 @@ int __devinit mxc_epdc_fb_probe(struct platform_device *pdev)
 	INIT_LIST_HEAD(&fb_data->upd_buf_collision_list);
 
 	/* Allocate update buffers and add them to the list */
-	for (i = 0; i < EPDC_MAX_NUM_UPDATES; i++) {
+	for (i = 0; i < CONFIG_FB_MXC_EPDC_MAX_UPDATES; i++) {
 		upd_list = kzalloc(sizeof(*upd_list), GFP_KERNEL);
 		if (upd_list == NULL) {
 			ret = -ENOMEM;
