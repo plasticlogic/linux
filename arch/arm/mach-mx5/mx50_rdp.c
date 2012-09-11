@@ -948,6 +948,23 @@ static void epdc_disable_pins(void)
 	gpio_direction_output(EPDC_SDCE2, 0);
 }
 
+static struct fb_videomode pl_std_mode = {
+	.name = "PL_STD",
+	.refresh = 50,
+	.xres = 1280,
+	.yres = 960,
+	.pixclock = 38e6,
+	.left_margin = 120, /* line_begin */
+	.right_margin = 4, /* line_end */
+	.upper_margin = 1, /* frame_begin */
+	.lower_margin = 10, /* frame_end */
+	.hsync_len = 3,
+	.vsync_len = 1,
+	.sync = 0,
+	.vmode = FB_VMODE_NONINTERLACED,
+	.flag = 0,
+};
+
 static struct fb_videomode e60_v110_mode = {
 	.name = "E60_V110",
 	.refresh = 50,
@@ -1000,6 +1017,26 @@ static struct fb_videomode e97_v110_mode = {
 };
 
 static struct mxc_epdc_fb_mode panel_modes[] = {
+	{
+		.vmode = &pl_std_mode,
+		.vscan_holdoff = 4,
+		.sdoed_width = 10,
+		.sdoed_delay = 20,
+		.sdoez_width = 10,
+		.sdoez_delay = 20,
+		.gdclk_hp_offs = 560,
+		.gdsp_offs = 0,
+		.gdsp_frame_sync = false,
+		.gdsp_active_high = true,
+		.gdoe_offs = 80,
+		.gdoe_delayed_gclk = true,
+		.gdoe_active_high = false,
+		.gdclk_offs = 40,
+		.num_ce = 1,
+		.sddo_16_bits = 1,
+		.sddo_flip_bits = false,
+		.tft_4bpp = true,
+	},
 	{
 		.vmode = &e60_v110_mode,
 		.vscan_holdoff = 4,
