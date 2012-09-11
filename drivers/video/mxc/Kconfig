@@ -89,6 +89,11 @@ config FB_MXC_EPDC_16_SDDO
 	depends on FB_MXC_EINK_PANEL
 	bool "Use 16 source data bits"
 
+config FB_MXC_EPDC_MAX_UPDATES
+	depends on FB_MXC_EINK_PANEL
+	int "Maximum number of concurrent displays updates"
+	default 8
+
 config FB_MXC_EINK_AUTO_UPDATE_MODE
     bool "E-Ink Auto-update Mode Support"
     default n
