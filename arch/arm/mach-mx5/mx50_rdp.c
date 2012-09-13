@@ -46,6 +46,9 @@
 #include <linux/pmic_status.h>
 #include <linux/videodev2.h>
 #include <linux/mxcfb.h>
+#ifdef CONFIG_FB_MXC_EPDC_PL_HARDWARE
+#include <linux/mxc_epdc_pl_hardware.h>
+#endif
 #include <linux/pwm_backlight.h>
 #include <linux/fec.h>
 #include <linux/gpmi-nfc.h>
@@ -783,6 +786,13 @@ static struct fixed_voltage_config fixed_volt_reg_pdata = {
 	.gpio = -EINVAL,
 };
 
+#ifdef CONFIG_FB_MXC_EPDC_PL_HARDWARE
+static const struct mxc_epdc_pl_config epdc_pl_config = {
+	.i2c_bus_number = 0,
+	.dac_i2c_address = 0x39,
+};
+#endif
+
 static int epdc_get_pins(void)
 {
 	int ret = 0;
@@ -1157,6 +1167,9 @@ static struct mxc_epdc_fb_platform_data epdc_data = {
 	.put_pins = epdc_put_pins,
 	.enable_pins = epdc_enable_pins,
 	.disable_pins = epdc_disable_pins,
+#ifdef CONFIG_FB_MXC_EPDC_PL_HARDWARE
+	.pl_config = &epdc_pl_config,
+#endif
 };
 
 static struct platform_device max17135_sensor_device = {
