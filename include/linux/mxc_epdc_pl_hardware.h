@@ -1,0 +1,31 @@
+/*
+ * mxc_epdc_pl_hardware.h -- Plastic Logic display power control
+ *
+ *      Copyright (C) 2012 Guillaume Tucker, Plastic Logic Limited
+ *
+ *  This file is subject to the terms and conditions of the GNU General Public
+ *  License. See the file COPYING in the main directory of this archive for
+ *  more details.
+ *
+ */
+
+#ifndef INCLUDE_MXC_EPDC_PL_HARDWARE_H
+#define INCLUDE_MXC_EPDC_PL_HARDWARE_H 1
+
+/* Opaque instance structure */
+struct mxc_epdc_pl_hardware;
+
+struct mxc_epdc_pl_config {
+	int i2c_bus_number;
+	__u8 dac_i2c_address;
+};
+
+extern struct mxc_epdc_pl_hardware *mxc_epdc_pl_hardware_alloc(void);
+extern int mxc_epdc_pl_hardware_init(struct mxc_epdc_pl_hardware *plhw,
+				     const struct mxc_epdc_pl_config *config);
+extern void mxc_epdc_pl_hardware_free(struct mxc_epdc_pl_hardware *plhw);
+
+extern int mxc_epdc_pl_hardware_enable(struct mxc_epdc_pl_hardware *plhw);
+extern int mxc_epdc_pl_hardware_disable(struct mxc_epdc_pl_hardware *plhw);
+
+#endif /* INCLUDE_MXC_EPDC_PL_HARDWARE_H */

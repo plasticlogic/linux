@@ -18,6 +18,9 @@
 #define _FSL_DEVICE_H_
 
 #include <linux/types.h>
+#ifdef CONFIG_FB_MXC_EPDC_PL_HARDWARE
+#include <linux/mxc_epdc_pl_hardware.h>
+#endif
 
 /*
  * Some conventions on how we handle peripherals on Freescale chips
@@ -374,6 +377,9 @@ struct mxc_epdc_fb_platform_data {
 	void (*put_pins) (void);
 	void (*enable_pins) (void);
 	void (*disable_pins) (void);
+#ifdef CONFIG_FB_MXC_EPDC_PL_HARDWARE
+	const struct mxc_epdc_pl_config *pl_config;
+#endif
 };
 
 struct mxc_pm_platform_data {
