@@ -45,6 +45,9 @@
 #include <linux/pxp_dma.h>
 #include <linux/mxcfb.h>
 #include <linux/mxcfb_epdc_kernel.h>
+#ifdef CONFIG_FB_MXC_EPDC_PL_HARDWARE
+#include <linux/mxc_epdc_pl_hardware.h>
+#endif
 #include <linux/gpio.h>
 #include <linux/regulator/driver.h>
 #include <linux/fsl_devices.h>
@@ -132,8 +135,12 @@ struct mxc_epdc_fb_data {
 	struct completion powerdown_compl;
 	struct clk *epdc_clk_axi;
 	struct clk *epdc_clk_pix;
+#ifdef CONFIG_FB_MXC_EPDC_PL_HARDWARE
+	struct mxc_epdc_pl_hardware *pl_hardware;
+#else
 	struct regulator *display_regulator;
 	struct regulator *vcom_regulator;
+#endif
 	bool fw_default_load;
 
 	/* FB elements related to EPDC updates */
@@ -884,6 +891,9 @@ static void epdc_powerup(struct mxc_epdc_fb_data *fb_data)
 	__raw_writel(EPDC_CTRL_CLKGATE, EPDC_CTRL_CLEAR);
 
 	/* Enable power to the EPD panel */
+#ifdef CONFIG_FB_MXC_EPDC_PL_HARDWARE
+	ret = mxc_epdc_pl_hardware_enable(fb_data->pl_hardware);
+#else
 	ret = regulator_enable(fb_data->display_regulator);
 	if (IS_ERR((void *)ret)) {
 		dev_err(fb_data->dev, "Unable to enable DISPLAY regulator."
@@ -898,6 +908,7 @@ static void epdc_powerup(struct mxc_epdc_fb_data *fb_data)
 		mutex_unlock(&fb_data->power_mutex);
 		return;
 	}
+#endif
 
 	fb_data->power_state = POWER_STATE_ON;
 
@@ -920,8 +931,12 @@ static void epdc_powerdown(struct mxc_epdc_fb_data *fb_data)
 	dev_dbg(fb_data->dev, "EPDC Powerdown\n");
 
 	/* Disable power to the EPD panel */
+#ifdef CONFIG_FB_MXC_EPDC_PL_HARDWARE
+	mxc_epdc_pl_hardware_disable(fb_data->pl_hardware);
+#else
 	regulator_disable(fb_data->vcom_regulator);
 	regulator_disable(fb_data->display_regulator);
+#endif
 
 	/* Disable clocks to EPDC */
 	__raw_writel(EPDC_CTRL_CLKGATE, EPDC_CTRL_SET);
@@ -3880,6 +3895,21 @@ int __devinit mxc_epdc_fb_probe(struct platform_device *pdev)
 #endif
 
 	/* get pmic regulators */
+#ifdef CONFIG_FB_MXC_EPDC_PL_HARDWARE
+	fb_data->pl_hardware = mxc_epdc_pl_hardware_alloc();
+	if (!fb_data->pl_hardware) {
+		ret = -ENOMEM;
+		goto out_irq;
+	}
+
+	ret = mxc_epdc_pl_hardware_init(fb_data->pl_hardware,
+					fb_data->pdata->pl_config);
+	if (ret) {
+		dev_err(&pdev->dev, "failed to initialize Plastic Logic hardware\n");
+		ret = -ENODEV;
+		goto out_regulator;
+	}
+#else
 	fb_data->display_regulator = regulator_get(NULL, "DISPLAY");
 	if (IS_ERR(fb_data->display_regulator)) {
 		dev_err(&pdev->dev, "Unable to get display PMIC regulator."
@@ -3895,6 +3925,7 @@ int __devinit mxc_epdc_fb_probe(struct platform_device *pdev)
 		ret = -ENODEV;
 		goto out_irq;
 	}
+#endif
 
 	if (device_create_file(info->dev, &fb_attrs[0]))
 		dev_err(&pdev->dev, "Unable to create file from fb_attrs\n");
@@ -4042,6 +4073,13 @@ int __devinit mxc_epdc_fb_probe(struct platform_device *pdev)
 
 out_dmaengine:
 	dmaengine_put();
+#ifdef CONFIG_FB_MXC_EPDC_PL_HARDWARE
+out_regulator:
+	mxc_epdc_pl_hardware_free(fb_data->pl_hardware);
+#else
+	regulator_put(fb_data->vcom_regulator);
+	regulator_put(fb_data->display_regulator);
+#endif
 out_irq:
 	free_irq(fb_data->epdc_irq, fb_data);
 out_dma_work_buf:
@@ -4086,8 +4124,12 @@ static int mxc_epdc_fb_remove(struct platform_device *pdev)
 	flush_workqueue(fb_data->epdc_submit_workqueue);
 	destroy_workqueue(fb_data->epdc_submit_workqueue);
 
+#ifdef CONFIG_FB_MXC_EPDC_PL_HARDWARE
+	mxc_epdc_pl_hardware_free(fb_data->pl_hardware);
+#else
 	regulator_put(fb_data->display_regulator);
 	regulator_put(fb_data->vcom_regulator);
+#endif
 
 	unregister_framebuffer(&fb_data->info);
 	free_irq(fb_data->epdc_irq, fb_data);
