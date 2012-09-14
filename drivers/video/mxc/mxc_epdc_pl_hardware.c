@@ -20,7 +20,7 @@
 #define HVPMIC_I2C_ADDRESS 0x48
 
 /* CPLD parameters */
-#define CPLD_MIN_VERSION 0x08
+#define CPLD_MIN_VERSION 0x03
 #define CPLD_NB_BYTES 3
 
 /* VCOM DAC */
