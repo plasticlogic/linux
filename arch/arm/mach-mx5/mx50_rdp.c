@@ -45,7 +45,8 @@
 #include <linux/pmic_status.h>
 #include <linux/videodev2.h>
 #include <linux/mxcfb.h>
-#ifdef CONFIG_FB_MXC_EPDC_PL_HARDWARE
+#if (defined(CONFIG_FB_MXC_EPDC_PL_HARDWARE) \
+     || defined(CONFIG_FB_MXC_EPDC_PL_HARDWARE_MODULE))
 #include <linux/mxc_epdc_pl_hardware.h>
 #endif
 #include <linux/pwm_backlight.h>
@@ -735,7 +736,8 @@ static struct fixed_voltage_config fixed_volt_reg_pdata = {
 	.gpio = -EINVAL,
 };
 
-#ifdef CONFIG_FB_MXC_EPDC_PL_HARDWARE
+#if (defined(CONFIG_FB_MXC_EPDC_PL_HARDWARE) \
+     || defined(CONFIG_FB_MXC_EPDC_PL_HARDWARE_MODULE))
 static const struct mxc_epdc_pl_config epdc_pl_config = {
 	.i2c_bus_number = 0,
 	.dac_i2c_address = 0x39,
@@ -1116,7 +1118,8 @@ static struct mxc_epdc_fb_platform_data epdc_data = {
 	.put_pins = epdc_put_pins,
 	.enable_pins = epdc_enable_pins,
 	.disable_pins = epdc_disable_pins,
-#ifdef CONFIG_FB_MXC_EPDC_PL_HARDWARE
+#if (defined(CONFIG_FB_MXC_EPDC_PL_HARDWARE) \
+     || defined(CONFIG_FB_MXC_EPDC_PL_HARDWARE_MODULE))
 	.pl_config = &epdc_pl_config,
 #endif
 };

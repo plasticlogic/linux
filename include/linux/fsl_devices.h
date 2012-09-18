@@ -18,7 +18,8 @@
 #define _FSL_DEVICE_H_
 
 #include <linux/types.h>
-#ifdef CONFIG_FB_MXC_EPDC_PL_HARDWARE
+#if (defined(CONFIG_FB_MXC_EPDC_PL_HARDWARE) \
+     || defined(CONFIG_FB_MXC_EPDC_PL_HARDWARE_MODULE))
 #include <linux/mxc_epdc_pl_hardware.h>
 #endif
 
@@ -377,7 +378,8 @@ struct mxc_epdc_fb_platform_data {
 	void (*put_pins) (void);
 	void (*enable_pins) (void);
 	void (*disable_pins) (void);
-#ifdef CONFIG_FB_MXC_EPDC_PL_HARDWARE
+#if (defined(CONFIG_FB_MXC_EPDC_PL_HARDWARE) \
+     || defined(CONFIG_FB_MXC_EPDC_PL_HARDWARE_MODULE))
 	const struct mxc_epdc_pl_config *pl_config;
 #endif
 };
