@@ -25,6 +25,8 @@ extern int mxc_epdc_pl_hardware_init(struct mxc_epdc_pl_hardware *plhw,
 				     const struct mxc_epdc_pl_config *config);
 extern void mxc_epdc_pl_hardware_free(struct mxc_epdc_pl_hardware *plhw);
 
+extern int mxc_epdc_pl_hardware_set_vcom(struct mxc_epdc_pl_hardware *plhw,
+					 int vcom_mv);
 extern int mxc_epdc_pl_hardware_enable(struct mxc_epdc_pl_hardware *plhw);
 extern int mxc_epdc_pl_hardware_disable(struct mxc_epdc_pl_hardware *plhw);
 

@@ -307,6 +307,22 @@ void mxc_epdc_pl_hardware_free(struct mxc_epdc_pl_hardware *p)
 }
 EXPORT_SYMBOL(mxc_epdc_pl_hardware_free);
 
+int mxc_epdc_pl_hardware_set_vcom(struct mxc_epdc_pl_hardware *p,
+				  int vcom_mv)
+{
+	if ((vcom_mv < VCOM_MIN) || (vcom_mv > VCOM_MAX)) {
+		printk("PLHW: VCOM voltage out of range: %dmV "
+		       "(range is [%dmV, %dmV]\n",
+		       vcom_mv, VCOM_MIN, VCOM_MAX);
+		return -EINVAL;
+	}
+
+	pl_hardware_dac_set_voltage(p, vcom_mv);
+
+	return 0;
+}
+EXPORT_SYMBOL(mxc_epdc_pl_hardware_set_vcom);
+
 #define STEP(cmd, msg) do {				\
 		const int stat = (cmd);			\
 		if (stat) {				\
