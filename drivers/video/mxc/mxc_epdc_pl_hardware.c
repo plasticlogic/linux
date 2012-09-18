@@ -232,6 +232,7 @@ struct mxc_epdc_pl_hardware *mxc_epdc_pl_hardware_alloc(void)
 
 	return p;
 }
+EXPORT_SYMBOL(mxc_epdc_pl_hardware_alloc);
 
 int mxc_epdc_pl_hardware_init(struct mxc_epdc_pl_hardware *p,
 			      const struct mxc_epdc_pl_config *config)
@@ -283,6 +284,7 @@ err_exit:
 
 	return stat;
 }
+EXPORT_SYMBOL(mxc_epdc_pl_hardware_init);
 
 void mxc_epdc_pl_hardware_free(struct mxc_epdc_pl_hardware *p)
 {
@@ -291,6 +293,7 @@ void mxc_epdc_pl_hardware_free(struct mxc_epdc_pl_hardware *p)
 
 	kfree(p);
 }
+EXPORT_SYMBOL(mxc_epdc_pl_hardware_free);
 
 #define STEP(cmd, msg) do {				\
 		const int stat = (cmd);			\
@@ -316,6 +319,7 @@ int mxc_epdc_pl_hardware_enable(struct mxc_epdc_pl_hardware *p)
 
 	return 0;
 }
+EXPORT_SYMBOL(mxc_epdc_pl_hardware_enable);
 
 int mxc_epdc_pl_hardware_disable(struct mxc_epdc_pl_hardware *p)
 {
@@ -330,6 +334,7 @@ int mxc_epdc_pl_hardware_disable(struct mxc_epdc_pl_hardware *p)
 
 	return 0;
 }
+EXPORT_SYMBOL(mxc_epdc_pl_hardware_disable);
 
 #undef STEP
 
