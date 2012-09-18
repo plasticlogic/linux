@@ -96,7 +96,7 @@ config FB_MXC_EPDC_MAX_UPDATES
 
 config FB_MXC_EPDC_PL_HARDWARE
 	depends on FB_MXC_EINK_PANEL
-	bool "Use Plastic Logic display hardware"
+	tristate "Use Plastic Logic display hardware"
 	help
 	    This is an interim solution to support Plastic
 	    Logic display hardware and power supply control.

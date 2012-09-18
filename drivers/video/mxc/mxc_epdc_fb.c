@@ -45,7 +45,8 @@
 #include <linux/pxp_dma.h>
 #include <linux/mxcfb.h>
 #include <linux/mxcfb_epdc_kernel.h>
-#ifdef CONFIG_FB_MXC_EPDC_PL_HARDWARE
+#if (defined(CONFIG_FB_MXC_EPDC_PL_HARDWARE) \
+     || defined(CONFIG_FB_MXC_EPDC_PL_HARDWARE_MODULE))
 #include <linux/mxc_epdc_pl_hardware.h>
 #endif
 #include <linux/gpio.h>
@@ -135,7 +136,8 @@ struct mxc_epdc_fb_data {
 	struct completion powerdown_compl;
 	struct clk *epdc_clk_axi;
 	struct clk *epdc_clk_pix;
-#ifdef CONFIG_FB_MXC_EPDC_PL_HARDWARE
+#if (defined(CONFIG_FB_MXC_EPDC_PL_HARDWARE) \
+     || defined(CONFIG_FB_MXC_EPDC_PL_HARDWARE_MODULE))
 	struct mxc_epdc_pl_hardware *pl_hardware;
 #else
 	struct regulator *display_regulator;
@@ -891,7 +893,8 @@ static void epdc_powerup(struct mxc_epdc_fb_data *fb_data)
 	__raw_writel(EPDC_CTRL_CLKGATE, EPDC_CTRL_CLEAR);
 
 	/* Enable power to the EPD panel */
-#ifdef CONFIG_FB_MXC_EPDC_PL_HARDWARE
+#if (defined(CONFIG_FB_MXC_EPDC_PL_HARDWARE) \
+     || defined(CONFIG_FB_MXC_EPDC_PL_HARDWARE_MODULE))
 	ret = mxc_epdc_pl_hardware_enable(fb_data->pl_hardware);
 #else
 	ret = regulator_enable(fb_data->display_regulator);
@@ -931,7 +934,8 @@ static void epdc_powerdown(struct mxc_epdc_fb_data *fb_data)
 	dev_dbg(fb_data->dev, "EPDC Powerdown\n");
 
 	/* Disable power to the EPD panel */
-#ifdef CONFIG_FB_MXC_EPDC_PL_HARDWARE
+#if (defined(CONFIG_FB_MXC_EPDC_PL_HARDWARE) \
+     || defined(CONFIG_FB_MXC_EPDC_PL_HARDWARE_MODULE))
 	mxc_epdc_pl_hardware_disable(fb_data->pl_hardware);
 #else
 	regulator_disable(fb_data->vcom_regulator);
@@ -3895,7 +3899,8 @@ int __devinit mxc_epdc_fb_probe(struct platform_device *pdev)
 #endif
 
 	/* get pmic regulators */
-#ifdef CONFIG_FB_MXC_EPDC_PL_HARDWARE
+#if (defined(CONFIG_FB_MXC_EPDC_PL_HARDWARE) \
+     || defined(CONFIG_FB_MXC_EPDC_PL_HARDWARE_MODULE))
 	fb_data->pl_hardware = mxc_epdc_pl_hardware_alloc();
 	if (!fb_data->pl_hardware) {
 		ret = -ENOMEM;
@@ -4073,7 +4078,8 @@ int __devinit mxc_epdc_fb_probe(struct platform_device *pdev)
 
 out_dmaengine:
 	dmaengine_put();
-#ifdef CONFIG_FB_MXC_EPDC_PL_HARDWARE
+#if (defined(CONFIG_FB_MXC_EPDC_PL_HARDWARE) \
+     || defined(CONFIG_FB_MXC_EPDC_PL_HARDWARE_MODULE))
 out_regulator:
 	mxc_epdc_pl_hardware_free(fb_data->pl_hardware);
 #else
@@ -4124,7 +4130,8 @@ static int mxc_epdc_fb_remove(struct platform_device *pdev)
 	flush_workqueue(fb_data->epdc_submit_workqueue);
 	destroy_workqueue(fb_data->epdc_submit_workqueue);
 
-#ifdef CONFIG_FB_MXC_EPDC_PL_HARDWARE
+#if (defined(CONFIG_FB_MXC_EPDC_PL_HARDWARE) \
+     || defined(CONFIG_FB_MXC_EPDC_PL_HARDWARE_MODULE))
 	mxc_epdc_pl_hardware_free(fb_data->pl_hardware);
 #else
 	regulator_put(fb_data->display_regulator);
