@@ -1,11 +1,23 @@
 /*
  * mxc_epdc_pl_hardware.c -- Plastic Logic e-paper display power control
  *
- *      Copyright (C) 2012 Guillaume Tucker, Plastic Logic Limited
+ * Copyright (C) 2012 Plastic Logic Limited
  *
- *  This file is subject to the terms and conditions of the GNU General Public
- *  License. See the file COPYING in the main directory of this archive for
- *  more details.
+ * Authors: Guillaume Tucker <guillaume.tucker@plasticlogic.com>
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program; if not, write to the Free Software
+ * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307 USA
  *
  */
 
@@ -642,3 +654,7 @@ static int pl_hardware_i2c_rdwr(struct i2c_adapter *i2c, __u8 addr,
 
 	return 0;
 }
+
+MODULE_AUTHOR("Guillaume Tucker <guillaume.tucker@plasticlogic.com");
+MODULE_DESCRIPTION("Plastic Logic E-Paper hardware control");
+MODULE_LICENSE("GPL");
