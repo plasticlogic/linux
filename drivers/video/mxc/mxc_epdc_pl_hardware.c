@@ -25,12 +25,12 @@
 
 /* VCOM DAC */
 /* ToDo: make platform-dependent */
-#define VCOM_MAX 12000
-#define VCOM_MIN 8000
-#define VCOM_DEFAULT 8500
-#define VCOM_OFFSET (-6142)
-#define VCOM_COEF_MUL 160
-#define VCOM_COEF_DIV 4990
+#define VCOM_MAX 13000
+#define VCOM_MIN 1000
+#define VCOM_DEFAULT ((VCOM_MAX + VCOM_MIN) / 2)
+#define VCOM_OFFSET (-19532)
+#define VCOM_COEF_INT 20
+#define VCOM_COEF_DEC 779
 #define DAC5820_CMD_LOAD_IN_DAC_A__UP_DAC_B__OUT_AB 0x0
 #define DAC5820_CMD_EXT__DATA_0 0xF
 
@@ -525,11 +525,15 @@ static int pl_hardware_dac_set_power(struct mxc_epdc_pl_hardware *p,
 static void pl_hardware_dac_set_voltage(struct mxc_epdc_pl_hardware *p,
 					int vcom_mv)
 {
-	int dac_value;
+	long dac_value;
+	int round;
 
-	p->vcom_dac.vcom_mv = vcom_mv;
-
-	dac_value = (vcom_mv + VCOM_OFFSET) * VCOM_COEF_MUL / VCOM_COEF_DIV;
+	dac_value = (vcom_mv * VCOM_COEF_INT);
+	dac_value += (vcom_mv * VCOM_COEF_DEC / 1000);
+	dac_value += VCOM_OFFSET;
+	round = ((dac_value % 1000) > 500) ? 1 : 0;
+	dac_value /= 1000;
+	dac_value += round;
 
 	if (dac_value < 0)
 		p->vcom_dac.dac_value = 0;
@@ -538,7 +542,9 @@ static void pl_hardware_dac_set_voltage(struct mxc_epdc_pl_hardware *p,
 	else
 		p->vcom_dac.dac_value = dac_value;
 
-	printk("PLHW: DAC %dmv -> %d\n",
+	p->vcom_dac.vcom_mv = vcom_mv;
+
+	printk("PLHW: VCOM DAC %dmV -> %d\n",
 	       p->vcom_dac.vcom_mv, p->vcom_dac.dac_value);
 }
 
