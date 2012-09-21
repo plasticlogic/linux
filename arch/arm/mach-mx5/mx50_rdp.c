@@ -49,6 +49,7 @@
 #if (defined(CONFIG_FB_MXC_EPDC_PL_HARDWARE) \
      || defined(CONFIG_FB_MXC_EPDC_PL_HARDWARE_MODULE))
 #include <linux/mxc_epdc_pl_hardware.h>
+#include <linux/i2c/at24.h>
 #endif
 #include <linux/pwm_backlight.h>
 #include <linux/fec.h>
@@ -793,6 +794,12 @@ static const struct mxc_epdc_pl_config epdc_pl_config = {
 	.i2c_bus_number = 0,
 	.dac_i2c_address = 0x39,
 };
+
+static struct at24_platform_data eeprom_data = {
+	.byte_len = 32 * 1024,
+	.page_size = 64,
+	.flags = AT24_FLAG_READONLY | AT24_FLAG_TAKE8ADDR | AT24_FLAG_ADDR16,
+};
 #endif
 
 static int epdc_get_pins(void)
@@ -1251,8 +1258,14 @@ static struct i2c_board_info mxc_i2c0_board_info[] __initdata = {
 	 .addr = 0x1c,
 	 },
 	 {
+#if (defined(CONFIG_FB_MXC_EPDC_PL_HARDWARE) \
+     || defined(CONFIG_FB_MXC_EPDC_PL_HARDWARE_MODULE))
+	 I2C_BOARD_INFO("at24", 0x50),
+	 .platform_data = &eeprom_data,
+#else
 	 .type = "eeprom",
 	 .addr = 0x50,
+#endif
 	 },
 };
 
