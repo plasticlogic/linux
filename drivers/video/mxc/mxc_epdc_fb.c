@@ -56,6 +56,13 @@
 
 #include "epdc_regs.h"
 
+/* module parameters */
+
+#define MXC_FB_INVALID_VCOM INT_MAX
+static int mxc_epdc_fb_vcom_modparam = MXC_FB_INVALID_VCOM;
+module_param_named(vcom, mxc_epdc_fb_vcom_modparam, int, S_IRUGO);
+MODULE_PARM_DESC(vcom, "Buffer length in number of entries");
+
 /*
  * Enable this define to have a default panel
  * loaded during driver initialization
@@ -3917,6 +3924,15 @@ int __devinit mxc_epdc_fb_probe(struct platform_device *pdev)
 			"failed to initialize Plastic Logic hardware\n");
 		ret = -ENODEV;
 		goto out_regulator;
+	}
+
+	if (mxc_epdc_fb_vcom_modparam != MXC_FB_INVALID_VCOM) {
+		ret = mxc_epdc_pl_hardware_set_vcom(
+			fb_data->pl_hardware, mxc_epdc_fb_vcom_modparam);
+		if (ret) {
+			dev_err(&pdev->dev, "failed to set VCOM voltage\n");
+			goto out_regulator;
+		}
 	}
 #else
 	fb_data->display_regulator = regulator_get(NULL, "DISPLAY");
