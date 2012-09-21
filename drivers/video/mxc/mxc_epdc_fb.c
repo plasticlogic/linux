@@ -896,25 +896,28 @@ static void epdc_powerup(struct mxc_epdc_fb_data *fb_data)
 #if (defined(CONFIG_FB_MXC_EPDC_PL_HARDWARE) \
      || defined(CONFIG_FB_MXC_EPDC_PL_HARDWARE_MODULE))
 	ret = mxc_epdc_pl_hardware_enable(fb_data->pl_hardware);
+	if (ret) {
+		dev_err(fb_data->dev, "Failed to enable PL hardware\n");
+		goto err_exit;
+	}
 #else
 	ret = regulator_enable(fb_data->display_regulator);
 	if (IS_ERR((void *)ret)) {
 		dev_err(fb_data->dev, "Unable to enable DISPLAY regulator."
 			"err = 0x%x\n", ret);
-		mutex_unlock(&fb_data->power_mutex);
-		return;
+		goto err_exit;
 	}
 	ret = regulator_enable(fb_data->vcom_regulator);
 	if (IS_ERR((void *)ret)) {
 		dev_err(fb_data->dev, "Unable to enable VCOM regulator."
 			"err = 0x%x\n", ret);
-		mutex_unlock(&fb_data->power_mutex);
-		return;
+		goto err_exit;
 	}
 #endif
 
 	fb_data->power_state = POWER_STATE_ON;
 
+err_exit:
 	mutex_unlock(&fb_data->power_mutex);
 }
 
@@ -3910,7 +3913,8 @@ int __devinit mxc_epdc_fb_probe(struct platform_device *pdev)
 	ret = mxc_epdc_pl_hardware_init(fb_data->pl_hardware,
 					fb_data->pdata->pl_config);
 	if (ret) {
-		dev_err(&pdev->dev, "failed to initialize Plastic Logic hardware\n");
+		dev_err(&pdev->dev,
+			"failed to initialize Plastic Logic hardware\n");
 		ret = -ENODEV;
 		goto out_regulator;
 	}
