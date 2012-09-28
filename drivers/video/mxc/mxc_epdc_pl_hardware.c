@@ -67,26 +67,21 @@ enum pl_hardware_cpld_switch {
 };
 
 struct cpld_byte_0 {
-	__u8 board_id:2;
+	__u8 cpld_hven:1;
+	__u8 bpcom_clamp:1;
 	__u8 version:6;
 };
 
 struct cpld_byte_1 {
-	__u8 null_frame:1;
-	__u8 display_test_mode:1;
-	__u8 vth_recovery:1;
 	__u8 vcom_sw_close:1;
 	__u8 vcom_sw_en:1;
-	__u8 vcoms_psu_en:1;
+	__u8 vcom_psu_en:1;
 	__u8 vgpos_clamp:1;
-	__u8 init:1;
+	__u8 build_version:4;
 };
 
 struct cpld_byte_2 {
-	__u8 gate_vdd_en:1;
-	__u8 source_vdd_en:1;
-	__u8 cpld_hven:1;
-	__u8 bpcom_clamp:1;
+	__u8 board_id:4;
 	__u8 reserved:4;
 };
 
@@ -380,8 +375,9 @@ static int pl_hardware_cpld_init(struct mxc_epdc_pl_hardware *p)
 	if (stat)
 		return stat;
 
-	printk("PLHW CPLD version: 0x%02X, board id: 0x%02X\n",
-	       p->cpld.b0.version, p->cpld.b0.board_id);
+	printk("PLHW CPLD version: %d, build: %d, board id: 0x%02X\n",
+	       p->cpld.b0.version, p->cpld.b1.build_version,
+	       p->cpld.b2.board_id);
 
 	if (p->cpld.b0.version < CPLD_MIN_VERSION) {
 		printk("PLHW unsupported CPLD version (min: 0x%02X)\n",
@@ -396,10 +392,10 @@ static int pl_hardware_cpld_switch(struct mxc_epdc_pl_hardware *p,
 				   enum pl_hardware_cpld_switch sw, bool on)
 {
 	switch (sw) {
-	case CPLD_HVEN:         p->cpld.b2.cpld_hven     = on ? 1 : 0;  break;
+	case CPLD_HVEN:         p->cpld.b0.cpld_hven     = on ? 1 : 0;  break;
 	case CPLD_COM_SW_EN:    p->cpld.b1.vcom_sw_en    = on ? 1 : 0;  break;
 	case CPLD_COM_SW_CLOSE: p->cpld.b1.vcom_sw_close = on ? 1 : 0;  break;
-	case CPLD_COM_PSU:      p->cpld.b1.vcoms_psu_en  = on ? 1 : 0;  break;
+	case CPLD_COM_PSU:      p->cpld.b1.vcom_psu_en   = on ? 1 : 0;  break;
 	default:
 		printk("PLHW: invalid switch identifier\n");
 		return -EINVAL;
