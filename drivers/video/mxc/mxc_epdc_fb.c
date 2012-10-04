@@ -63,6 +63,11 @@ static int mxc_epdc_fb_vcom_modparam = MXC_FB_INVALID_VCOM;
 module_param_named(vcom, mxc_epdc_fb_vcom_modparam, int, S_IRUGO);
 MODULE_PARM_DESC(vcom, "Buffer length in number of entries");
 
+static char *mxc_epdc_fb_panel_type_modparam = "";
+module_param_named(panel_type, mxc_epdc_fb_panel_type_modparam, charp,
+		   S_IRUGO);
+MODULE_PARM_DESC(panel_type, "Panel type identifier");
+
 /*
  * Enable this define to have a default panel
  * loaded during driver initialization
@@ -3915,6 +3920,13 @@ int __devinit mxc_epdc_fb_probe(struct platform_device *pdev)
 	if (!fb_data->pl_hardware) {
 		ret = -ENOMEM;
 		goto out_irq;
+	}
+
+	/* ToDo: pass on to mxc_epdc_pl_hardware_init for panel type specific
+	 * configuration */
+	if (mxc_epdc_fb_panel_type_modparam[0] != '\0') {
+		dev_info(&pdev->dev, "panel type: %s\n",
+			 mxc_epdc_fb_panel_type_modparam);
 	}
 
 	ret = mxc_epdc_pl_hardware_init(fb_data->pl_hardware,
