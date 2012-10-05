@@ -369,6 +369,7 @@ struct mxc_epdc_fb_mode {
 	bool sddo_16_bits;
 	bool sddo_flip_bits;
 	bool tft_4bpp;
+	bool dual_scan;
 };
 
 struct mxc_epdc_fb_platform_data {
