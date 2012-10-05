@@ -64,6 +64,7 @@ enum pl_hardware_cpld_switch {
 	CPLD_COM_SW_EN,
 	CPLD_COM_SW_CLOSE,
 	CPLD_COM_PSU,
+	CPLD_BPCOM_CLAMP
 };
 
 struct cpld_byte_0 {
@@ -331,6 +332,7 @@ int mxc_epdc_pl_hardware_enable(struct mxc_epdc_pl_hardware *p)
 	if (!p->init_done)
 		return -EINVAL;
 
+	STEP(pl_hardware_cpld_switch(p, CPLD_BPCOM_CLAMP, true), "BPCOM clamp");
 	STEP(pl_hardware_cpld_switch(p, CPLD_HVEN, true), "HV ON");
 	STEP(pl_hardware_hvpmic_wait_pok(p), "wait for POK");
 	STEP(pl_hardware_cpld_switch(p, CPLD_COM_SW_CLOSE, false), "COM open");
@@ -396,6 +398,7 @@ static int pl_hardware_cpld_switch(struct mxc_epdc_pl_hardware *p,
 	case CPLD_COM_SW_EN:    p->cpld.b1.vcom_sw_en    = on ? 1 : 0;  break;
 	case CPLD_COM_SW_CLOSE: p->cpld.b1.vcom_sw_close = on ? 1 : 0;  break;
 	case CPLD_COM_PSU:      p->cpld.b1.vcom_psu_en   = on ? 1 : 0;  break;
+	case CPLD_BPCOM_CLAMP:  p->cpld.b0.bpcom_clamp   = on ? 1 : 0;  break;
 	default:
 		printk("PLHW: invalid switch identifier\n");
 		return -EINVAL;
