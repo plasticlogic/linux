@@ -761,7 +761,6 @@ void epdc_init_settings(struct mxc_epdc_fb_data *fb_data)
 	 * DDR_MODE = DISABLED
 	 * LVDS_MODE_CE = DISABLED
 	 * LVDS_MODE = DISABLED
-	 * DUAL_SCAN = DISABLED
 	 * PIXELS_PER_SDCLK = 4
 	 */
 	reg_val =
@@ -770,6 +769,8 @@ void epdc_init_settings(struct mxc_epdc_fb_data *fb_data)
 	    | EPDC_TCE_CTRL_PIXELS_PER_SDCLK_4;
 	if (epdc_mode->sddo_16_bits)
 		reg_val |= EPDC_TCE_CTRL_SDDO_WIDTH_16BIT;
+	if (epdc_mode->dual_scan)
+		reg_val |= EPDC_TCE_CTRL_DUAL_SCAN_ENABLE;
 	__raw_writel(reg_val, EPDC_TCE_CTRL);
 
 	/* EPDC_TCE_HSCAN */
