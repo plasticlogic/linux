@@ -813,7 +813,7 @@ void epdc_init_settings(struct mxc_epdc_fb_data *fb_data)
 
 	/*
 	 * EPDC_TCE_SDCFG
-	 * SDCLK_HOLD = 1
+	 * SDCLK_HOLD = epdc_mode->sdclk_hold
 	 * SDSHR = 1
 	 * NUM_CE = 1
 	 * SDDO_INVERT = DISABLED
@@ -822,13 +822,15 @@ void epdc_init_settings(struct mxc_epdc_fb_data *fb_data)
 	num_ce = epdc_mode->num_ce;
 	if (num_ce == 0)
 		num_ce = 1;
-	reg_val = EPDC_TCE_SDCFG_SDCLK_HOLD | EPDC_TCE_SDCFG_SDSHR
+	reg_val = EPDC_TCE_SDCFG_SDSHR
 	    | ((num_ce << EPDC_TCE_SDCFG_NUM_CE_OFFSET) &
 	       EPDC_TCE_SDCFG_NUM_CE_MASK)
 	    | ((epdc_mode->vmode->xres/num_ce << EPDC_TCE_SDCFG_PIXELS_PER_CE_OFFSET) &
 	       EPDC_TCE_SDCFG_PIXELS_PER_CE_MASK);
 	if (epdc_mode->sddo_flip_bits)
 		reg_val |= EPDC_TCE_SDCFG_SDDO_REFORMAT_FLIP_PIXELS;
+	if (epdc_mode->sdclk_hold)
+		reg_val |= EPDC_TCE_SDCFG_SDCLK_HOLD;
 	__raw_writel(reg_val, EPDC_TCE_SDCFG);
 
 	/*

@@ -829,6 +829,7 @@ static struct mxc_epdc_fb_mode panel_modes[] = {
 		.sddo_flip_bits = true,
 		.tft_4bpp = false,
 		.dual_scan = false,
+		.sdclk_hold = true,
 	},
 	{
 		.vmode = &e60_v220_mode,
@@ -850,6 +851,7 @@ static struct mxc_epdc_fb_mode panel_modes[] = {
 		.sddo_flip_bits = true,
 		.tft_4bpp = false,
 		.dual_scan = false,
+		.sdclk_hold = true,
 	},
 	{
 		.vmode = &e97_v110_mode,
@@ -871,6 +873,7 @@ static struct mxc_epdc_fb_mode panel_modes[] = {
 		.sddo_flip_bits = true,
 		.tft_4bpp = false,
 		.dual_scan = false,
+		.sdclk_hold = true,
 	}
 };
 
