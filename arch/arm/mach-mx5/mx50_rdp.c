@@ -1028,7 +1028,7 @@ static struct fb_videomode pl_std_mode = {
 	.right_margin = 4, /* line_end */
 	.upper_margin = 1, /* frame_begin */
 	.lower_margin = 10, /* frame_end */
-	.hsync_len = 3,
+	.hsync_len = 60,
 	.vsync_len = 1,
 	.sync = 0,
 	.vmode = FB_VMODE_NONINTERLACED,
@@ -1045,7 +1045,7 @@ static struct fb_videomode pl_dual_mode = {
 	.right_margin = 4, /* line_end */
 	.upper_margin = 1, /* frame_begin */
 	.lower_margin = 10, /* frame_end */
-	.hsync_len = 3,
+	.hsync_len = 60,
 	.vsync_len = 1,
 	.sync = 0,
 	.vmode = FB_VMODE_NONINTERLACED,
@@ -1124,6 +1124,7 @@ static struct mxc_epdc_fb_mode panel_modes[] = {
 		.sddo_flip_bits = false,
 		.tft_4bpp = true,
 		.dual_scan = false,
+		.sdclk_hold = false,
 	},
 	{
 		.vmode = &pl_dual_mode,
@@ -1145,6 +1146,7 @@ static struct mxc_epdc_fb_mode panel_modes[] = {
 		.sddo_flip_bits = false,
 		.tft_4bpp = false,
 		.dual_scan = true,
+		.sdclk_hold = false,
 	},
 	{
 		.vmode = &e60_v110_mode,
@@ -1166,6 +1168,7 @@ static struct mxc_epdc_fb_mode panel_modes[] = {
 		.sddo_flip_bits = true,
 		.tft_4bpp = false,
 		.dual_scan = false,
+		.sdclk_hold = true,
 	},
 	{
 		.vmode = &e60_v220_mode,
@@ -1187,6 +1190,7 @@ static struct mxc_epdc_fb_mode panel_modes[] = {
 		.sddo_flip_bits = true,
 		.tft_4bpp = false,
 		.dual_scan = false,
+		.sdclk_hold = true,
 	},
 	{
 		.vmode = &e97_v110_mode,
@@ -1208,6 +1212,7 @@ static struct mxc_epdc_fb_mode panel_modes[] = {
 		.sddo_flip_bits = true,
 		.tft_4bpp = false,
 		.dual_scan = false,
+		.sdclk_hold = true,
 	}
 };
 
