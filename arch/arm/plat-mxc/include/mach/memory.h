@@ -63,7 +63,7 @@
 #else
 
 #ifdef CONFIG_ARCH_MX5
-#define CONSISTENT_DMA_SIZE	(112 * SZ_1M)
+#define CONSISTENT_DMA_SIZE	(176 * SZ_1M)
 #else
 #define CONSISTENT_DMA_SIZE	(32 * SZ_1M)
 #endif
