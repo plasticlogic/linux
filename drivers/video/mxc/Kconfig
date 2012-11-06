@@ -92,7 +92,7 @@ config FB_MXC_EPDC_16_SDDO
 config FB_MXC_EPDC_MAX_UPDATES
 	depends on FB_MXC_EINK_PANEL
 	int "Maximum number of concurrent displays updates"
-	default 8
+	default 20
 
 config FB_MXC_EPDC_PL_HARDWARE
 	depends on FB_MXC_EINK_PANEL

@@ -56,6 +56,9 @@
 
 #include "epdc_regs.h"
 
+/* Maximum size of the DMA memory allocated by this driver */
+#define MXCFB_MAX_DMA_ALLOC ((unsigned long)88e6)
+
 /* module parameters */
 
 #define MXC_FB_INVALID_VCOM INT_MAX
@@ -181,6 +184,7 @@ struct mxc_epdc_fb_data {
 	u32 working_buffer_size;
 	dma_addr_t phys_addr_copybuf;	/* Phys address of copied update data */
 	void *virt_addr_copybuf;	/* Used for PxP SW workaround */
+	u32 max_updates;
 	u32 order_cnt;
 	struct list_head full_marker_list;
 	u32 lut_update_order[EPDC_NUM_LUTS];
@@ -2922,7 +2926,7 @@ static bool is_free_list_full(struct mxc_epdc_fb_data *fb_data)
 		count++;
 
 	/* Check to see if all buffers are in this list */
-	if (count == CONFIG_FB_MXC_EPDC_MAX_UPDATES)
+	if (count == fb_data->max_updates)
 		return true;
 	else
 		return false;
@@ -3662,7 +3666,19 @@ int __devinit mxc_epdc_fb_probe(struct platform_device *pdev)
 		fb_data->num_screens = NUM_SCREENS_MIN;
 
 	fb_data->map_size = buf_size * fb_data->num_screens;
-	dev_dbg(&pdev->dev, "memory to allocate: %d\n", fb_data->map_size);
+	fb_data->working_buffer_size = vmode->yres * vmode->xres * 2;
+
+	fb_data->max_updates = (MXCFB_MAX_DMA_ALLOC - fb_data->map_size
+				- fb_data->working_buffer_size);
+
+	if (fb_data->max_pix_size)
+		fb_data->max_updates /= (3 * fb_data->max_pix_size);
+
+	if (fb_data->max_updates > CONFIG_FB_MXC_EPDC_MAX_UPDATES)
+		fb_data->max_updates = CONFIG_FB_MXC_EPDC_MAX_UPDATES;
+
+	dev_info(&pdev->dev, "Maximum number of concurrent updates: %d\n",
+		 fb_data->max_updates);
 
 	res = platform_get_resource(pdev, IORESOURCE_MEM, 0);
 	if (res == NULL) {
@@ -3795,7 +3811,7 @@ int __devinit mxc_epdc_fb_probe(struct platform_device *pdev)
 	INIT_LIST_HEAD(&fb_data->upd_buf_collision_list);
 
 	/* Allocate update buffers and add them to the list */
-	for (i = 0; i < CONFIG_FB_MXC_EPDC_MAX_UPDATES; i++) {
+	for (i = 0; i < fb_data->max_updates; i++) {
 		upd_list = kzalloc(sizeof(*upd_list), GFP_KERNEL);
 		if (upd_list == NULL) {
 			ret = -ENOMEM;
@@ -3836,7 +3852,6 @@ int __devinit mxc_epdc_fb_probe(struct platform_device *pdev)
 		goto out_upd_buffers;
 	}
 
-	fb_data->working_buffer_size = vmode->yres * vmode->xres * 2;
 	/* Allocate memory for EPDC working buffer */
 	fb_data->working_buffer_virt =
 	    dma_alloc_coherent(&pdev->dev, fb_data->working_buffer_size,
