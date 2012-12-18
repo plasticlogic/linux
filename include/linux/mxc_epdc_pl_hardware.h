@@ -15,9 +15,19 @@
 /* Opaque instance structure */
 struct mxc_epdc_pl_hardware;
 
+enum mxc_epdc_pl_hardware_fast_gpio {
+	MXC_EPDC_PL_HARDWARE_FAST_D0 = 0,
+	MXC_EPDC_PL_HARDWARE_FAST_D1,
+	MXC_EPDC_PL_HARDWARE_FAST_D2,
+	MXC_EPDC_PL_HARDWARE_FAST_CLK,
+	MXC_EPDC_PL_HARDWARE_FAST_EN,
+};
+#define MXC_EPDC_PL_HARDWARE_GPIO_N 5
+
 struct mxc_epdc_pl_config {
 	int i2c_bus_number;
 	__u8 dac_i2c_address;
+	int fast_gpio[MXC_EPDC_PL_HARDWARE_GPIO_N];
 };
 
 extern struct mxc_epdc_pl_hardware *mxc_epdc_pl_hardware_alloc(void);
