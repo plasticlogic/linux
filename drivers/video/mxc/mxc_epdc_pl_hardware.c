@@ -32,7 +32,7 @@
 #define HVPMIC_I2C_ADDRESS 0x48
 
 /* CPLD parameters */
-#define CPLD_MIN_VERSION 0x01
+#define CPLD_REQ_VERSION 0x02
 #define CPLD_NB_BYTES 3
 
 /* VCOM DAC */
@@ -64,7 +64,11 @@ enum pl_hardware_cpld_switch {
 	CPLD_COM_SW_EN,
 	CPLD_COM_SW_CLOSE,
 	CPLD_COM_PSU,
-	CPLD_BPCOM_CLAMP
+	CPLD_BPCOM_CLAMP,
+	CPLD_HVEN1,
+	CPLD_COM_SW_CLOSE1,
+	CPLD_PING_PONG,
+	CPLD_DUAL_SCAN,
 };
 
 struct cpld_byte_0 {
@@ -83,7 +87,10 @@ struct cpld_byte_1 {
 
 struct cpld_byte_2 {
 	__u8 board_id:4;
-	__u8 reserved:4;
+	__u8 cpld_hven1:1;
+	__u8 vcom_sw_close:1;
+	__u8 ping_pong:1;
+	__u8 dual_scan:1;
 };
 
 union pl_hardware_cpld {
@@ -381,9 +388,10 @@ static int pl_hardware_cpld_init(struct mxc_epdc_pl_hardware *p)
 	       p->cpld.b0.version, p->cpld.b1.build_version,
 	       p->cpld.b2.board_id);
 
-	if (p->cpld.b0.version < CPLD_MIN_VERSION) {
-		printk("PLHW unsupported CPLD version (min: 0x%02X)\n",
-		       CPLD_MIN_VERSION);
+	if (p->cpld.b0.version != CPLD_REQ_VERSION) {
+		printk("PLHW unsupported CPLD version "
+		       "(required: 0x%02X found: 0x%02X)\n",
+		       CPLD_REQ_VERSION, p->cpld.b0.version);
 		return -ENODEV;
 	}
 
