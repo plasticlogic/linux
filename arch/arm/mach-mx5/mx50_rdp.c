@@ -156,6 +156,18 @@
 
 #define LCD_PWR_EN	(3*32 + 1) /* GPIO_4_1, KEY_ROW0 */
 
+#if (defined(CONFIG_FB_MXC_EPDC_PL_HARDWARE) \
+     || defined(CONFIG_FB_MXC_EPDC_PL_HARDWARE_MODULE))
+#define PL_HARDWARE_USE_FAST_INTERFACE 1
+#define PL_HARDWARE_FAST_D0	(2*32 + 27)	/*GPIO_3_27 */
+#define PL_HARDWARE_FAST_D1	(3*32 + 22)	/*GPIO_4_22 */
+#define PL_HARDWARE_FAST_D2	(3*32 + 21)	/*GPIO_4_21 */
+#define PL_HARDWARE_FAST_CLK	(2*32 + 28)	/*GPIO_3_28 */
+#define PL_HARDWARE_FAST_EN	(2*32 + 29)	/*GPIO_3_29 */
+#else
+#define PL_HARDWARE_USE_FAST_INTERFACE 0
+#endif /* PL_HARDWARE */
+
 extern int __init mx50_rdp_init_mc13892(void);
 extern int __init mx50_rdp_init_mc34708(void);
 extern struct cpu_wp *(*get_cpu_wp)(int *wp);
@@ -236,6 +248,8 @@ static iomux_v3_cfg_t mx50_rdp[] = {
 	MX50_PAD_I2C2_SCL__I2C2_SCL,
 	MX50_PAD_I2C2_SDA__I2C2_SDA,
 
+#if (!defined(CONFIG_FB_MXC_EPDC_PL_HARDWARE) \
+     && !defined(CONFIG_FB_MXC_EPDC_PL_HARDWARE_MODULE))
 	/* EPDC pins */
 	MX50_PAD_EPDC_PWRSTAT__GPIO_3_28,
 	MX50_PAD_EPDC_VCOM0__GPIO_4_21,
@@ -244,6 +258,7 @@ static iomux_v3_cfg_t mx50_rdp[] = {
 	MX50_PAD_DISP_D9__DISP_D9,
 	MX50_PAD_DISP_D10__DISP_D10,
 	MX50_PAD_DISP_D11__DISP_D11,
+#endif /* !PL_HARDWARE */
 	MX50_PAD_DISP_D12__DISP_D12,
 	MX50_PAD_DISP_D13__DISP_D13,
 	MX50_PAD_DISP_D14__DISP_D14,
@@ -793,6 +808,13 @@ static struct fixed_voltage_config fixed_volt_reg_pdata = {
 static const struct mxc_epdc_pl_config epdc_pl_config = {
 	.i2c_bus_number = 0,
 	.dac_i2c_address = 0x39,
+	.fast_gpio = {
+		[MXC_EPDC_PL_HARDWARE_FAST_D0]  = PL_HARDWARE_FAST_D0,
+		[MXC_EPDC_PL_HARDWARE_FAST_D1]  = PL_HARDWARE_FAST_D1,
+		[MXC_EPDC_PL_HARDWARE_FAST_D2]  = PL_HARDWARE_FAST_D2,
+		[MXC_EPDC_PL_HARDWARE_FAST_CLK] = PL_HARDWARE_FAST_CLK,
+		[MXC_EPDC_PL_HARDWARE_FAST_EN]  = PL_HARDWARE_FAST_EN,
+	},
 };
 
 static struct at24_platform_data eeprom_data = {
@@ -800,7 +822,7 @@ static struct at24_platform_data eeprom_data = {
 	.page_size = 64,
 	.flags = AT24_FLAG_READONLY | AT24_FLAG_TAKE8ADDR | AT24_FLAG_ADDR16,
 };
-#endif
+#endif /* PL_HARDWARE */
 
 static int epdc_get_pins(void)
 {
@@ -1243,8 +1265,13 @@ static struct max17135_platform_data max17135_pdata __initdata = {
 	.vpos_pwrdn = 2,
 	.gvee_pwrdn = 1,
 	.vneg_pwrdn = 1,
+#if PL_HARDWARE_USE_FAST_INTERFACE
+	.gpio_pmic_pwrgood = 0,
+	.gpio_pmic_vcom_ctrl = 0,
+#else
 	.gpio_pmic_pwrgood = EPDC_PWRSTAT,
 	.gpio_pmic_vcom_ctrl = EPDC_VCOM,
+#endif
 	.gpio_pmic_wakeup = EPDC_PMIC_WAKE,
 	.gpio_pmic_intr = EPDC_PMIC_INT,
 	.regulator_init = max17135_init_data,
@@ -1343,9 +1370,11 @@ static int sii902x_hdmi_get_pins(void)
 	ret |= gpio_request(EPDC_SDLE, "hdmi_d8");
 	ret |= gpio_request(EPDC_SDCLKN, "hdmi_d9");
 	ret |= gpio_request(EPDC_SDSHR, "hdmi_d10");
+#if !PL_HARDWARE_USE_FAST_INTERFACE
 	ret |= gpio_request(EPDC_PWRCOM, "hdmi_d11");
 	ret |= gpio_request(EPDC_PWRSTAT, "hdmi_d12");
 	ret |= gpio_request(EPDC_PWRCTRL0, "hdmi_d13");
+#endif
 	ret |= gpio_request(EPDC_PWRCTRL1, "hdmi_d14");
 	ret |= gpio_request(EPDC_PWRCTRL2, "hdmi_d15");
 	ret |= gpio_request(EPDC_GDCLK, "hdmi_d16");
@@ -1379,9 +1408,11 @@ static void sii902x_hdmi_put_pins(void)
 	gpio_free(EPDC_SDLE);
 	gpio_free(EPDC_SDCLKN);
 	gpio_free(EPDC_SDSHR);
+#if !PL_HARDWARE_USE_FAST_INTERFACE
 	gpio_free(EPDC_PWRCOM);
 	gpio_free(EPDC_PWRSTAT);
 	gpio_free(EPDC_PWRCTRL0);
+#endif
 	gpio_free(EPDC_PWRCTRL1);
 	gpio_free(EPDC_PWRCTRL2);
 	gpio_free(EPDC_GDCLK);
@@ -1492,9 +1523,11 @@ static void sii902x_hdmi_disable_pins(void)
 	gpio_direction_input(EPDC_SDLE);
 	gpio_direction_input(EPDC_SDCLKN);
 	gpio_direction_input(EPDC_SDSHR);
+#if !PL_HARDWARE_USE_FAST_INTERFACE
 	gpio_direction_input(EPDC_PWRCOM);
 	gpio_direction_input(EPDC_PWRSTAT);
 	gpio_direction_input(EPDC_PWRCTRL0);
+#endif
 	gpio_direction_input(EPDC_PWRCTRL1);
 	gpio_direction_input(EPDC_PWRCTRL2);
 	gpio_direction_input(EPDC_GDCLK);
@@ -2174,14 +2207,18 @@ static void __init mx50_rdp_io_init(void)
 	gpio_request(EPDC_PMIC_WAKE, "epdc-pmic-wake");
 	gpio_direction_output(EPDC_PMIC_WAKE, 0);
 
+#if !PL_HARDWARE_USE_FAST_INTERFACE
 	gpio_request(EPDC_VCOM, "epdc-vcom");
 	gpio_direction_output(EPDC_VCOM, 0);
+#endif
 
 	gpio_request(EPDC_PMIC_INT, "epdc-pmic-int");
 	gpio_direction_input(EPDC_PMIC_INT);
 
+#if !PL_HARDWARE_USE_FAST_INTERFACE
 	gpio_request(EPDC_PWRSTAT, "epdc-pwrstat");
 	gpio_direction_input(EPDC_PWRSTAT);
+#endif
 
 	gpio_request(ELCDIF_PWR_ON, "elcdif-power-on");
 	gpio_direction_output(ELCDIF_PWR_ON, 1);
