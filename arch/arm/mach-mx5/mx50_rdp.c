@@ -156,14 +156,6 @@
 
 #define LCD_PWR_EN	(3*32 + 1) /* GPIO_4_1, KEY_ROW0 */
 
-#if (defined(CONFIG_FB_MXC_EPDC_PL_HARDWARE) \
-     || defined(CONFIG_FB_MXC_EPDC_PL_HARDWARE_MODULE))
-#define CPLD_JTAG0_TMS	(1*32 + 8)	/*GPIO_2_8 */
-#define CPLD_JTAG1_TCK	(1*32 + 9)	/*GPIO_2_9 */
-#define CPLD_JTAG2_TDO	(1*32 + 10)	/*GPIO_2_10 */
-#define CPLD_JTAG3_TDI	(1*32 + 11)	/*GPIO_2_11 */
-#endif /* CONFIG_FB_MXC_EPDC_PL_HARDWARE */
-
 extern int __init mx50_rdp_init_mc13892(void);
 extern int __init mx50_rdp_init_mc34708(void);
 extern struct cpu_wp *(*get_cpu_wp)(int *wp);
@@ -248,19 +240,10 @@ static iomux_v3_cfg_t mx50_rdp[] = {
 	MX50_PAD_EPDC_PWRSTAT__GPIO_3_28,
 	MX50_PAD_EPDC_VCOM0__GPIO_4_21,
 
-#if (defined(CONFIG_FB_MXC_EPDC_PL_HARDWARE) \
-     || defined(CONFIG_FB_MXC_EPDC_PL_HARDWARE_MODULE))
-	/* GPIOs used as CPLD JTAG interface */
-	MX50_PAD_DISP_D8__GPIO_2_8,
-	MX50_PAD_DISP_D9__GPIO_2_9,
-	MX50_PAD_DISP_D10__GPIO_2_10,
-	MX50_PAD_DISP_D11__GPIO_2_11,
-#else
 	MX50_PAD_DISP_D8__DISP_D8,
 	MX50_PAD_DISP_D9__DISP_D9,
 	MX50_PAD_DISP_D10__DISP_D10,
 	MX50_PAD_DISP_D11__DISP_D11,
-#endif
 	MX50_PAD_DISP_D12__DISP_D12,
 	MX50_PAD_DISP_D13__DISP_D13,
 	MX50_PAD_DISP_D14__DISP_D14,
@@ -2148,27 +2131,6 @@ static void __init fixup_mxc_board(struct machine_desc *desc, struct tag *tags,
 	num_cpu_wp = ARRAY_SIZE(cpu_wp_auto);
 }
 
-#if (defined(CONFIG_FB_MXC_EPDC_PL_HARDWARE) \
-     || defined(CONFIG_FB_MXC_EPDC_PL_HARDWARE_MODULE))
-static void __init cpld_jtag_gpio_init(void)
-{
-	/* Claim and configure GPIOs for CPLD pins */
-	gpio_request(CPLD_JTAG0_TMS, "cpld_jtag0_tms");
-	gpio_direction_output(CPLD_JTAG0_TMS, 0);
-
-	gpio_request(CPLD_JTAG1_TCK, "cpld_jtag1_tck");
-	gpio_direction_output(CPLD_JTAG1_TCK, 0);
-
-	gpio_request(CPLD_JTAG2_TDO, "cpld_jtag2_tdo");
-	gpio_direction_input(CPLD_JTAG2_TDO);
-
-	gpio_request(CPLD_JTAG3_TDI, "cpld_jtag3_tdi");
-	gpio_direction_output(CPLD_JTAG3_TDI, 0);
-
-}
-#endif /* CONFIG_FB_MXC_EPDC_PL_HARDWARE */
-
-
 static void __init mx50_rdp_io_init(void)
 {
 	iomux_v3_cfg_t cspi_keeper = (MX50_PAD_ECSPI1_SCLK__GPIO_4_12 & ~MUX_PAD_CTRL_MASK);
@@ -2258,11 +2220,6 @@ static void __init mx50_rdp_io_init(void)
 	/* USB OTG PWR */
 	gpio_request(USB_OTG_PWR, "usb otg power");
 	gpio_direction_output(USB_OTG_PWR, 0);
-
-#if (defined(CONFIG_FB_MXC_EPDC_PL_HARDWARE) \
-     || defined(CONFIG_FB_MXC_EPDC_PL_HARDWARE_MODULE))
-	cpld_jtag_gpio_init();
-#endif /* CONFIG_FB_MXC_EPDC_PL_HARDWARE */
 
 	/* Disable all keepers */
 	mxc_iomux_v3_setup_pad(cspi_keeper);
