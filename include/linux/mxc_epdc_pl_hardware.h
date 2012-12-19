@@ -30,13 +30,18 @@ struct mxc_epdc_plhw_pdata {
 	int fast_gpio[MXC_EPDC_PL_HARDWARE_GPIO_N];
 };
 
+struct mxc_epdc_plhw_config {
+	int psu_n;
+};
+
 extern struct mxc_epdc_pl_hardware *mxc_epdc_pl_hardware_alloc(void);
 extern int mxc_epdc_pl_hardware_init(struct mxc_epdc_pl_hardware *plhw,
-				     const struct mxc_epdc_plhw_pdata *pdata);
+				     const struct mxc_epdc_plhw_pdata *pdata,
+				     const struct mxc_epdc_plhw_config *conf);
 extern void mxc_epdc_pl_hardware_free(struct mxc_epdc_pl_hardware *plhw);
 
 extern int mxc_epdc_pl_hardware_set_vcom(struct mxc_epdc_pl_hardware *plhw,
-					 int vcom_mv);
+					 const int *vcom_mv);
 extern int mxc_epdc_pl_hardware_enable(struct mxc_epdc_pl_hardware *plhw);
 extern int mxc_epdc_pl_hardware_disable(struct mxc_epdc_pl_hardware *plhw);
 
