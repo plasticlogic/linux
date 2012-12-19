@@ -3551,6 +3551,10 @@ int __devinit mxc_epdc_fb_plhw_init(struct mxc_epdc_fb_data *fb_data)
 	int ret;
 
 	fb_data->plhw_conf.psu_n = mxc_epdc_fb_vcom_n_modparam;
+#if 1 /* temporary until this is always enabled */
+	fb_data->plhw_conf.source_2bpp =
+		(mxc_epdc_fb_vcom_n_modparam == 2) ? 1 : 0;
+#endif
 	ret = mxc_epdc_pl_hardware_init(fb_data->pl_hardware,
 					fb_data->pdata->plhw_pdata,
 					&fb_data->plhw_conf);

@@ -32,6 +32,7 @@ struct mxc_epdc_plhw_pdata {
 
 struct mxc_epdc_plhw_config {
 	int psu_n;
+	int source_2bpp;
 };
 
 extern struct mxc_epdc_pl_hardware *mxc_epdc_pl_hardware_alloc(void);

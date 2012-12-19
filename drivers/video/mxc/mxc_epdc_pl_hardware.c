@@ -69,7 +69,7 @@ enum pl_hardware_cpld_switch {
 	CPLD_HVEN1,
 	CPLD_COM_SW_CLOSE1,
 	CPLD_PING_PONG,
-	CPLD_DUAL_SCAN,
+	CPLD_SOURCE_2BPP,
 	CPLD_ALT_I2C,
 };
 
@@ -92,7 +92,7 @@ struct cpld_byte_2 {
 	__u8 cpld_hven1:1;
 	__u8 vcom_sw_close1:1;
 	__u8 ping_pong:1;
-	__u8 dual_scan:1;
+	__u8 source_2bpp:1;
 };
 
 union pl_hardware_cpld {
@@ -516,6 +516,12 @@ static int pl_hardware_cpld_init(struct mxc_epdc_pl_hardware *p)
 		return -ENODEV;
 	}
 
+	if (p->conf->source_2bpp) {
+		stat = pl_hardware_cpld_switch(p, CPLD_SOURCE_2BPP, true);
+		if (stat)
+			return stat;
+	}
+
 	for (i = 0; i < MXC_EPDC_PL_HARDWARE_GPIO_N; ++i) {
 		printk("Fast GPIO init: %s %d\n",
 		       gpio_name[i], p->pdata->fast_gpio[i]);
@@ -569,6 +575,7 @@ static int pl_hardware_cpld_switch(struct mxc_epdc_pl_hardware *p,
 	case CPLD_BPCOM_CLAMP:  p->cpld.b0.bpcom_clamp   = on ? 1 : 0;  break;
 	case CPLD_HVEN1:        p->cpld.b2.cpld_hven1    = on ? 1 : 0;  break;
 	case CPLD_COM_SW_CLOSE1: p->cpld.b2.vcom_sw_close1 = on ? 1 : 0; break;
+	case CPLD_SOURCE_2BPP:  p->cpld.b2.source_2bpp   = on ? 1 : 0;  break;
 	case CPLD_ALT_I2C:      p->fast_cpld.alt_i2c     = on ? 1 : 0;  break;
 	default:
 		printk("PLHW: invalid switch identifier\n");
