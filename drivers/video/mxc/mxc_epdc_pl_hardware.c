@@ -204,6 +204,7 @@ struct pl_hardware_vcom_dac {
 struct mxc_epdc_pl_hardware {
 	bool init_done;
 	const struct mxc_epdc_plhw_pdata *pdata;
+	const struct mxc_epdc_plhw_config *conf;
 	struct i2c_adapter *i2c;
 	union pl_hardware_cpld cpld;
 	struct pl_hardware_cpld_fast_data fast_cpld;
@@ -259,7 +260,8 @@ struct mxc_epdc_pl_hardware *mxc_epdc_pl_hardware_alloc(void)
 EXPORT_SYMBOL(mxc_epdc_pl_hardware_alloc);
 
 int mxc_epdc_pl_hardware_init(struct mxc_epdc_pl_hardware *p,
-			      const struct mxc_epdc_plhw_pdata *pdata)
+			      const struct mxc_epdc_plhw_pdata *pdata,
+			      const struct mxc_epdc_plhw_config *conf)
 {
 	int stat;
 
@@ -267,6 +269,7 @@ int mxc_epdc_pl_hardware_init(struct mxc_epdc_pl_hardware *p,
 		return -EINVAL;
 
 	p->pdata = pdata;
+	p->conf = conf;
 
 	p->i2c = i2c_get_adapter(p->pdata->i2c_bus_number);
 	if (!p->i2c) {
@@ -322,16 +325,23 @@ void mxc_epdc_pl_hardware_free(struct mxc_epdc_pl_hardware *p)
 EXPORT_SYMBOL(mxc_epdc_pl_hardware_free);
 
 int mxc_epdc_pl_hardware_set_vcom(struct mxc_epdc_pl_hardware *p,
-				  int vcom_mv)
+				  const int *vcom_mv)
 {
-	if ((vcom_mv < VCOM_MIN) || (vcom_mv > VCOM_MAX)) {
+	int vcom0;
+
+	if (p->conf->psu_n > 1)
+		printk("Warning: ignoring secondary VCOM for now\n");
+
+	vcom0 = vcom_mv[0];
+
+	if ((vcom0 < VCOM_MIN) || (vcom0 > VCOM_MAX)) {
 		printk("PLHW: VCOM voltage out of range: %dmV "
 		       "(range is [%dmV, %dmV]\n",
-		       vcom_mv, VCOM_MIN, VCOM_MAX);
+		       vcom0, VCOM_MIN, VCOM_MAX);
 		return -EINVAL;
 	}
 
-	pl_hardware_dac_set_voltage(p, vcom_mv);
+	pl_hardware_dac_set_voltage(p, vcom0);
 
 	return 0;
 }
