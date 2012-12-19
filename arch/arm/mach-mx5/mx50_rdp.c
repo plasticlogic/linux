@@ -754,7 +754,7 @@ static struct fixed_voltage_config fixed_volt_reg_pdata = {
 
 #if (defined(CONFIG_FB_MXC_EPDC_PL_HARDWARE) \
      || defined(CONFIG_FB_MXC_EPDC_PL_HARDWARE_MODULE))
-static const struct mxc_epdc_pl_config epdc_pl_config = {
+static const struct mxc_epdc_plhw_pdata epdc_plhw_pdata = {
 	.i2c_bus_number = 0,
 	.dac_i2c_address = 0x39,
 	.fast_gpio = {
@@ -1196,7 +1196,7 @@ static struct mxc_epdc_fb_platform_data epdc_data = {
 	.disable_pins = epdc_disable_pins,
 #if (defined(CONFIG_FB_MXC_EPDC_PL_HARDWARE) \
      || defined(CONFIG_FB_MXC_EPDC_PL_HARDWARE_MODULE))
-	.pl_config = &epdc_pl_config,
+	.plhw_pdata = &epdc_plhw_pdata,
 #endif
 };
 
