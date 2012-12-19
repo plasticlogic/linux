@@ -203,7 +203,7 @@ struct pl_hardware_vcom_dac {
 
 struct mxc_epdc_pl_hardware {
 	bool init_done;
-	const struct mxc_epdc_pl_config *config;
+	const struct mxc_epdc_plhw_pdata *pdata;
 	struct i2c_adapter *i2c;
 	union pl_hardware_cpld cpld;
 	struct pl_hardware_cpld_fast_data fast_cpld;
@@ -259,19 +259,19 @@ struct mxc_epdc_pl_hardware *mxc_epdc_pl_hardware_alloc(void)
 EXPORT_SYMBOL(mxc_epdc_pl_hardware_alloc);
 
 int mxc_epdc_pl_hardware_init(struct mxc_epdc_pl_hardware *p,
-			      const struct mxc_epdc_pl_config *config)
+			      const struct mxc_epdc_plhw_pdata *pdata)
 {
 	int stat;
 
 	if (p->init_done)
 		return -EINVAL;
 
-	p->config = config;
+	p->pdata = pdata;
 
-	p->i2c = i2c_get_adapter(p->config->i2c_bus_number);
+	p->i2c = i2c_get_adapter(p->pdata->i2c_bus_number);
 	if (!p->i2c) {
 		printk("PLHW: Failed to get I2C adapter for bus %d\n",
-		       p->config->i2c_bus_number);
+		       p->pdata->i2c_bus_number);
 		stat = -ENXIO;
 		goto err_exit;
 	}
@@ -416,25 +416,25 @@ static int pl_hardware_cpld_init(struct mxc_epdc_pl_hardware *p)
 
 	for (i = 0; i < MXC_EPDC_PL_HARDWARE_GPIO_N; ++i) {
 		printk("Fast GPIO init: %s %d\n",
-		       gpio_name[i], p->config->fast_gpio[i]);
+		       gpio_name[i], p->pdata->fast_gpio[i]);
 
-		stat = gpio_request(p->config->fast_gpio[i], gpio_name[i]);
+		stat = gpio_request(p->pdata->fast_gpio[i], gpio_name[i]);
 		if (stat) {
 			printk("PLHW: Failed to request GPIO\n");
 			break;
 		}
 
-		stat = gpio_direction_output(p->config->fast_gpio[i], 0);
+		stat = gpio_direction_output(p->pdata->fast_gpio[i], 0);
 		if (stat) {
 			printk("PLHW: Failed to initialise GPIO\n");
-			gpio_free(p->config->fast_gpio[i]);
+			gpio_free(p->pdata->fast_gpio[i]);
 			break;
 		}
 	}
 
 	if (stat) {
 		while (--i >= 0)
-			gpio_free(p->config->fast_gpio[i]);
+			gpio_free(p->pdata->fast_gpio[i]);
 
 		return stat;
 	}
@@ -451,7 +451,7 @@ static void pl_hardware_cpld_free(struct mxc_epdc_pl_hardware *p)
 	int i;
 
 	for (i = 0; i < MXC_EPDC_PL_HARDWARE_GPIO_N; ++i)
-		gpio_free(p->config->fast_gpio[i]);
+		gpio_free(p->pdata->fast_gpio[i]);
 }
 
 static int pl_hardware_cpld_switch(struct mxc_epdc_pl_hardware *p,
@@ -507,7 +507,7 @@ static int pl_hardware_cpld_write_data(struct mxc_epdc_pl_hardware *p)
 
 static void pl_hardware_cpld_write_fast_data(struct mxc_epdc_pl_hardware *p)
 {
-	const int *gpio = p->config->fast_gpio;
+	const int *gpio = p->pdata->fast_gpio;
 
 	printk("write_fast_data %d\n", p->fast_cpld.alt_i2c);
 
@@ -628,7 +628,7 @@ static int pl_hardware_hvpmic_wait_pok(struct mxc_epdc_pl_hardware *p)
 
 static int pl_hardware_dac_init(struct mxc_epdc_pl_hardware *p)
 {
-	p->vcom_dac.i2c_address = p->config->dac_i2c_address;
+	p->vcom_dac.i2c_address = p->pdata->dac_i2c_address;
 	p->vcom_dac.dac_value = 0;
 
 	return 0;

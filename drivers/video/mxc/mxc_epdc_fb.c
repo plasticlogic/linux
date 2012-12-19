@@ -3887,7 +3887,7 @@ int __devinit mxc_epdc_fb_probe(struct platform_device *pdev)
 	}
 
 	ret = mxc_epdc_pl_hardware_init(fb_data->pl_hardware,
-					fb_data->pdata->pl_config);
+					fb_data->pdata->plhw_pdata);
 	if (ret) {
 		dev_err(&pdev->dev,
 			"failed to initialize Plastic Logic hardware\n");

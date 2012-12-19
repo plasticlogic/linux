@@ -24,7 +24,7 @@ enum mxc_epdc_pl_hardware_fast_gpio {
 };
 #define MXC_EPDC_PL_HARDWARE_GPIO_N 5
 
-struct mxc_epdc_pl_config {
+struct mxc_epdc_plhw_pdata {
 	int i2c_bus_number;
 	__u8 dac_i2c_address;
 	int fast_gpio[MXC_EPDC_PL_HARDWARE_GPIO_N];
@@ -32,7 +32,7 @@ struct mxc_epdc_pl_config {
 
 extern struct mxc_epdc_pl_hardware *mxc_epdc_pl_hardware_alloc(void);
 extern int mxc_epdc_pl_hardware_init(struct mxc_epdc_pl_hardware *plhw,
-				     const struct mxc_epdc_pl_config *config);
+				     const struct mxc_epdc_plhw_pdata *pdata);
 extern void mxc_epdc_pl_hardware_free(struct mxc_epdc_pl_hardware *plhw);
 
 extern int mxc_epdc_pl_hardware_set_vcom(struct mxc_epdc_pl_hardware *plhw,

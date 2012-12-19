@@ -382,7 +382,7 @@ struct mxc_epdc_fb_platform_data {
 	void (*disable_pins) (void);
 #if (defined(CONFIG_FB_MXC_EPDC_PL_HARDWARE) \
      || defined(CONFIG_FB_MXC_EPDC_PL_HARDWARE_MODULE))
-	const struct mxc_epdc_pl_config *pl_config;
+	const struct mxc_epdc_plhw_pdata *plhw_pdata;
 #endif
 };
 
