@@ -90,7 +90,7 @@ struct cpld_byte_1 {
 struct cpld_byte_2 {
 	__u8 board_id:4;
 	__u8 cpld_hven1:1;
-	__u8 vcom_sw_close:1;
+	__u8 vcom_sw_close1:1;
 	__u8 ping_pong:1;
 	__u8 dual_scan:1;
 };
@@ -199,8 +199,14 @@ struct pl_hardware_vcom_dac {
 	int vcom_mv;
 };
 
-/* Opaque public instance structure */
+/* PSU structure */
+struct pl_hardware_psu {
+	int i2c_sel_id;
+	struct pl_hardware_hvpmic hvpmic;
+	struct pl_hardware_vcom_dac vcom_dac;
+};
 
+/* Opaque public instance structure */
 struct mxc_epdc_pl_hardware {
 	bool init_done;
 	const struct mxc_epdc_plhw_pdata *pdata;
@@ -208,8 +214,7 @@ struct mxc_epdc_pl_hardware {
 	struct i2c_adapter *i2c;
 	union pl_hardware_cpld cpld;
 	struct pl_hardware_cpld_fast_data fast_cpld;
-	struct pl_hardware_hvpmic hvpmic;
-	struct pl_hardware_vcom_dac vcom_dac;
+	struct pl_hardware_psu psu[2];
 };
 
 /* CPLD */
@@ -220,19 +225,32 @@ static int pl_hardware_cpld_switch(struct mxc_epdc_pl_hardware *p,
 static int pl_hardware_cpld_read_data(struct mxc_epdc_pl_hardware *p);
 static int pl_hardware_cpld_write_data(struct mxc_epdc_pl_hardware *p);
 static void pl_hardware_cpld_write_fast_data(struct mxc_epdc_pl_hardware *p);
+static inline int pl_hardware_cpld_sel_psu(struct mxc_epdc_pl_hardware *p,
+					   struct pl_hardware_psu *psu) {
+	if (p->fast_cpld.alt_i2c == psu->i2c_sel_id)
+		return 0;
+
+	return pl_hardware_cpld_switch(p, CPLD_ALT_I2C, psu->i2c_sel_id);
+}
 
 /* HVPMIC */
-static int pl_hardware_hvpmic_init(struct mxc_epdc_pl_hardware *p);
-static int pl_hardware_hvpmic_load_timings(struct mxc_epdc_pl_hardware *p);
-static int pl_hardware_hvpmic_wait_pok(struct mxc_epdc_pl_hardware *p);
+static int pl_hardware_hvpmic_init(struct mxc_epdc_pl_hardware *p,
+				   struct pl_hardware_psu *psu);
+static int pl_hardware_hvpmic_load_timings(struct mxc_epdc_pl_hardware *p,
+					   struct pl_hardware_psu *psu);
+static int pl_hardware_hvpmic_wait_pok(struct mxc_epdc_pl_hardware *p,
+				       struct pl_hardware_psu *psu);
 
 /* VCOM DAC */
-static int pl_hardware_dac_init(struct mxc_epdc_pl_hardware *p);
+static int pl_hardware_dac_init(struct mxc_epdc_pl_hardware *p,
+				struct pl_hardware_psu *psu);
 static int pl_hardware_dac_set_power(struct mxc_epdc_pl_hardware *p,
-				     bool on);
+				     bool on, struct pl_hardware_psu *psu);
 static void pl_hardware_dac_set_voltage(struct mxc_epdc_pl_hardware *p,
-					int vcom_mv);
-static int pl_hardware_dac_write(struct mxc_epdc_pl_hardware *p);
+					int vcom_mv,
+					struct pl_hardware_psu *psu);
+static int pl_hardware_dac_write(struct mxc_epdc_pl_hardware *p,
+				 struct pl_hardware_psu *psu);
 
 /* I2C helpers */
 static int pl_hardware_read_i2c_reg(struct i2c_adapter *i2c, __u8 addr,
@@ -241,6 +259,42 @@ static int pl_hardware_write_i2c_reg8(struct i2c_adapter *i2c, __u8 addr,
 				      __u8 reg, __u8 value);
 static int pl_hardware_i2c_rdwr(struct i2c_adapter *i2c, __u8 addr,
 				__u16 flags, void *data, size_t size);
+
+static inline int pl_hardware_psu_read_i2c_reg(
+	struct mxc_epdc_pl_hardware *p, struct pl_hardware_psu *psu,
+	__u8 addr, __u8 reg, void *data, size_t size) {
+	int stat;
+
+	stat = pl_hardware_cpld_sel_psu(p, psu);
+	if (stat)
+		return stat;
+
+	return pl_hardware_read_i2c_reg(p->i2c, addr, reg, data, size);
+}
+
+static inline int pl_hardware_psu_write_i2c_reg8(
+	struct mxc_epdc_pl_hardware *p, struct pl_hardware_psu *psu,
+	__u8 addr, __u8 reg, __u8 value) {
+	int stat;
+
+	stat = pl_hardware_cpld_sel_psu(p, psu);
+	if (stat)
+		return stat;
+
+	return pl_hardware_write_i2c_reg8(p->i2c, addr, reg, value);
+}
+
+static inline int pl_hardware_psu_i2c_rdwr(
+	struct mxc_epdc_pl_hardware *p, struct pl_hardware_psu *psu,
+	__u8 addr, __u16 flags, void *data, size_t size) {
+	int stat;
+
+	stat = pl_hardware_cpld_sel_psu(p, psu);
+	if (stat)
+		return stat;
+
+	return pl_hardware_i2c_rdwr(p->i2c, addr, flags, data, size);
+}
 
 /* ----------------------------------------------------------------------------
  * public interface
@@ -264,9 +318,16 @@ int mxc_epdc_pl_hardware_init(struct mxc_epdc_pl_hardware *p,
 			      const struct mxc_epdc_plhw_config *conf)
 {
 	int stat;
+	int i;
 
 	if (p->init_done)
 		return -EINVAL;
+
+	if (conf->psu_n > 2) {
+		printk("PLHW: invalid number of PSUs: %d (max is 2)\n",
+		       conf->psu_n);
+		return -EINVAL;
+	}
 
 	p->pdata = pdata;
 	p->conf = conf;
@@ -285,19 +346,25 @@ int mxc_epdc_pl_hardware_init(struct mxc_epdc_pl_hardware *p,
 		goto err_free_i2c;
 	}
 
-	stat = pl_hardware_hvpmic_init(p);
-	if (stat) {
-		printk("PLHW: Failed to initialise HVPMIC\n");
-		goto err_free_i2c;
-	}
+	for (i = 0; i < conf->psu_n; ++i) {
+		struct pl_hardware_psu *psu = &p->psu[i];
 
-	stat = pl_hardware_dac_init(p);
-	if (stat) {
-		printk("PLHW: Failed to intialise VCOM DAC\n");
-		goto err_free_i2c;
-	}
+		psu->i2c_sel_id = i;
 
-	pl_hardware_dac_set_voltage(p, VCOM_DEFAULT);
+		stat = pl_hardware_hvpmic_init(p, psu);
+		if (stat) {
+			printk("PLHW: Failed to initialise HVPMIC\n");
+			goto err_free_i2c;
+		}
+
+		stat = pl_hardware_dac_init(p, psu);
+		if (stat) {
+			printk("PLHW: Failed to intialise VCOM DAC\n");
+			goto err_free_i2c;
+		}
+
+		pl_hardware_dac_set_voltage(p, VCOM_DEFAULT, psu);
+	}
 
 	printk("PLHW: ready.\n");
 
@@ -325,23 +392,22 @@ void mxc_epdc_pl_hardware_free(struct mxc_epdc_pl_hardware *p)
 EXPORT_SYMBOL(mxc_epdc_pl_hardware_free);
 
 int mxc_epdc_pl_hardware_set_vcom(struct mxc_epdc_pl_hardware *p,
-				  const int *vcom_mv)
+				  const int *vcoms_mv)
 {
-	int vcom0;
+	int i;
 
-	if (p->conf->psu_n > 1)
-		printk("Warning: ignoring secondary VCOM for now\n");
+	for (i = 0; i < p->conf->psu_n; ++i) {
+		const int vcom = vcoms_mv[i];
 
-	vcom0 = vcom_mv[0];
+		if ((vcom < VCOM_MIN) || (vcom > VCOM_MAX)) {
+			printk("PLHW: VCOM voltage out of range: %dmV "
+			       "(range is [%dmV, %dmV]\n",
+			       vcom, VCOM_MIN, VCOM_MAX);
+			return -EINVAL;
+		}
 
-	if ((vcom0 < VCOM_MIN) || (vcom0 > VCOM_MAX)) {
-		printk("PLHW: VCOM voltage out of range: %dmV "
-		       "(range is [%dmV, %dmV]\n",
-		       vcom0, VCOM_MIN, VCOM_MAX);
-		return -EINVAL;
+		pl_hardware_dac_set_voltage(p, vcom, &p->psu[i]);
 	}
-
-	pl_hardware_dac_set_voltage(p, vcom0);
 
 	return 0;
 }
@@ -357,18 +423,33 @@ EXPORT_SYMBOL(mxc_epdc_pl_hardware_set_vcom);
 
 int mxc_epdc_pl_hardware_enable(struct mxc_epdc_pl_hardware *p)
 {
+	struct pl_hardware_psu *psu;
+
 	if (!p->init_done)
 		return -EINVAL;
 
-	STEP(pl_hardware_cpld_switch(p, CPLD_BPCOM_CLAMP, true), "BPCOM clamp");
+	psu = &p->psu[0];
+	STEP(pl_hardware_cpld_switch(p, CPLD_BPCOM_CLAMP, true),"BPCOM clamp");
 	STEP(pl_hardware_cpld_switch(p, CPLD_HVEN, true), "HV ON");
-	STEP(pl_hardware_hvpmic_wait_pok(p), "wait for POK");
-	STEP(pl_hardware_cpld_switch(p, CPLD_COM_SW_CLOSE, false), "COM open");
+	STEP(pl_hardware_hvpmic_wait_pok(p, psu), "wait for POK");
 	STEP(pl_hardware_cpld_switch(p, CPLD_COM_SW_EN, true), "COM enable");
+
+	STEP(pl_hardware_cpld_switch(p, CPLD_COM_SW_CLOSE, false), "COM open");
 	STEP(pl_hardware_cpld_switch(p, CPLD_COM_PSU, true), "COM PSU on");
-	STEP(pl_hardware_dac_write(p), "COM DAC value");
-	STEP(pl_hardware_dac_set_power(p, true), "DAC power on");
+	STEP(pl_hardware_dac_write(p, psu), "COM DAC value");
+	STEP(pl_hardware_dac_set_power(p, true, psu), "DAC power on");
 	STEP(pl_hardware_cpld_switch(p, CPLD_COM_SW_CLOSE, true),"COM close");
+
+	if (p->conf->psu_n == 1)
+		return 0;
+
+	psu = &p->psu[1];
+	STEP(pl_hardware_cpld_switch(p, CPLD_HVEN1, true), "HV1 on");
+	STEP(pl_hardware_hvpmic_wait_pok(p, psu), "wait for POK");
+	STEP(pl_hardware_cpld_switch(p, CPLD_COM_SW_CLOSE1,false),"COM1 open");
+	STEP(pl_hardware_dac_write(p, psu), "COM DAC1 value");
+	STEP(pl_hardware_dac_set_power(p, true, psu), "DAC1 power on");
+	STEP(pl_hardware_cpld_switch(p, CPLD_COM_SW_CLOSE1,true),"COM1 close");
 
 	return 0;
 }
@@ -376,14 +457,25 @@ EXPORT_SYMBOL(mxc_epdc_pl_hardware_enable);
 
 int mxc_epdc_pl_hardware_disable(struct mxc_epdc_pl_hardware *p)
 {
+	struct pl_hardware_psu *psu;
+
 	if (!p->init_done)
 		return -EINVAL;
 
+	psu = &p->psu[0];
 	STEP(pl_hardware_cpld_switch(p, CPLD_COM_SW_CLOSE, false),"COM open");
 	STEP(pl_hardware_cpld_switch(p, CPLD_COM_SW_EN, false), "COM disable");
-	STEP(pl_hardware_dac_set_power(p, false), "DAC power off");
+	STEP(pl_hardware_dac_set_power(p, false, psu), "DAC power off");
 	STEP(pl_hardware_cpld_switch(p, CPLD_COM_PSU, false), "COM PSU off");
 	STEP(pl_hardware_cpld_switch(p, CPLD_HVEN, false), "HV OFF");
+
+	if (p->conf->psu_n == 1)
+		return 0;
+
+	psu = &p->psu[1];
+	STEP(pl_hardware_cpld_switch(p, CPLD_COM_SW_CLOSE1,false),"COM1 open");
+	STEP(pl_hardware_dac_set_power(p, false, psu), "DAC1 power off");
+	STEP(pl_hardware_cpld_switch(p, CPLD_HVEN1, false), "HV1 OFF");
 
 	return 0;
 }
@@ -475,6 +567,8 @@ static int pl_hardware_cpld_switch(struct mxc_epdc_pl_hardware *p,
 	case CPLD_COM_SW_CLOSE: p->cpld.b1.vcom_sw_close = on ? 1 : 0;  break;
 	case CPLD_COM_PSU:      p->cpld.b1.vcom_psu_en   = on ? 1 : 0;  break;
 	case CPLD_BPCOM_CLAMP:  p->cpld.b0.bpcom_clamp   = on ? 1 : 0;  break;
+	case CPLD_HVEN1:        p->cpld.b2.cpld_hven1    = on ? 1 : 0;  break;
+	case CPLD_COM_SW_CLOSE1: p->cpld.b2.vcom_sw_close1 = on ? 1 : 0; break;
 	case CPLD_ALT_I2C:      p->fast_cpld.alt_i2c     = on ? 1 : 0;  break;
 	default:
 		printk("PLHW: invalid switch identifier\n");
@@ -519,12 +613,10 @@ static void pl_hardware_cpld_write_fast_data(struct mxc_epdc_pl_hardware *p)
 {
 	const int *gpio = p->pdata->fast_gpio;
 
-	printk("write_fast_data %d\n", p->fast_cpld.alt_i2c);
-
 	gpio_set_value(gpio[MXC_EPDC_PL_HARDWARE_FAST_EN], 1);
 
 	gpio_set_value(gpio[MXC_EPDC_PL_HARDWARE_FAST_D0],
-		       p->fast_cpld.alt_i2c ? 0 : 1);
+		       p->fast_cpld.alt_i2c);
 	gpio_set_value(gpio[MXC_EPDC_PL_HARDWARE_FAST_D1], 0);
 	gpio_set_value(gpio[MXC_EPDC_PL_HARDWARE_FAST_D2], 0);
 	gpio_set_value(gpio[MXC_EPDC_PL_HARDWARE_FAST_CLK], 1);
@@ -539,7 +631,8 @@ static void pl_hardware_cpld_write_fast_data(struct mxc_epdc_pl_hardware *p)
 
 /* HVPMIC */
 
-int pl_hardware_hvpmic_init(struct mxc_epdc_pl_hardware *p)
+int pl_hardware_hvpmic_init(struct mxc_epdc_pl_hardware *p,
+			    struct pl_hardware_psu *psu)
 {
 	u8 timings[HVPMIC_NB_TIMINGS];
 	int stat;
@@ -553,31 +646,32 @@ int pl_hardware_hvpmic_init(struct mxc_epdc_pl_hardware *p)
 	timings[6] = HVPMIC_TIMING_DOWN_VSNEG;
 	timings[7] = HVPMIC_TIMING_DOWN_VGNEG;
 
-	stat = pl_hardware_read_i2c_reg(p->i2c, HVPMIC_I2C_ADDRESS,
-					HVPMIC_REG_PROD_REV,
-					&p->hvpmic.prod_rev, 1);
+	stat = pl_hardware_psu_read_i2c_reg(p, psu, HVPMIC_I2C_ADDRESS,
+					    HVPMIC_REG_PROD_REV,
+					    &psu->hvpmic.prod_rev, 1);
 	if (stat)
 		return stat;
 
-	stat = pl_hardware_read_i2c_reg(p->i2c, HVPMIC_I2C_ADDRESS,
-					HVPMIC_REG_PROD_ID,
-					&p->hvpmic.prod_id, 1);
+	stat = pl_hardware_psu_read_i2c_reg(p, psu, HVPMIC_I2C_ADDRESS,
+					    HVPMIC_REG_PROD_ID,
+					    &psu->hvpmic.prod_id, 1);
 	if (stat)
 		return stat;
 
-	memcpy(p->hvpmic.timings, timings, HVPMIC_NB_TIMINGS);
+	memcpy(psu->hvpmic.timings, timings, HVPMIC_NB_TIMINGS);
 
 	printk("PLHW: HVPMIC rev 0x%02X, id 0x%02X\n",
-	       p->hvpmic.prod_rev, p->hvpmic.prod_id);
+	       psu->hvpmic.prod_rev, psu->hvpmic.prod_id);
 	printk("PLHW timings on: %d, %d, %d, %d, "
 	       "timings off: %d, %d, %d, %d\n",
 	       timings[0], timings[1], timings[2], timings[3],
 	       timings[4], timings[5], timings[6], timings[7]);
 
-	return pl_hardware_hvpmic_load_timings(p);
+	return pl_hardware_hvpmic_load_timings(p, psu);
 }
 
-static int pl_hardware_hvpmic_load_timings(struct mxc_epdc_pl_hardware *p)
+static int pl_hardware_hvpmic_load_timings(struct mxc_epdc_pl_hardware *p,
+					   struct pl_hardware_psu *psu)
 {
 	__u8 reg;
 	int i;
@@ -587,8 +681,9 @@ static int pl_hardware_hvpmic_load_timings(struct mxc_epdc_pl_hardware *p)
 	     ++i, ++reg) {
 		int stat;
 
-		stat = pl_hardware_write_i2c_reg8(p->i2c, HVPMIC_I2C_ADDRESS,
-						  reg, p->hvpmic.timings[i]);
+		stat = pl_hardware_psu_write_i2c_reg8(
+			p, psu, HVPMIC_I2C_ADDRESS, reg,
+			psu->hvpmic.timings[i]);
 		if (stat)
 			return stat;
 	}
@@ -596,7 +691,8 @@ static int pl_hardware_hvpmic_load_timings(struct mxc_epdc_pl_hardware *p)
 	return 0;
 }
 
-static int pl_hardware_hvpmic_wait_pok(struct mxc_epdc_pl_hardware *p)
+static int pl_hardware_hvpmic_wait_pok(struct mxc_epdc_pl_hardware *p,
+				       struct pl_hardware_psu *psu)
 {
 	static const unsigned POLL_DELAY_MS = 5;
 	unsigned timeout = 100;
@@ -608,8 +704,8 @@ static int pl_hardware_hvpmic_wait_pok(struct mxc_epdc_pl_hardware *p)
 
 		mdelay(POLL_DELAY_MS);
 
-		stat = pl_hardware_read_i2c_reg(
-			p->i2c, HVPMIC_I2C_ADDRESS,
+		stat = pl_hardware_psu_read_i2c_reg(
+			p, psu, HVPMIC_I2C_ADDRESS,
 			HVPMIC_REG_FAULT, &fault.byte, 1);
 		if (stat) {
 			printk("PLHW: failed to read HVPMIC POK\n");
@@ -636,16 +732,17 @@ static int pl_hardware_hvpmic_wait_pok(struct mxc_epdc_pl_hardware *p)
 
 /* VCOM DAC */
 
-static int pl_hardware_dac_init(struct mxc_epdc_pl_hardware *p)
+static int pl_hardware_dac_init(struct mxc_epdc_pl_hardware *p,
+				struct pl_hardware_psu *psu)
 {
-	p->vcom_dac.i2c_address = p->pdata->dac_i2c_address;
-	p->vcom_dac.dac_value = 0;
+	psu->vcom_dac.i2c_address = p->pdata->dac_i2c_address;
+	psu->vcom_dac.dac_value = 0;
 
 	return 0;
 }
 
 static int pl_hardware_dac_set_power(struct mxc_epdc_pl_hardware *p,
-				     bool on)
+				     bool on, struct pl_hardware_psu *psu)
 {
 	union dac5820_ext_payload payload;
 
@@ -656,12 +753,13 @@ static int pl_hardware_dac_set_power(struct mxc_epdc_pl_hardware *p,
 	payload.ext_byte.b = 0;
 	payload.ext_byte.pd = on ? DAC5820_PD_ON : DAC5820_PD_OFF_100K;
 
-	return pl_hardware_i2c_rdwr(p->i2c, p->vcom_dac.i2c_address, 0,
-				    payload.bytes, sizeof payload);
+	return pl_hardware_psu_i2c_rdwr(p, psu, psu->vcom_dac.i2c_address, 0,
+					payload.bytes, sizeof payload);
 }
 
 static void pl_hardware_dac_set_voltage(struct mxc_epdc_pl_hardware *p,
-					int vcom_mv)
+					int vcom_mv,
+					struct pl_hardware_psu *psu)
 {
 	long dac_value;
 	int round;
@@ -674,29 +772,30 @@ static void pl_hardware_dac_set_voltage(struct mxc_epdc_pl_hardware *p,
 	dac_value += round;
 
 	if (dac_value < 0)
-		p->vcom_dac.dac_value = 0;
+		psu->vcom_dac.dac_value = 0;
 	else if (dac_value > 0xFF)
-		p->vcom_dac.dac_value = 0xFF;
+		psu->vcom_dac.dac_value = 0xFF;
 	else
-		p->vcom_dac.dac_value = dac_value;
+		psu->vcom_dac.dac_value = dac_value;
 
-	p->vcom_dac.vcom_mv = vcom_mv;
+	psu->vcom_dac.vcom_mv = vcom_mv;
 
 	printk("PLHW: VCOM DAC %dmV -> %d\n",
-	       p->vcom_dac.vcom_mv, p->vcom_dac.dac_value);
+	       psu->vcom_dac.vcom_mv, psu->vcom_dac.dac_value);
 }
 
-static int pl_hardware_dac_write(struct mxc_epdc_pl_hardware *p)
+static int pl_hardware_dac_write(struct mxc_epdc_pl_hardware *p,
+				 struct pl_hardware_psu *psu)
 {
 	union dac5820_write_payload payload;
 
 	payload.cmd_byte.cmd = DAC5820_CMD_LOAD_IN_DAC_A__UP_DAC_B__OUT_AB;
-	payload.cmd_byte.data_high = (p->vcom_dac.dac_value >> 4) & 0xF;
-	payload.data_byte.data_low = p->vcom_dac.dac_value & 0xF;
+	payload.cmd_byte.data_high = (psu->vcom_dac.dac_value >> 4) & 0xF;
+	payload.data_byte.data_low = psu->vcom_dac.dac_value & 0xF;
 	payload.data_byte.reserved = 0;
 
-	return pl_hardware_i2c_rdwr(p->i2c, p->vcom_dac.i2c_address, 0,
-				    payload.bytes, sizeof payload);
+	return pl_hardware_psu_i2c_rdwr(p, psu, psu->vcom_dac.i2c_address, 0,
+					payload.bytes, sizeof payload);
 }
 
 /* I2C helpers */
