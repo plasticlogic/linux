@@ -1,7 +1,7 @@
 #
 # Automatically generated make config: don't edit
 # Linux kernel version: 2.6.35.3
-# Tue Dec 18 11:10:29 2012
+# Thu Dec 20 11:42:36 2012
 #
 CONFIG_ARM=y
 CONFIG_HAVE_PWM=y
@@ -1081,7 +1081,7 @@ CONFIG_SPI_MXC=y
 # CONFIG_PPS is not set
 CONFIG_ARCH_REQUIRE_GPIOLIB=y
 CONFIG_GPIOLIB=y
-# CONFIG_GPIO_SYSFS is not set
+CONFIG_GPIO_SYSFS=y
 
 #
 # Memory mapped GPIO expanders:
