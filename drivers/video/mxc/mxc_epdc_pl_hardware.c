@@ -575,6 +575,7 @@ static int pl_hardware_cpld_switch(struct mxc_epdc_pl_hardware *p,
 	case CPLD_BPCOM_CLAMP:  p->cpld.b0.bpcom_clamp   = on ? 1 : 0;  break;
 	case CPLD_HVEN1:        p->cpld.b2.cpld_hven1    = on ? 1 : 0;  break;
 	case CPLD_COM_SW_CLOSE1: p->cpld.b2.vcom_sw_close1 = on ? 1 : 0; break;
+	case CPLD_PING_PONG:    p->cpld.b2.ping_pong     = on ? 1 : 0;  break;
 	case CPLD_SOURCE_2BPP:  p->cpld.b2.source_2bpp   = on ? 1 : 0;  break;
 	case CPLD_ALT_I2C:      p->fast_cpld.alt_i2c     = on ? 1 : 0;  break;
 	default:
