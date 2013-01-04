@@ -691,6 +691,8 @@ static int mxc_kpp_scan_matrix(void)
 		break;
 	}
 
+	input_sync(mxckbd_dev);
+
 	return keycnt;
 }
 
