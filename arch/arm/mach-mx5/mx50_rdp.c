@@ -561,6 +561,23 @@ static struct fec_platform_data fec_data = {
 	.phy = PHY_INTERFACE_MODE_RMII,
 };
 
+#if (defined(CONFIG_FB_MXC_EPDC_PL_HARDWARE) \
+     || defined(CONFIG_FB_MXC_EPDC_PL_HARDWARE_MODULE))
+static u16 keymapping[] = {
+	KEY_F1,        KEY_UP,    KEY_F2,
+	KEY_LEFT,      KEY_ENTER, KEY_RIGHT,
+	KEY_BACKSPACE, KEY_DOWN,  KEY_HOME
+};
+
+static struct keypad_data keypad_plat_data = {
+	.rowmax = 3,
+	.colmax = 3,
+	.irq = MXC_INT_KPP,
+	.learning = 0,
+	.delay = 2,
+	.matrix = keymapping,
+};
+#else
 static u16 keymapping[] = {
 	KEY_9, KEY_0, KEY_O, KEY_P, KEY_L, KEY_DELETE, KEY_SLASH, KEY_ENTER,
 	KEY_F4, KEY_F1, KEY_F6, KEY_F9, KEY_F5, KEY_BACKSPACE, KEY_MENU, 0,
@@ -580,7 +597,7 @@ static struct keypad_data keypad_plat_data = {
 	.delay = 2,
 	.matrix = keymapping,
 };
-
+#endif
 
 /* workaround for cspi chipselect pin may not keep correct level when idle */
 static void mx50_rdp_gpio_spi_chipselect_active(int cspi_mode, int status,
