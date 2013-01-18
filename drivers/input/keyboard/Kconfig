@@ -12,6 +12,12 @@ menuconfig INPUT_KEYBOARD
 
 if INPUT_KEYBOARD
 
+config KEYBOARD_DUMMY
+       tristate "Dummy keyboard"
+       help
+         Say Y here if you want to use a dummy keyboard device driver.
+         This uses sysfs entries to generate key events on an input device.
+
 config KEYBOARD_AAED2000
 	tristate "AAED-2000 keyboard"
 	depends on MACH_AAED2000
