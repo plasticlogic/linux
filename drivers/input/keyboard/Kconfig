@@ -12,6 +12,12 @@ menuconfig INPUT_KEYBOARD
 
 if INPUT_KEYBOARD
 
+config KEYBOARD_DUMMY
+       tristate "Dummy keyboard"
+       help
+         Say Y here if you want to use a dummy keyboard device driver.
+         This uses sysfs entries to generate key events on an input device.
+
 config KEYBOARD_ADP5520
 	tristate "Keypad Support for ADP5520 PMIC"
 	depends on PMIC_ADP5520
