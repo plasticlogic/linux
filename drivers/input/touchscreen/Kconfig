@@ -11,6 +11,12 @@ menuconfig INPUT_TOUCHSCREEN
 
 if INPUT_TOUCHSCREEN
 
+config TOUCHSCREEN_DUMMY
+       tristate "Dummy touchscreen"
+       help
+         Say Y here if you want to use a dummy touchscreen device driver.
+         This uses sysfs entries to generate touch events on an input device.
+
 config TOUCHSCREEN_88PM860X
 	tristate "Marvell 88PM860x touchscreen"
 	depends on MFD_88PM860X
