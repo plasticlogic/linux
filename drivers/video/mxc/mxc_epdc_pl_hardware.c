@@ -522,6 +522,12 @@ static int pl_hardware_cpld_init(struct mxc_epdc_pl_hardware *p)
 			return stat;
 	}
 
+	if (p->conf->interlaced_gates) {
+		stat = pl_hardware_cpld_switch(p, CPLD_PING_PONG, true);
+		if (stat)
+			return stat;
+	}
+
 	for (i = 0; i < MXC_EPDC_PL_HARDWARE_GPIO_N; ++i) {
 		printk("Fast GPIO init: %s %d\n",
 		       gpio_name[i], p->pdata->fast_gpio[i]);
