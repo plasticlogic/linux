@@ -3555,6 +3555,8 @@ int __devinit mxc_epdc_fb_plhw_init(struct mxc_epdc_fb_data *fb_data)
 	fb_data->plhw_conf.source_2bpp =
 		(mxc_epdc_fb_vcom_n_modparam == 2) ? 1 : 0;
 #endif
+	fb_data->plhw_conf.interlaced_gates =
+		!strcmp(mxc_epdc_fb_panel_type_modparam, "Type10");
 	ret = mxc_epdc_pl_hardware_init(fb_data->pl_hardware,
 					fb_data->pdata->plhw_pdata,
 					&fb_data->plhw_conf);
