@@ -27,6 +27,7 @@ enum mxc_epdc_pl_hardware_fast_gpio {
 struct mxc_epdc_plhw_pdata {
 	int i2c_bus_number;
 	__u8 dac_i2c_address;
+	__u8 adc_i2c_address;
 	int fast_gpio[MXC_EPDC_PL_HARDWARE_GPIO_N];
 };
 
