@@ -808,6 +808,7 @@ static struct fixed_voltage_config fixed_volt_reg_pdata = {
 static const struct mxc_epdc_plhw_pdata epdc_plhw_pdata = {
 	.i2c_bus_number = 0,
 	.dac_i2c_address = 0x39,
+	.adc_i2c_address = 0x34,
 	.fast_gpio = {
 		[MXC_EPDC_PL_HARDWARE_FAST_D0]  = PL_HARDWARE_FAST_D0,
 		[MXC_EPDC_PL_HARDWARE_FAST_D1]  = PL_HARDWARE_FAST_D1,
