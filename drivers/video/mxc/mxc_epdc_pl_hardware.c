@@ -1016,6 +1016,8 @@ static int pl_hardware_adc_read_mv(struct mxc_epdc_pl_hardware *p,
 	if (stat)
 		return stat;
 
+	mdelay(2);
+
 	stat = pl_hardware_adc_read_results(p, psu);
 	if (stat)
 		return stat;
@@ -1073,6 +1075,7 @@ static int pl_hardware_vcomcal_set_vcom(struct mxc_epdc_pl_hardware *p,
 
 		v_out *= VCOM_ADC_SCALE;
 		delta = psu->vcom.target_mv - v_out;
+		psu->vcom.last_v_in = v_in;
 		v_in += delta * VCOM_CORR_I / 100;
 	} while ((abs(delta) > delta_stop) && --n);
 
@@ -1080,8 +1083,6 @@ static int pl_hardware_vcomcal_set_vcom(struct mxc_epdc_pl_hardware *p,
 		printk("VCOMCAL Failed to converge in time\n");
 		return -1;
 	}
-
-	psu->vcom.last_v_in = v_in;
 
 	return 0;
 }
