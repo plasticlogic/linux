@@ -56,7 +56,8 @@
 #define VCOM_REF_ADC_CHANNEL 0
 #define VCOM_FB_ADC_CHANNEL 1
 #define VCOM_ADC_SCALE 10
-#define VCOM_VREF_FACTOR (24200 / 332)
+#define VCOM_VREF_MUL 24200
+#define VCOM_VREF_DIV 332
 #define VCOM_VGSWING 70000
 #define VCOM_CORR_I 110
 
@@ -1135,8 +1136,10 @@ static int pl_hardware_vcomcal_measure_dac(struct mxc_epdc_pl_hardware *p,
 	if (stat)
 		return stat;
 
-	swing = vref * VCOM_VREF_FACTOR;
+	swing = vref * VCOM_VREF_MUL;
+	swing = DIV_ROUND_CLOSEST(swing, VCOM_VREF_DIV);
 	psu->vcom.target_mv = psu->vcom.reference_mv * swing / VCOM_VGSWING;
+
 	psu->vcom.last_v_in = psu->vcom.target_mv;
 	psu->vcom.dac_measured = true;
 
