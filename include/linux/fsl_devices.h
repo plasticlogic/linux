@@ -372,6 +372,8 @@ struct mxc_epdc_fb_mode {
 	bool sddo_flip_bits;
 	bool tft_4bpp;
 	bool dual_scan;
+	bool scan_dir_0_up;
+	bool scan_dir_1_up;
 	bool sdclk_hold;
 };
 

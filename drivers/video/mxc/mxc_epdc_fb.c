@@ -780,6 +780,10 @@ void epdc_init_settings(struct mxc_epdc_fb_data *fb_data)
 		reg_val |= EPDC_TCE_CTRL_SDDO_WIDTH_16BIT;
 	if (epdc_mode->dual_scan)
 		reg_val |= EPDC_TCE_CTRL_DUAL_SCAN_ENABLE;
+	if (epdc_mode->scan_dir_0_up)
+		reg_val |= EPDC_TCE_CTRL_SCAN_DIR_0_UP;
+	if (epdc_mode->scan_dir_1_up)
+		reg_val |= EPDC_TCE_CTRL_SCAN_DIR_1_UP;
 	__raw_writel(reg_val, EPDC_TCE_CTRL);
 
 	/* EPDC_TCE_HSCAN */
