@@ -1086,6 +1086,11 @@ static void adjust_coordinates(struct mxc_epdc_fb_data *fb_data,
 	struct mxcfb_rect *update_region, struct mxcfb_rect *adj_update_region)
 {
 	struct fb_var_screeninfo *screeninfo = &fb_data->epdc_fb_var;
+	const u32 flipped_left =
+		(fb_data->cur_mode->flip_top
+		 && (update_region->top < (screeninfo->yres / 2)))
+		? screeninfo->xres - update_region->left - update_region->width
+		: update_region->left;
 	u32 rotation = fb_data->epdc_fb_var.rotate;
 	u32 temp;
 
@@ -1095,12 +1100,12 @@ static void adjust_coordinates(struct mxc_epdc_fb_data *fb_data,
 		switch (rotation) {
 		case FB_ROTATE_UR:
 			adj_update_region->top = update_region->top;
-			adj_update_region->left = update_region->left;
+			adj_update_region->left = flipped_left;
 			adj_update_region->width = update_region->width;
 			adj_update_region->height = update_region->height;
 			break;
 		case FB_ROTATE_CW:
-			adj_update_region->top = update_region->left;
+			adj_update_region->top = flipped_left;
 			adj_update_region->left = screeninfo->yres -
 				(update_region->top + update_region->height);
 			adj_update_region->width = update_region->height;
@@ -1112,12 +1117,12 @@ static void adjust_coordinates(struct mxc_epdc_fb_data *fb_data,
 			adj_update_region->top = screeninfo->yres -
 				(update_region->top + update_region->height);
 			adj_update_region->left = screeninfo->xres -
-				(update_region->left + update_region->width);
+				(flipped_left + update_region->width);
 			break;
 		case FB_ROTATE_CCW:
 			adj_update_region->left = update_region->top;
 			adj_update_region->top = screeninfo->xres -
-				(update_region->left + update_region->width);
+				(flipped_left + update_region->width);
 			adj_update_region->width = update_region->height;
 			adj_update_region->height = update_region->width;
 			break;
@@ -1125,11 +1130,11 @@ static void adjust_coordinates(struct mxc_epdc_fb_data *fb_data,
 	else
 		switch (rotation) {
 		case FB_ROTATE_UR:
-			/* No adjustment needed */
+			update_region->left = flipped_left;
 			break;
 		case FB_ROTATE_CW:
 			temp = update_region->top;
-			update_region->top = update_region->left;
+			update_region->top = flipped_left;
 			update_region->left = screeninfo->yres -
 				(temp + update_region->height);
 			temp = update_region->width;
@@ -1140,10 +1145,10 @@ static void adjust_coordinates(struct mxc_epdc_fb_data *fb_data,
 			update_region->top = screeninfo->yres -
 				(update_region->top + update_region->height);
 			update_region->left = screeninfo->xres -
-				(update_region->left + update_region->width);
+				(flipped_left + update_region->width);
 			break;
 		case FB_ROTATE_CCW:
-			temp = update_region->left;
+			temp = flipped_left;
 			update_region->left = update_region->top;
 			update_region->top = screeninfo->xres -
 				(temp + update_region->width);
@@ -1582,9 +1587,30 @@ int mxc_epdc_fb_set_upd_scheme(u32 upd_scheme, struct fb_info *info)
 }
 EXPORT_SYMBOL(mxc_epdc_fb_set_upd_scheme);
 
+typedef void(reverse_t)(void *dst, const void *src, size_t n);
+
+static inline void reverse8(uint8_t *dst, const uint8_t *src, size_t n)
+{
+	while (n--)
+		*dst++ = *src--;
+}
+
+static inline void reverse16(uint16_t *dst, const uint16_t *src, size_t n)
+{
+	while (n--)
+		*dst++ = *src--;
+}
+
+static inline void reverse32(uint32_t *dst, const uint32_t *src, size_t n)
+{
+	while (n--)
+		*dst++ = *src--;
+}
+
 static void copy_before_process(struct mxc_epdc_fb_data *fb_data,
 	struct update_data_list *upd_data_list)
 {
+	struct mxc_epdc_fb_mode *epdc_mode = fb_data->cur_mode;
 	struct mxcfb_update_data *upd_data =
 		&upd_data_list->update_desc->upd_data;
 	int i;
@@ -1597,6 +1623,9 @@ static void copy_before_process(struct mxc_epdc_fb_data *fb_data,
 	int left_offs, right_offs;
 	int x_trailing_bytes, y_trailing_bytes;
 	int alt_buf_offset;
+	int flip_ymax;
+	size_t line_offset;
+	reverse_t *reverse;
 
 	/* Set source buf pointer based on input source, panning, etc. */
 	if (upd_data->flags & EPDC_FLAG_USE_ALT_BUFFER) {
@@ -1620,10 +1649,29 @@ static void copy_before_process(struct mxc_epdc_fb_data *fb_data,
 	x_trailing_bytes = (ALIGN(src_upd_region->width, 8)
 		- src_upd_region->width) * bpp/8;
 
+	if (bpp == 16)
+		reverse = (reverse_t *)reverse16;
+	else if (bpp == 32)
+		reverse = (reverse_t *)reverse32;
+	else
+		reverse = (reverse_t *)reverse8;
+
+	flip_ymax = (fb_data->epdc_fb_var.yres / 2) - src_upd_region->top;
+	flip_ymax = max(0, flip_ymax);
+	line_offset = (src_upd_region->width - 1) * (bpp / 8);
+
 	for (i = 0; i < src_upd_region->height; i++) {
 		/* Copy the full line */
-		memcpy(temp_buf_ptr, src_ptr + left_offs,
-			src_upd_region->width * bpp/8);
+		if (!epdc_mode->flip_top || (i >= flip_ymax)) {
+			memcpy(temp_buf_ptr, src_ptr + left_offs,
+			       src_upd_region->width * bpp/8);
+		} else {
+			/* This relies on the scan direction to be inverted in
+			 * order to complete the 180 degrees rotation */
+			const u8 *src = src_ptr + left_offs + line_offset;
+
+			reverse(temp_buf_ptr, src, src_upd_region->width);
+		}
 
 		/* Clear any unwanted pixels at the end of each line */
 		if (src_upd_region->width & 0x7) {
@@ -1733,7 +1781,7 @@ static int epdc_process_update(struct update_data_list *upd_data_list,
 
 	if (((width_unaligned || height_unaligned || input_unaligned) &&
 		(upd_desc_list->upd_data.waveform_mode == WAVEFORM_MODE_AUTO))
-		|| line_overflow) {
+		|| line_overflow || fb_data->cur_mode->flip_top) {
 
 		dev_dbg(fb_data->dev, "Copying update before processing.\n");
 
@@ -1916,18 +1964,29 @@ static int epdc_process_update(struct update_data_list *upd_data_list,
 
 }
 
-static int epdc_submit_merge(struct update_desc_list *upd_desc_list,
-				struct update_desc_list *update_to_merge)
+static int epdc_submit_merge(struct mxc_epdc_fb_data *fb_data,
+			     struct update_desc_list *upd_desc_list,
+			     struct update_desc_list *update_to_merge)
 {
 	struct mxcfb_update_data *a, *b;
 	struct mxcfb_rect *arect, *brect;
 	struct mxcfb_rect combine;
+	const int mid_y = fb_data->epdc_fb_var.yres / 2;
 	bool use_flags = false;
 
 	a = &upd_desc_list->upd_data;
 	b = &update_to_merge->upd_data;
 	arect = &upd_desc_list->upd_data.update_region;
 	brect = &update_to_merge->upd_data.update_region;
+
+	/* If display 1 flip option is enabled, don't merge update areas across
+	 * the mid-height as it needs to be kept in 2 separate rectangles since
+	 * top part is rotated.
+	 */
+	if (fb_data->cur_mode->flip_top &&
+	    (((arect->top < mid_y) && (brect->top >= mid_y))
+	     || ((brect->top < mid_y) && (arect->top >= mid_y))))
+		return MERGE_FAIL;
 
 	/*
 	 * Updates with different flags must be executed sequentially.
@@ -2033,8 +2092,9 @@ static void epdc_submit_work_func(struct work_struct *work)
 				/* If not merging, we have our update */
 				break;
 		} else {
-			switch (epdc_submit_merge(upd_data_list->update_desc,
-						next_update->update_desc)) {
+			switch (epdc_submit_merge(fb_data,
+						  upd_data_list->update_desc,
+						  next_update->update_desc)) {
 			case MERGE_OK:
 				dev_dbg(fb_data->dev,
 					"Update merged [collision]\n");
@@ -2103,7 +2163,9 @@ static void epdc_submit_work_func(struct work_struct *work)
 					/* If not merging, we have an update */
 					break;
 			} else {
-				switch (epdc_submit_merge(upd_data_list->update_desc,
+				switch (epdc_submit_merge(
+						fb_data,
+						upd_data_list->update_desc,
 						next_desc)) {
 				case MERGE_OK:
 					dev_dbg(fb_data->dev,
@@ -2277,9 +2339,8 @@ static void epdc_submit_work_func(struct work_struct *work)
 	spin_unlock_irqrestore(&fb_data->queue_lock, flags);
 }
 
-
-int mxc_epdc_fb_send_update(struct mxcfb_update_data *upd_data,
-				   struct fb_info *info)
+static int mxc_epdc_fb_do_send_update(struct mxcfb_update_data *upd_data,
+				      struct fb_info *info)
 {
 	struct mxc_epdc_fb_data *fb_data = info ?
 		(struct mxc_epdc_fb_data *)info:g_fb_data;
@@ -2536,6 +2597,49 @@ int mxc_epdc_fb_send_update(struct mxcfb_update_data *upd_data,
 
 	spin_unlock_irqrestore(&fb_data->queue_lock, flags);
 	return 0;
+}
+
+int mxc_epdc_fb_send_update(struct mxcfb_update_data *upd_data,
+				   struct fb_info *info)
+{
+	struct mxc_epdc_fb_data *fb_data = info ?
+		(struct mxc_epdc_fb_data *)info : g_fb_data;
+	const int mid_y = fb_data->epdc_fb_var.yres / 2;
+	struct mxcfb_update_data upd_flip_data;
+
+	/* If update crosses the mid-height and first display is flipped for a
+	 * dual tiled configuration, split into 2 update requests as half of
+	 * the pixels will be rotated.
+	 *
+	 * Note: No need to split if update region is centered horizontally,
+	 * which is what the last test is for.
+	 */
+	if (fb_data->cur_mode->flip_top
+	    && (upd_data->update_region.top < mid_y)
+	    && ((upd_data->update_region.top + upd_data->update_region.height)
+		> mid_y)
+	    && (((upd_data->update_region.left * 2)
+		 + upd_data->update_region.width)
+		!= fb_data->epdc_fb_var.xres)) {
+		const int height_diff =
+			upd_data->update_region.top +
+			upd_data->update_region.height - mid_y;
+		int stat;
+
+		memcpy(&upd_flip_data, upd_data, sizeof upd_flip_data);
+		upd_flip_data.update_region.height -= height_diff;
+		stat = mxc_epdc_fb_do_send_update(&upd_flip_data, info);
+		if (stat)
+			return stat;
+
+		memcpy(&upd_flip_data, upd_data, sizeof upd_flip_data);
+		upd_flip_data.update_region.top = mid_y;
+		upd_flip_data.update_region.height = height_diff;
+
+		return mxc_epdc_fb_do_send_update(&upd_flip_data, info);
+	}
+
+	return mxc_epdc_fb_do_send_update(upd_data, info);
 }
 EXPORT_SYMBOL(mxc_epdc_fb_send_update);
 
