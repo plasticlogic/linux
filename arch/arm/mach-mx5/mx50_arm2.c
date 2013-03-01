@@ -831,6 +831,7 @@ static struct mxc_epdc_fb_mode panel_modes[] = {
 		.dual_scan = false,
 		.scan_dir_0_up = false,
 		.scan_dir_1_up = false,
+		.flip_top = false,
 		.sdclk_hold = true,
 	},
 	{
@@ -855,6 +856,7 @@ static struct mxc_epdc_fb_mode panel_modes[] = {
 		.dual_scan = false,
 		.scan_dir_0_up = false,
 		.scan_dir_1_up = false,
+		.flip_top = false,
 		.sdclk_hold = true,
 	},
 	{
@@ -879,6 +881,7 @@ static struct mxc_epdc_fb_mode panel_modes[] = {
 		.dual_scan = false,
 		.scan_dir_0_up = false,
 		.scan_dir_1_up = false,
+		.flip_top = false,
 		.sdclk_hold = true,
 	}
 };
