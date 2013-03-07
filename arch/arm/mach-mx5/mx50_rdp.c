@@ -1075,6 +1075,23 @@ static struct fb_videomode pl_dual_mode = {
 	.flag = 0,
 };
 
+static struct fb_videomode pl_tiled_mode = {
+	.name = "PL_TILED",
+	.refresh = 50,
+	.xres = 1280,
+	.yres = 1920,
+	.pixclock = 38e6,
+	.left_margin = 120, /* line_begin */
+	.right_margin = 4, /* line_end */
+	.upper_margin = 1, /* frame_begin */
+	.lower_margin = 10, /* frame_end */
+	.hsync_len = 60,
+	.vsync_len = 1,
+	.sync = 0,
+	.vmode = FB_VMODE_NONINTERLACED,
+	.flag = 0,
+};
+
 static struct fb_videomode e60_v110_mode = {
 	.name = "E60_V110",
 	.refresh = 50,
@@ -1175,6 +1192,31 @@ static struct mxc_epdc_fb_mode panel_modes[] = {
 		.scan_dir_0_up = false,
 		.scan_dir_1_up = false,
 		.flip_top = false,
+		.sdclk_hold = false,
+	},
+	{
+		.vmode = &pl_tiled_mode,
+		.vscan_holdoff = 2,
+		.sdoed_width = 10,
+		.sdoed_delay = 20,
+		.sdoez_width = 10,
+		.sdoez_delay = 20,
+		.gdclk_hp_offs = 560,
+		.gdsp_offs = 0,
+		.gdsp_frame_sync = false,
+		.gdsp_active_high = true,
+		.gdoe_offs = 80,
+		.gdoe_delayed_gclk = true,
+		.gdoe_active_high = false,
+		.gdclk_offs = 40,
+		.num_ce = 1,
+		.sddo_16_bits = false,
+		.sddo_flip_bits = false,
+		.tft_4bpp = false,
+		.dual_scan = true,
+		.scan_dir_0_up = true,
+		.scan_dir_1_up = false,
+		.flip_top = true,
 		.sdclk_hold = false,
 	},
 	{
