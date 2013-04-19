@@ -3658,27 +3658,33 @@ int __devinit mxc_epdc_fb_plhw_init(struct mxc_epdc_fb_data *fb_data)
 {
 	int ret;
 
-	fb_data->plhw_conf.psu_n = mxc_epdc_fb_vcom_n_modparam;
-#if 1 /* temporary until this is always enabled */
+	if (!mxc_epdc_fb_vcom_n_modparam) {
+		dev_err(fb_data->dev, "Warning: No VCOM voltage supplied.\n");
+		fb_data->plhw_conf.psu_n = 1;
+	} else {
+		fb_data->plhw_conf.psu_n = mxc_epdc_fb_vcom_n_modparam;
+	}
+
+#if 1 /* temporary hack until 2bpp is always enabled */
 	fb_data->plhw_conf.source_2bpp =
 		(mxc_epdc_fb_vcom_n_modparam == 2) ? 1 : 0;
 #endif
 	fb_data->plhw_conf.interlaced_gates =
 		!strcmp(mxc_epdc_fb_panel_type_modparam, "Type10");
+
 	ret = mxc_epdc_pl_hardware_init(fb_data->pl_hardware,
 					fb_data->pdata->plhw_pdata,
 					&fb_data->plhw_conf);
 	if (ret)
 		return ret;
 
-	if (mxc_epdc_fb_vcom_n_modparam == 0)
-		return 0;
-
-	ret = mxc_epdc_pl_hardware_set_vcom(fb_data->pl_hardware,
-					    mxc_epdc_fb_vcom_modparam);
-	if (ret) {
-		dev_err(fb_data->dev, "failed to set VCOM voltages\n");
-		return ret;
+	if (mxc_epdc_fb_vcom_n_modparam) {
+		ret = mxc_epdc_pl_hardware_set_vcom(fb_data->pl_hardware,
+						    mxc_epdc_fb_vcom_modparam);
+		if (ret) {
+			dev_err(fb_data->dev, "Failed to set VCOM voltages\n");
+			return ret;
+		}
 	}
 
 	return ret;
@@ -4090,14 +4096,14 @@ int __devinit mxc_epdc_fb_probe(struct platform_device *pdev)
 	/* ToDo: pass on to mxc_epdc_pl_hardware_init for panel type specific
 	 * configuration */
 	if (mxc_epdc_fb_panel_type_modparam[0] != '\0') {
-		dev_info(&pdev->dev, "panel type: %s\n",
+		dev_info(&pdev->dev, "Panel type: %s\n",
 			 mxc_epdc_fb_panel_type_modparam);
 	}
 
 	ret = mxc_epdc_fb_plhw_init(fb_data);
 	if (ret) {
 		dev_err(&pdev->dev,
-			"failed to initialize Plastic Logic hardware\n");
+			"Failed to initialize Plastic Logic hardware\n");
 		ret = -ENODEV;
 		goto out_regulator;
 	}
