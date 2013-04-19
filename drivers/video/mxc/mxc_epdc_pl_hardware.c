@@ -415,9 +415,9 @@ int mxc_epdc_pl_hardware_init(struct mxc_epdc_pl_hardware *p,
 	if (p->init_done)
 		return -EINVAL;
 
-	if (conf->psu_n > 2) {
-		printk("PLHW: invalid number of PSUs: %d (max is 2)\n",
-		       conf->psu_n);
+	if (!conf->psu_n || (conf->psu_n > 2)) {
+		printk("PLHW: Invalid number of PSUs: %d "
+		       "(min is 1, max is 2)\n", conf->psu_n);
 		return -EINVAL;
 	}
 
@@ -468,7 +468,7 @@ int mxc_epdc_pl_hardware_init(struct mxc_epdc_pl_hardware *p,
 		}
 	}
 
-	printk("PLHW: ready.\n");
+	printk("PLHW: Ready, number of PSUs: %d\n", conf->psu_n);
 
 	p->init_done = true;
 
@@ -505,7 +505,7 @@ int mxc_epdc_pl_hardware_set_vcom(struct mxc_epdc_pl_hardware *p,
 
 		if ((vcom < VCOM_MIN) || (vcom > VCOM_MAX)) {
 			printk("PLHW: VCOM voltage out of range: %dmV "
-			       "(range is [%dmV, %dmV]\n",
+			       "(range is [%dmV, %dmV])\n",
 			       vcom, VCOM_MIN, VCOM_MAX);
 			return -EINVAL;
 		}
@@ -608,31 +608,33 @@ static int pl_hardware_cpld_init(struct mxc_epdc_pl_hardware *p)
 	if (stat)
 		return stat;
 
-	printk("PLHW CPLD version: %d, build: %d, board id: 0x%02X\n",
+	printk("PLHW: CPLD version: %d, build: %d, board id: 0x%02X\n",
 	       p->cpld.b0.version, p->cpld.b1.build_version,
 	       p->cpld.b2.board_id);
 
 	if (p->cpld.b0.version != CPLD_REQ_VERSION) {
-		printk("PLHW unsupported CPLD version "
+		printk("PLHW: unsupported CPLD version "
 		       "(required: 0x%02X found: 0x%02X)\n",
 		       CPLD_REQ_VERSION, p->cpld.b0.version);
 		return -ENODEV;
 	}
 
 	if (p->conf->source_2bpp) {
+		printk("PLHW: Enabling 2bpp mode\n");
 		stat = pl_hardware_cpld_switch(p, CPLD_SOURCE_2BPP, true);
 		if (stat)
 			return stat;
 	}
 
 	if (p->conf->interlaced_gates) {
+		printk("PLHW: Enabling interlaced gates\n");
 		stat = pl_hardware_cpld_switch(p, CPLD_PING_PONG, true);
 		if (stat)
 			return stat;
 	}
 
 	for (i = 0; i < MXC_EPDC_PL_HARDWARE_GPIO_N; ++i) {
-		printk("Fast GPIO init: %s %d\n",
+		printk("PLHW: Fast GPIO init: %s %d\n",
 		       gpio_name[i], p->pdata->fast_gpio[i]);
 
 		stat = gpio_request(p->pdata->fast_gpio[i], gpio_name[i]);
@@ -688,7 +690,7 @@ static int pl_hardware_cpld_switch(struct mxc_epdc_pl_hardware *p,
 	case CPLD_SOURCE_2BPP:  p->cpld.b2.source_2bpp   = on ? 1 : 0;  break;
 	case CPLD_ALT_I2C:      p->fast_cpld.alt_i2c     = on ? 1 : 0;  break;
 	default:
-		printk("PLHW: invalid switch identifier\n");
+		printk("PLHW: Invalid switch identifier\n");
 		return -EINVAL;
 	}
 
@@ -779,7 +781,7 @@ int pl_hardware_hvpmic_init(struct mxc_epdc_pl_hardware *p,
 
 	printk("PLHW: HVPMIC rev 0x%02X, id 0x%02X\n",
 	       psu->hvpmic.prod_rev, psu->hvpmic.prod_id);
-	printk("PLHW timings on: %d, %d, %d, %d, "
+	printk("PLHW: Timings on: %d, %d, %d, %d, "
 	       "timings off: %d, %d, %d, %d\n",
 	       timings[0], timings[1], timings[2], timings[3],
 	       timings[4], timings[5], timings[6], timings[7]);
@@ -825,7 +827,7 @@ static int pl_hardware_hvpmic_wait_pok(struct mxc_epdc_pl_hardware *p,
 			p, psu, HVPMIC_I2C_ADDRESS,
 			HVPMIC_REG_FAULT, &fault.byte, 1);
 		if (stat) {
-			printk("PLHW: failed to read HVPMIC POK\n");
+			printk("PLHW: Failed to read HVPMIC POK\n");
 			break;
 		}
 
@@ -1129,7 +1131,7 @@ static int pl_hardware_vcomcal_measure_dac(struct mxc_epdc_pl_hardware *p,
 		y1 - ((x1 * psu->vcom.dac_dy) / psu->vcom.dac_dx);
 	psu->vcom.dac_step_mv = psu->vcom.dac_dy / psu->vcom.dac_dx;
 
-	printk("DAC dx: %d, dy: %d, offset: %d, step: %d\n",
+	printk("PLHW: DAC dx: %d, dy: %d, offset: %d, step: %d\n",
 	       psu->vcom.dac_dx, psu->vcom.dac_dy, psu->vcom.dac_offset,
 	       psu->vcom.dac_step_mv);
 
@@ -1144,7 +1146,7 @@ static int pl_hardware_vcomcal_measure_dac(struct mxc_epdc_pl_hardware *p,
 	psu->vcom.last_v_in = psu->vcom.target_mv;
 	psu->vcom.dac_measured = true;
 
-	printk("PLHW: scaled VCOM %d -> %d (swing: %d) mV\n",
+	printk("PLHW: Scaled VCOM %d -> %d (swing: %d) mV\n",
 	       psu->vcom.reference_mv, psu->vcom.target_mv, swing);
 
 	return 0;
