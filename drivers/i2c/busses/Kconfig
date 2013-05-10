@@ -830,6 +830,19 @@ config I2C_SIBYTE
 	help
 	  Supports the SiByte SOC on-chip I2C interfaces (2 channels).
 
+config I2C_SC18IS60X
+	tristate "NXP SC18IS600/601 SPI to I2C bridge driver"
+	help
+	  Supports I2C over SPI using the NXP SC18IS600/601 SPI to I2C bridge.
+
+config I2C_SC18IS60X_SHARED_SPI
+	bool "Share SPI device with another driver"
+	depends on I2C_SC18IS60X
+	help
+	  When enabled, another SPI driver must implement a couple of functions
+	  in order to let this driver access a same SPI device instance.  This
+	  is useful when not enough chip-selects are available in hardware.
+
 config I2C_STUB
 	tristate "I2C/SMBus Test Stub"
 	depends on EXPERIMENTAL && m
