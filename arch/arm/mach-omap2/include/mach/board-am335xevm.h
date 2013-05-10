@@ -28,7 +28,7 @@
 #define BEAGLE_BONE_A3		5
 
 /* REVIST : check posibility of PROFILE_(x) syntax usage */
-#define PROFILE_NONE	-1	/* Few EVM doesn't have profiles */
+#define PROFILE_NONE		-1	/* Few EVM doesn't have profiles */
 #define PROFILE_0		(0x1 << 0)
 #define PROFILE_1		(0x1 << 1)
 #define PROFILE_2		(0x1 << 2)
@@ -38,6 +38,21 @@
 #define PROFILE_6		(0x1 << 6)
 #define PROFILE_7		(0x1 << 7)
 #define PROFILE_ALL		0xFF
+
+#define MODELF_CS 0
+#define MODELF_WAITPIN 0
+
+#define MODELF_AC_CS_ON		0
+#define MODELF_AC_CS_RD_OFF	620
+#define MODELF_AC_CS_WR_OFF	620
+#define MODELF_AC_WE_ON		40
+#define MODELF_AC_WE_OFF	300
+#define MODELF_AC_OE_ON		40
+#define MODELF_AC_OE_OFF	600
+
+#define MODELF_AC_RD_ACCESS	600
+#define MODELF_AC_RD_CYCLE	620
+#define MODELF_AC_WR_CYCLE	620
 
 void am33xx_evmid_fillup(unsigned int evmid);
 void am33xx_cpsw_macidfillup(char *eeprommacid0, char *eeprommacid1);
