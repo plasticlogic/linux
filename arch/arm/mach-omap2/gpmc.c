@@ -254,6 +254,9 @@ static int set_gpmc_timing_reg(int cs, int reg, int st_bit, int end_bit,
 		ticks = 0;
 	else
 		ticks = gpmc_ns_to_ticks(time);
+
+	if (gpmc_cs_read_reg(0, GPMC_CS_CONFIG1) & GPMC_CONFIG1_TIME_PARA_GRAN)
+		ticks /= 2;
 	nr_bits = end_bit - st_bit + 1;
 	if (ticks >= 1 << nr_bits) {
 #ifdef DEBUG
