@@ -2431,6 +2431,68 @@ config FB_ST7735
 	help
 	  Framebuffer support for the ST7735 display controller in SPI mode.
 
+config FB_MODELF
+	tristate "modelF/Epson S1D13531/S1D13541 controller support"
+	depends on FB
+        help
+	  This driver implements support for the modelF controller.
+	  The release name for this device was Epson S1D13531/S1D13541.
+
+choice
+	prompt "Connection"
+	depends on FB_MODELF
+	default MODELF_CONNECTION_ASYNC
+	help
+	  Choose the conection to the controller.
+
+config MODELF_CONNECTION_ASYNC
+	bool "Asynchronous bus"
+config MODELF_CONNECTION_SPI
+	bool "SPI bus"
+endchoice
+
+choice
+	prompt "SPI Connection"
+	depends on FB_MODELF
+	default MODELF_SPI_WITHOUT_HDC
+	help
+	  Choose this option for SPI bus without HDC.
+
+config MODELF_SPI_WITHOUT_HDC
+	bool "SPI bus without HDC"
+endchoice
+
+config MODELF_SWAP_SPI_BYTE
+	bool "Swap byte order on SPI"
+	depends on FB_MODELF
+	help
+	  This swaps SPI byte order.
+
+config MODELF_DEBUG
+	bool "Lots of debug info"
+	depends on FB_MODELF
+	help
+	  This outputs lots of debug information.
+
+config MODELF_PL_HARDWARE
+	tristate "PL power control hardware for Epson S1D135x1"
+	depends on FB_MODELF
+	help
+	  This select PL power control hardware for Epson S1D135x1.
+
+config MODELF_PL_Z1_3
+	bool "PL Hummingbird Z1.3"
+	depends on MODELF_PL_HARDWARE
+	help
+	  Select PL Hummingbird Z1.3 or another variant.
+
+config MODELF_PL_ROBIN
+	bool "PL Robin expansion board"
+	depends on MODELF_PL_HARDWARE
+	select I2C_SC18IS60X
+	help
+	  Choose this option to enable PL Robin expansion board.
+
 source "drivers/video/omap/Kconfig"
 source "drivers/video/omap2/Kconfig"
 
