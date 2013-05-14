@@ -3201,6 +3201,10 @@ static void modelffb_remove_file(void)
 	device_remove_file(parinfo->dev, &dev_attr_control);
 	device_remove_file(parinfo->dev, &dev_attr_waveform);
 	device_remove_file(parinfo->dev, &dev_attr_init_code);
+#if (defined(CONFIG_MODELF_PL_HARDWARE) \
+     || defined(CONFIG_MODELF_PL_HARDWARE_MODULE))
+	device_remove_file(parinfo->dev, &dev_attr_vcom);
+#endif
 }
 
 /* =========== registration & unregistration =========== */

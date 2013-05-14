@@ -9,6 +9,7 @@
  *
  */
 
+#include <linux/module.h>
 #include <linux/kernel.h>
 #include <linux/slab.h>
 
@@ -34,6 +35,7 @@ struct temperature_set* get_vcom_temperature_set(void)
 {
 	return &vcom_set;
 }
+EXPORT_SYMBOL(get_vcom_temperature_set);
 
 static int store_vcom_temps_and_voltage(const struct temperature_entry *p_new)
 {
@@ -69,3 +71,4 @@ int read_and_store_vcom(const char *p_range_text)
 	}
 	return retval;
 }
+EXPORT_SYMBOL(read_and_store_vcom);

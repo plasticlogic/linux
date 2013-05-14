@@ -9,6 +9,7 @@
  *
  */
 
+#include <linux/module.h>
 #include <linux/kernel.h>
 #include <linux/slab.h>
 #include <linux/vmalloc.h>
@@ -62,6 +63,7 @@ int temperature_set_store_entry(struct temperature_set* set, const struct temper
 
 	return 0;
 }
+EXPORT_SYMBOL(temperature_set_store_entry);
 
 static int compare_low_temp(const void* p_left, const void* p_right)
 {
@@ -85,6 +87,7 @@ void temperature_set_commit(struct temperature_set* set)
 
 	set->changed = true;
 }
+EXPORT_SYMBOL(temperature_set_commit);
 
 static void *my_bsearch(const void *key, const void *base, size_t num, size_t size,
 		int (*compare)(const void *key, const void *elt))
@@ -149,6 +152,7 @@ const struct temperature_entry** temperature_set_lookup(struct temperature_set* 
 
 	return p_entry;
 }
+EXPORT_SYMBOL(temperature_set_lookup);
 
 const struct temperature_entry** temperature_set_get_first_range(struct temperature_set* set)
 {
@@ -163,6 +167,7 @@ const struct temperature_entry** temperature_set_get_first_range(struct temperat
 
 	return p_first;
 }
+EXPORT_SYMBOL(temperature_set_get_first_range);
 
 const struct temperature_entry** temperature_set_get_next_range(struct temperature_set* set,
 								const struct temperature_entry** p_current)
@@ -183,6 +188,7 @@ const struct temperature_entry** temperature_set_get_next_range(struct temperatu
 
 	return p_next;
 }
+EXPORT_SYMBOL(temperature_set_get_next_range);
 
 int validate_temperatures(const struct temperature_entry *p_new)
 {
@@ -195,6 +201,7 @@ int validate_temperatures(const struct temperature_entry *p_new)
 
 	return status;
 }
+EXPORT_SYMBOL(validate_temperatures);
 
 int temperature_set_format_integer(const struct temperature_entry* p_range, char *tbuf, int buf_space)
 {
@@ -205,6 +212,7 @@ int temperature_set_format_integer(const struct temperature_entry* p_range, char
 
 	return written;
 }
+EXPORT_SYMBOL(temperature_set_format_integer);
 
 int temperature_set_read_integer(const char *p_range_text, struct temperature_entry *range)
 {
@@ -219,16 +227,19 @@ int temperature_set_read_integer(const char *p_range_text, struct temperature_en
 
 	return retval;
 }
+EXPORT_SYMBOL(temperature_set_read_integer);
 
 void temperature_set_erase_ints(struct temperature_set* set)
 {
 	temperature_set_erase(set, false);
 }
+EXPORT_SYMBOL(temperature_set_erase_ints);
 
 void temperature_set_erase_pointers(struct temperature_set* set)
 {
 	temperature_set_erase(set, true);
 }
+EXPORT_SYMBOL(temperature_set_erase_pointers);
 
 
 s32 temperature_set_lookup_int(struct temperature_set* set, int temperature)
@@ -243,6 +254,7 @@ s32 temperature_set_lookup_int(struct temperature_set* set, int temperature)
 
 	return val;
 }
+EXPORT_SYMBOL(temperature_set_lookup_int);
 
 static const struct temperature_entry* temperature_set_get_range(struct temperature_set* set, size_t index)
 {
@@ -347,10 +359,12 @@ s32 constrain_temp_to_set(struct temperature_set* set, s32 temperature,
 
         return constrained_temp;
 }
+EXPORT_SYMBOL(constrain_temp_to_set);
 
 
 bool temperature_set_changed(const struct temperature_set* set)
 {
 	return set->changed;
 }
+EXPORT_SYMBOL(temperature_set_changed);
 

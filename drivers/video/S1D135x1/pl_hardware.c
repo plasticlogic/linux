@@ -815,6 +815,7 @@ s32 pl_hardware_constrain_temperature_range(s32 temperature)
 
         return constrained_temp;
 }
+EXPORT_SYMBOL(pl_hardware_constrain_temperature_range);
 
 int pl_hardware_set_temperature(struct pl_hardware *plhw,
 					 int temperature)
@@ -834,11 +835,13 @@ int pl_hardware_set_temperature(struct pl_hardware *plhw,
 
         return stat;
 }
+EXPORT_SYMBOL(pl_hardware_set_temperature);
 
 int pl_hardware_refresh_current_vcom(struct pl_hardware *plhw)
 {
 	return pl_hardware_do_set_temperature(plhw, plhw->last_temperature);
 }
+EXPORT_SYMBOL(pl_hardware_refresh_current_vcom);
 
 static int pl_hardware_do_set_temperature(struct pl_hardware *plhw,
 					 int temperature)
@@ -860,6 +863,7 @@ int pl_hardware_is_module_a(const struct pl_hardware *plhw)
 {
 	return plhw->is_module_a;
 }
+EXPORT_SYMBOL(pl_hardware_is_module_a);
 
 static int pl_hardware_module_a_init(struct pl_hardware *p)
 {
