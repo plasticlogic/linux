@@ -1793,7 +1793,7 @@ static void modelffb_measure_temperature(void)
 	int temperature;
 	int stat;
 #endif
-#if 1
+#ifdef CONFIG_MODELF_PL_ROBIN
 	printk(KERN_INFO "MODELFFB: not measuring the temperature\n");
 	return;
 #endif

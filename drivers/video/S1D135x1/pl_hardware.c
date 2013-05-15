@@ -921,7 +921,7 @@ static void pl_hardware_free_module_a(struct pl_hardware *p)
 
 static int pl_hardware_module_a_wait_pok(struct pl_hardware *p)
 {
-#if 1
+#if CONFIG_MODELF_PL_ROBIN
 	printk("PLHW: sleeping instead of waiting for POK (Module A)\n");
 	mdelay(100);
 	return 0;
