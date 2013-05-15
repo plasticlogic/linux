@@ -1765,7 +1765,7 @@ static struct pwmss_platform_data  pwm_pdata[3] = {
 	},
 };
 
-#ifdef CONFIG_FB_MODELF
+#if defined(CONFIG_FB_MODELF) || defined(CONFIG_FB_MODELF_MODULE)
 /* Module pin mux for EPSON model F */
 static struct pinmux_config modelf_pin_mux[] = {
 #ifdef CONFIG_MODELF_CONNECTION_ASYNC
@@ -1808,7 +1808,8 @@ static struct pinmux_config modelf_pin_mux[] = {
 	{"spi0_d0.gpio0_3",		OMAP_MUX_MODE7 | AM33XX_PIN_INPUT},
 	{"spi0_d1.gpio0_4",		OMAP_MUX_MODE7 | AM33XX_PIN_INPUT},
 #endif
-#if defined(CONFIG_MODELF_CONNECTION_SPI) && defined(CONFIG_MODELF_SPI_WITHOUT_HDC)
+#if (defined(CONFIG_MODELF_CONNECTION_SPI)		\
+     && defined(CONFIG_MODELF_SPI_WITHOUT_HDC))
 	{"spi0_sclk.spi0_sclk",	OMAP_MUX_MODE0 | AM33XX_PIN_INPUT},
 #if 0 /* use normal SPI chip-select */
 	{"spi0_cs0.spi0_cs0",	OMAP_MUX_MODE0 | AM33XX_PIN_OUTPUT},
@@ -1816,7 +1817,8 @@ static struct pinmux_config modelf_pin_mux[] = {
 	{"spi0_cs0.gpio0_5", 	OMAP_MUX_MODE7 | AM33XX_PIN_OUTPUT},
 #endif
 
-#ifdef CONFIG_MODELF_PL_HARDWARE
+#if (defined(CONFIG_MODELF_PL_HARDWARE) \
+     || defined(CONFIG_MODELF_PL_HARDWARE_MODULE))
 	{"spi0_d0.spi0_d0",		OMAP_MUX_MODE0 | AM33XX_PIN_OUTPUT},
 	{"spi0_d1.spi0_d1",		OMAP_MUX_MODE0 | AM33XX_PULL_ENBL | AM33XX_PULL_UP
                                                         | AM33XX_INPUT_EN},
@@ -3585,7 +3587,7 @@ static void spi1_init(int evm_id, int profile)
 	return;
 }
 
-#ifdef CONFIG_FB_MODELF
+#if defined(CONFIG_FB_MODELF) || defined(CONFIG_FB_MODELF_MODULE)
 /* setup gpmc for EPSON model F */
 static void modelf_init(int evm_id, int profile)
 {
@@ -3797,7 +3799,7 @@ static struct evm_dev_cfg beaglebone_old_dev_cfg[] = {
 	{i2c2_init,	DEV_ON_BASEBOARD, PROFILE_NONE},
 	{mmc0_init,	DEV_ON_BASEBOARD, PROFILE_NONE},
 	{boneleds_init,	DEV_ON_BASEBOARD, PROFILE_ALL},
-#ifdef CONFIG_FB_MODELF
+#if defined(CONFIG_FB_MODELF) || defined(CONFIG_FB_MODELF_MODULE)
 	{modelf_init,	DEV_ON_BASEBOARD, PROFILE_ALL},
 #ifdef CONFIG_MODELF_CONNECTION_SPI
 	{spi0_modelf_init,	DEV_ON_BASEBOARD, PROFILE_ALL},
@@ -3814,7 +3816,7 @@ static struct evm_dev_cfg beaglebone_dev_cfg[] = {
 	{usb0_init,	DEV_ON_BASEBOARD, PROFILE_NONE},
 	{usb1_init,	DEV_ON_BASEBOARD, PROFILE_NONE},
 	{mmc0_init,	DEV_ON_BASEBOARD, PROFILE_NONE},
-#ifdef CONFIG_FB_MODELF
+#if defined(CONFIG_FB_MODELF) || defined(CONFIG_FB_MODELF_MODULE)
 	{modelf_init,	DEV_ON_BASEBOARD, PROFILE_ALL},
 #ifdef CONFIG_MODELF_CONNECTION_SPI
 	{spi0_modelf_init,	DEV_ON_BASEBOARD, PROFILE_ALL},
@@ -4341,7 +4343,7 @@ static void __init am33xx_cpuidle_init(void)
 
 }
 
-#ifdef CONFIG_FB_MODELF
+#if defined(CONFIG_FB_MODELF) || defined(CONFIG_FB_MODELF_MODULE)
 static struct platform_device am33xx_modelf_device = {
 	.name			= "modelffb",
 	.id			= -1,
@@ -4370,7 +4372,7 @@ static void __init am335x_evm_init(void)
 	am335x_evm_i2c_init();
 	omap_sdrc_init(NULL, NULL);
 	usb_musb_init(&musb_board_data);
-#ifdef CONFIG_FB_MODELF
+#if defined(CONFIG_FB_MODELF) || defined(CONFIG_FB_MODELF_MODULE)
 	am33xx_modelffb_init();
 #endif
 	omap_board_config = am335x_evm_config;
