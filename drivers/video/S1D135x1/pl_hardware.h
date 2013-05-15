@@ -43,9 +43,4 @@ s32 pl_hardware_constrain_temperature_range(s32 temperature);
 
 int pl_hardware_is_module_a(const struct pl_hardware *plhw);
 
-#ifdef CONFIG_MODELF_PL_ROBIN
-extern void pl_hardware_i2c_spi_cs_hack(void);
-extern void pl_hardware_i2c_spi_write_test(struct spi_device *spi, char *msg);
-#endif
-
 #endif /* INCLUDE_PL_HARDWARE_H */

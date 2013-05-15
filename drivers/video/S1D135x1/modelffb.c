@@ -2876,8 +2876,6 @@ end:
 	return retval;
 }
 
-extern void sc18is60x_hack(struct pl_hardware *plhw);
-
 static ssize_t modelffb_store_control(struct device *dev,
 	struct device_attribute *attr, const char *buf, size_t count)
 {
