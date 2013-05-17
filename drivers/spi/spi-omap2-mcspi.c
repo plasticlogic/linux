@@ -680,9 +680,9 @@ static int omap2_mcspi_setup_transfer(struct spi_device *spi,
 	/* standard 4-wire master mode:  SCK, MOSI/out, MISO/in, nCS
 	 * REVISIT: this controller could support SPI_3WIRE mode.
 	 */
-#if (defined(CONFIG_MODELF_PL_HARDWARE) \
-     || defined(CONFIG_MODELF_PL_HARDWARE_MODULE))
-	/* Z1.3 swaps MOSI and MISO from conventional use */
+#ifdef CONFIG_MODELF_SWAP_SPI_IO
+#warning "SPI MISO/MOSI swapped"
+	/* swap MOSI and MISO from conventional use... */
 	l &= ~(OMAP2_MCSPI_CHCONF_DPE0);
 	l |= OMAP2_MCSPI_CHCONF_IS|OMAP2_MCSPI_CHCONF_DPE1;
 #else

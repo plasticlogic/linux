@@ -2478,6 +2478,16 @@ config MODELF_PL_HARDWARE
 	  Choose this option to enable PL power control hardware used with
 	  Epson S1D135x1.
 
+config MODELF_SWAP_SPI_IO
+	bool "When using SPI, swap the MISO/MOSI pins"
+	depends on ARCH_OMAP2PLUS
+	depends on FB_MODELF
+	depends on MODELF_PL_HARDWARE
+	help
+	  Choose this option to swap the MISO and MOSI pins on OMAP2 SPI port.
+	  This is to work around an unconventional routing on some PL hardware
+	  boards.
+
 choice
 	prompt "Select PL Hardware platform"
 	depends on MODELF_PL_HARDWARE

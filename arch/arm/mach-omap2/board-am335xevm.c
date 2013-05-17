@@ -741,10 +741,10 @@ static struct pinmux_config spi0_modelf_pin_mux[] = {
 	{"spi0_cs0.gpio0_5", 	OMAP_MUX_MODE7 | AM33XX_PIN_OUTPUT},
 #endif
 
-#if (defined(CONFIG_MODELF_PL_Z1_3) || defined(CONFIG_MODELF_PL_ROBIN))
-	{"spi0_d0.spi0_d0",		OMAP_MUX_MODE0 | AM33XX_PIN_OUTPUT},
-	{"spi0_d1.spi0_d1",		OMAP_MUX_MODE0 | AM33XX_PULL_ENBL | AM33XX_PULL_UP
-                                                        | AM33XX_INPUT_EN},
+#ifdef CONFIG_MODELF_SWAP_SPI_IO
+	{"spi0_d0.spi0_d0",	OMAP_MUX_MODE0 | AM33XX_PIN_OUTPUT},
+	{"spi0_d1.spi0_d1",	(OMAP_MUX_MODE0 | AM33XX_PULL_ENBL
+				 | AM33XX_PULL_UP | AM33XX_INPUT_EN)},
 #else
 	{"spi0_d0.spi0_d0",		OMAP_MUX_MODE0 | AM33XX_PIN_INPUT},
 	{"spi0_d1.spi0_d1",		OMAP_MUX_MODE0 | AM33XX_PIN_OUTPUT},
