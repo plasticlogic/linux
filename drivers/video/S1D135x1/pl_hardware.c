@@ -27,12 +27,10 @@
 #include <linux/slab.h>
 #include <linux/i2c.h>
 #include <linux/delay.h>
+#include <linux/gpio.h>
 #include "pl_hardware.h"
 #include "temperature-set.h"
 #include "vcom.h"
-#include <linux/gpio.h>
-/* for GPIO_TO_PIN definition, TODO, use proper macro */
-#include "modelffb.h"
 
 /* Set to 1 to enable the CPLD code */
 #define USE_CPLD 0

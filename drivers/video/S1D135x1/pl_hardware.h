@@ -12,10 +12,6 @@
 #ifndef INCLUDE_PL_HARDWARE_H
 #define INCLUDE_PL_HARDWARE_H 1
 
-#ifdef CONFIG_MODELF_PL_ROBIN
-# include <linux/spi/spi.h>
-#endif
-
 /* Opaque instance structure */
 struct pl_hardware;
 
