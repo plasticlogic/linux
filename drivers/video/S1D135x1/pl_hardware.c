@@ -199,10 +199,26 @@ struct pl_hardware_vcom_dac {
 };
 
 /* Module A GPIO pins */
-#ifdef CONFIG_MODELF_PL_Z1_3
-#define GPIO_POK		GPIO_TO_PIN(0, 15) /* Exp 24, D15 */
-#define GPIO_PMIC_EN		GPIO_TO_PIN(3, 21) /* Exp 25, A14 */
-#define GPIO_VCOM_SW_CLOSE	GPIO_TO_PIN(0, 14) /* Exp 26, D16 */
+#define GPIO_TO_PIN(bank, gpio) (32 * (bank) + (gpio))
+#if defined(CONFIG_MODELF_PL_Z1_3)
+#define GPIO_POK		GPIO_TO_PIN(0, 15)
+#define GPIO_PMIC_EN		GPIO_TO_PIN(3, 21)
+#define GPIO_VCOM_SW_CLOSE	GPIO_TO_PIN(0, 14)
+#elif defined(CONFIG_MODELF_PL_Z5_0)
+#define GPIO_POK		GPIO_TO_PIN(0, 15)
+#define GPIO_PMIC_EN		GPIO_TO_PIN(2, 25)
+#define GPIO_VCOM_SW_CLOSE	GPIO_TO_PIN(0, 14)
+#define GPIO_I2C_ENABLE		GPIO_TO_PIN(1 , 4)
+#define GPIO_3V3_ENABLE		GPIO_TO_PIN(1,  1)
+#define GPIO_VPP_SOLOMON	GPIO_TO_PIN(1, 29)
+#define GPIO_SOL_EP_SELECT	GPIO_TO_PIN(2, 24)
+#define GPIO_GPIO1		GPIO_TO_PIN(1,  0)
+#define GPIO_GPIO2		GPIO_TO_PIN(2, 22)
+#define GPIO_GPIO3		GPIO_TO_PIN(2, 23)
+#define GPIO_LED1		GPIO_TO_PIN(1,  2)
+#define GPIO_LED2		GPIO_TO_PIN(1,  6)
+#define GPIO_LED3		GPIO_TO_PIN(1,  3)
+#define GPIO_LED4		GPIO_TO_PIN(1,  7)
 #endif
 
 /* Opaque public instance structure */
@@ -263,6 +279,12 @@ static int pl_hardware_module_a_wait_pok(struct pl_hardware *p);
 static int pl_hardware_gpio_switch(struct pl_hardware *p, int gpio, bool on);
 #endif
 
+#if defined(CONFIG_MODELF_PL_Z5_0)
+/* Hummingbird Z5 hardware */
+static int pl_hardware_z50_init(struct pl_hardware *p);
+static int pl_hardware_z50_free(struct pl_hardware *p);
+#endif
+
 /* ----------------------------------------------------------------------------
  * public interface
  */
@@ -301,9 +323,17 @@ int pl_hardware_init(struct pl_hardware *p,
 
 	p->is_module_a = false;
 
+#ifdef CONFIG_MODELF_PL_Z5_0
+	stat = pl_hardware_z50_init(p);
+	if (stat) {
+		printk("PLHW: Failed to intialise HBZ5 hardware\n");
+		goto err_free_i2c;
+	}
+#endif
+
 #if USE_CPLD
 	stat = pl_hardware_cpld_init(p);
-#else
+#else /* ToDo: also handle CPLD free when other init steps fail... */
 	stat = -1;
 #endif
 	if (stat) {
@@ -311,20 +341,32 @@ int pl_hardware_init(struct pl_hardware *p,
 		stat = pl_hardware_module_a_init(p);
 		if (stat) {
 			printk("PLHW: Failed to initialise Module A\n");
+#ifdef CONFIG_MODELF_PL_Z5_0
+			goto err_free_z50;
+#else
 			goto err_free_i2c;
+#endif
 		}
 	}
 
 	stat = pl_hardware_hvpmic_init(p);
 	if (stat) {
 		printk("PLHW: Failed to initialise HVPMIC\n");
+#ifdef CONFIG_MODELF_PL_Z5_0
+		goto err_free_z50;
+#else
 		goto err_free_i2c;
+#endif
 	}
 
 	stat = pl_hardware_dac_init(p);
 	if (stat) {
 		printk("PLHW: Failed to intialise VCOM DAC\n");
+#ifdef CONFIG_MODELF_PL_Z5_0
+		goto err_free_z50;
+#else
 		goto err_free_i2c;
+#endif
 	}
 
 	/* initialise to a value that temperature sensor can never indicate */
@@ -339,6 +381,10 @@ int pl_hardware_init(struct pl_hardware *p,
 
 	return 0;
 
+#ifdef CONFIG_MODELF_PL_Z5_0
+err_free_z50:
+	pl_hardware_z50_free();
+#endif
 err_free_i2c:
 	i2c_put_adapter(p->i2c);
 err_exit:
@@ -354,6 +400,9 @@ void pl_hardware_free(struct pl_hardware *p)
 	if (p->init_done) {
 		i2c_put_adapter(p->i2c);
 		pl_hardware_free_module_a(p);
+#ifdef CONFIG_MODELF_PL_Z5_0
+		pl_hardware_z50_free(p);
+#endif
 	}
 
 	kfree(p);
@@ -839,7 +888,7 @@ static int pl_hardware_do_set_temperature(struct pl_hardware *plhw,
 
 	ret = pl_hardware_set_vcom(plhw, vcom_mv);
         plhw->last_temperature = temperature;
-	
+
 	return ret;
 }
 
@@ -940,6 +989,62 @@ static int pl_hardware_gpio_switch(struct pl_hardware *p, int gpio, bool on)
 	return 0;
 }
 #endif
+
+#ifdef CONFIG_MODELF_PL_Z5_0
+
+static const struct gpio z50_io_init[] = {
+	{ GPIO_SOL_EP_SELECT,GPIOF_IN,            "SOL_EP_SELECT"   },
+	{ GPIO_I2C_ENABLE,   GPIOF_OUT_INIT_HIGH, "GPIO_I2C_ENABLE" },
+	{ GPIO_3V3_ENABLE,   GPIOF_OUT_INIT_HIGH, "GPIO_3V3_ENABLE" },
+	{ GPIO_VPP_SOLOMON,  GPIOF_OUT_INIT_LOW,  "GPIO_VPP_SOLOMON"},
+	{ GPIO_GPIO1, GPIOF_OUT_INIT_LOW,  "GPIO_GPIO1" },
+	{ GPIO_GPIO2, GPIOF_OUT_INIT_HIGH, "GPIO_GPIO2" },
+	{ GPIO_GPIO3, GPIOF_OUT_INIT_LOW,  "GPIO_GPIO3" },
+	{ GPIO_LED1,  GPIOF_OUT_INIT_LOW,  "GPIO_LED1"  },
+	{ GPIO_LED2,  GPIOF_OUT_INIT_HIGH, "GPIO_LED2"  },
+	{ GPIO_LED3,  GPIOF_OUT_INIT_LOW,  "GPIO_LED3"  },
+	{ GPIO_LED4,  GPIOF_OUT_INIT_HIGH, "GPIO_LED4"  },
+};
+
+static int pl_hardware_z50_init(struct pl_hardware *p)
+{
+	int retval;
+	int i;
+	const struct gpio *io = z50_io_init;
+
+	for (i = 0; i < ARRAY_SIZE(z50_io_init); i++, io++) {
+
+		printk(KERN_INFO "PLHW: Requesting: %s (GPIO %d).\n",
+		       io->label, io->gpio);
+
+		if (gpio_request_one(io->gpio, io->flags, io->label) < 0) {
+			printk(KERN_ERR "PLHW: %s (GPIO %d) is busy.\n",
+			       io->label, io->gpio);
+			retval = -EBUSY;
+			goto error_ret;
+		}
+	}
+
+	return 0;
+
+error_ret:
+	while (i--) {
+		printk(KERN_INFO "PLHW: Backing out: %s (GPIO %d).\n",
+		       io->label, io->gpio);
+		gpio_free((--io)->gpio);
+	}
+
+	return retval;
+}
+
+static int pl_hardware_z50_free(struct pl_hardware *p)
+{
+	gpio_free_array(z50_io_init, ARRAY_SIZE(z50_io_init));
+
+	return 0;
+}
+
+#endif /* CONFIG_MODELF_PL_Z5_0 */
 
 MODULE_AUTHOR("Guillaume Tucker <guillaume.tucker@plasticlogic.com");
 MODULE_DESCRIPTION("Plastic Logic E-Paper hardware control");

@@ -38,17 +38,21 @@
 #define MODELF_HRDY_GPIO 30
 #endif
 
-#define MODELF_HIRQ_GPIO 20
-#define MODELF_SPIHDC_GPIO 13
+#define GPIO_TO_PIN(bank, gpio) (32 * (bank) + (gpio))
+#ifdef CONFIG_MODELF_PL_Z5_0
+#define MODELF_HIRQ_GPIO GPIO_TO_PIN(3, 21)
+#define MODELF_SPIHCS_GPIO GPIO_TO_PIN(3, 17)
+#else
+#define MODELF_HIRQ_GPIO GPIO_TO_PIN(0, 20)
 #define MODELF_SPIHCS_GPIO 5
+#endif
+#define MODELF_SPIHDC_GPIO 13
 #define MODELF_HIRQ (OMAP_GPIO_IRQ(MODELF_HIRQ_GPIO))
 #define MODELF_DEFERRED_IO_DELAY_DENOMINATOR 30
 #define MODELF_TIMEOUT_MS 5000
 #define MODELF_MTP_TIMEOUT_MS 500
 #define MODELF_MAX_LUT_NUM 4
 #define MODELF_MAX_LUT_QUEUE_NUM (MODELF_MAX_LUT_NUM * 2)
-
-#define GPIO_TO_PIN(bank, gpio) (32 * (bank) + (gpio))
 
 struct modelffb_oneshot_info {
 	int waveform_mode;
