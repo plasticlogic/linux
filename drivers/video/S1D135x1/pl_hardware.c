@@ -272,7 +272,7 @@ static int pl_hardware_module_a_init(struct pl_hardware *p);
 
 /* Module A */
 static void pl_hardware_free_module_a(struct pl_hardware *p);
-#ifdef CONFIG_MODELF_PL_Z1_3
+#ifndef CONFIG_MODELF_PL_ROBIN
 static int pl_hardware_module_a_wait_pok(struct pl_hardware *p);
 static int pl_hardware_gpio_switch(struct pl_hardware *p, int gpio, bool on);
 #endif
@@ -381,7 +381,7 @@ int pl_hardware_init(struct pl_hardware *p,
 
 #ifdef CONFIG_MODELF_PL_Z5_0
 err_free_z50:
-	pl_hardware_z50_free();
+	pl_hardware_z50_free(p);
 #endif
 err_free_i2c:
 	i2c_put_adapter(p->i2c);
@@ -461,7 +461,7 @@ int pl_hardware_enable(struct pl_hardware *p)
 		     "COM close");
 #endif
 	} else {
-#ifdef CONFIG_MODELF_PL_Z1_3
+#ifndef CONFIG_MODELF_PL_ROBIN
 		STEP(pl_hardware_gpio_switch(p, GPIO_VCOM_SW_CLOSE, false),
 		     "COM open");
 		STEP(pl_hardware_gpio_switch(p, GPIO_PMIC_EN, true), "HV ON");
@@ -469,7 +469,7 @@ int pl_hardware_enable(struct pl_hardware *p)
 #endif
 		STEP(pl_hardware_dac_write(p), "COM DAC value");
 		STEP(pl_hardware_dac_set_power(p, true), "DAC power on");
-#ifdef CONFIG_MODELF_PL_Z1_3
+#ifndef CONFIG_MODELF_PL_ROBIN
 		STEP(pl_hardware_gpio_switch(p, GPIO_VCOM_SW_CLOSE, true),
 		     "COM close");
 #endif
@@ -885,7 +885,7 @@ static int pl_hardware_do_set_temperature(struct pl_hardware *plhw,
         vcom_mv = temperature_set_lookup_int(set, temperature);
 
 	ret = pl_hardware_set_vcom(plhw, vcom_mv);
-        plhw->last_temperature = temperature;
+	plhw->last_temperature = temperature;
 
 	return ret;
 }
@@ -951,7 +951,7 @@ static void pl_hardware_free_module_a(struct pl_hardware *p)
 	}
 }
 
-#ifdef CONFIG_MODELF_PL_Z1_3
+#ifndef CONFIG_MODELF_PL_ROBIN
 static int pl_hardware_module_a_wait_pok(struct pl_hardware *p)
 {
 	static const unsigned POLL_DELAY_MS = 5;
