@@ -79,30 +79,32 @@ static struct modelffb_par *parinfo;
 #ifdef CONFIG_I2C_SC18IS60X_SHARED_SPI
 /* hack to share same SPI device with sc18is60x I2C bridge driver if only 1
  * chip select is available */
-
-static DEFINE_MUTEX(sc18is60x_spi_lock);
-static u8 sc18is60x_saved_spi_mode;
-
-struct spi_device *sc18is60x_get_spi(void)
-{
-	mutex_lock(&sc18is60x_spi_lock);
-	mdelay(10);
-	sc18is60x_saved_spi_mode = parinfo->spi->mode;
-	parinfo->spi->mode = SPI_MODE_3;
-
-	return parinfo->spi;
-}
-EXPORT_SYMBOL(sc18is60x_get_spi);
-
-void sc18is60x_put_spi(struct spi_device *spi)
-{
-	BUG_ON(spi != parinfo->spi);
-	parinfo->spi->mode = sc18is60x_saved_spi_mode;
-	mdelay(10);
-	mutex_unlock(&sc18is60x_spi_lock);
-}
-EXPORT_SYMBOL(sc18is60x_put_spi);
+extern struct mutex sc18is60x_spi_lock;
+extern struct spi_device *sc18is60x_shared_spi;
 #endif /* CONFIG_I2C_SC18IS60X_SHARED_SPI */
+
+static inline int modelffb_lock(void)
+{
+	if (down_interruptible(&parinfo->access_sem)) {
+		printk(KERN_ERR "MODELFFB: down semaphore interrupted\n");
+		return -EBUSY;
+	}
+
+#ifdef CONFIG_I2C_SC18IS60X_SHARED_SPI
+	mutex_lock(&sc18is60x_spi_lock);
+#endif
+
+	return 0;
+}
+
+static inline void modelffb_unlock(void)
+{
+#ifdef CONFIG_I2C_SC18IS60X_SHARED_SPI
+	mutex_unlock(&sc18is60x_spi_lock);
+#endif
+
+	up(&parinfo->access_sem);
+}
 
 /* =========== asynchronous bus specific functions =========== */
 #ifdef CONFIG_MODELF_CONNECTION_ASYNC
@@ -223,15 +225,9 @@ static void my_spi_write(struct spi_device *spi, void *buffer, size_t bytes)
         t[0].bits_per_word = 16;
         spi_message_add_tail(&t[0], &m);
 
-#ifdef CONFIG_I2C_SC18IS60X
-	mutex_lock(&sc18is60x_spi_lock);
-#endif
         error = spi_sync(spi, &m);
         if (error < 0)
                 printk(KERN_ERR "MODELFFB: SPI write error: %d\n", error);
-#ifdef CONFIG_I2C_SC18IS60X
-	mutex_unlock(&sc18is60x_spi_lock);
-#endif
 }
 
 static void my_spi_read(struct spi_device *spi, void *buffer, size_t bytes)
@@ -248,39 +244,24 @@ static void my_spi_read(struct spi_device *spi, void *buffer, size_t bytes)
         t[0].bits_per_word = 16;
         spi_message_add_tail(&t[0], &m);
 
-#ifdef CONFIG_I2C_SC18IS60X
-	mutex_lock(&sc18is60x_spi_lock);
-#endif
         error = spi_sync(spi, &m);
         if (error < 0)
                 printk(KERN_ERR "MODELFFB: SPI read error: %d\n", error);
-#ifdef CONFIG_I2C_SC18IS60X
-	mutex_unlock(&sc18is60x_spi_lock);
-#endif
 }
 
 static void __modelffb_write_command_spi(uint16_t command)
 {
 #ifdef CONFIG_MODELF_SWAP_SPI_BYTE
-	uint16_t buffer = SWAP_BYTE_16(command);
+	command = SWAP_BYTE_16(command);
+#endif
 
 #ifdef CONFIG_MODELF_SPI_WITHOUT_HDC
 	gpio_set_value(MODELF_SPIHCS_GPIO, 0);
-	my_spi_write(parinfo->spi, &buffer, 2);
-#else
-	gpio_set_value(MODELF_SPIHDC_GPIO, 0);
-	my_spi_write(parinfo->spi, &buffer, 2);
-	gpio_set_value(MODELF_SPIHDC_GPIO, 1);
-#endif
-#else
-#ifdef CONFIG_MODELF_SPI_WITHOUT_HDC
-	gpio_set_value(MODELF_SPIHCS_GPIO, 0);
 	my_spi_write(parinfo->spi, &command, 2);
 #else
 	gpio_set_value(MODELF_SPIHDC_GPIO, 0);
 	my_spi_write(parinfo->spi, &command, 2);
 	gpio_set_value(MODELF_SPIHDC_GPIO, 1);
-#endif
 #endif
 }
 
@@ -672,12 +653,10 @@ static void __modelffb_print_reg(uint16_t reg)
 
 static void modelffb_print_reg(uint16_t reg)
 {
-	if (down_interruptible(&parinfo->access_sem)) {
-		printk(KERN_ERR "MODELFFB: down semaphore interrupted\n");
+	if (modelffb_lock())
 		return;
-	}
 	__modelffb_print_reg(reg);
-	up(&parinfo->access_sem);
+	modelffb_unlock();
 }
 #endif
 
@@ -688,10 +667,8 @@ static inline void modelffb_dump_memory(uint32_t modelf_addr, size_t size)
 	printk(KERN_INFO "MODELFFB: dumping 0x%08x bytes memory from 0x%08x",
 		size, modelf_addr);
 
-	if (down_interruptible(&parinfo->access_sem)) {
-		printk(KERN_ERR "MODELFFB: down semaphore interrupted\n");
+	if (modelffb_lock())
 		return;
-	}
 
 	__modelffb_simple_command_p4(MODELF_COM_RAW_READ,
 		modelf_addr & 0xffff, (modelf_addr >> 16) & 0xffff,
@@ -713,7 +690,7 @@ static inline void modelffb_dump_memory(uint32_t modelf_addr, size_t size)
 	__modelffb_simple_command(MODELF_COM_END_OF_RAW_ACCESS);
 	__modelffb_wait_for_HRDY_ready(MODELF_TIMEOUT_MS);
 
-	up(&parinfo->access_sem);
+	modelffb_unlock();
 }
 
 static inline void modelffb_dump_register(uint16_t modelf_addr, size_t size)
@@ -723,10 +700,8 @@ static inline void modelffb_dump_register(uint16_t modelf_addr, size_t size)
 	printk(KERN_INFO "MODELFFB: dumping %d registers from 0x%04x",
 	       size, modelf_addr);
 
-	if (down_interruptible(&parinfo->access_sem)) {
-		printk(KERN_ERR "MODELFFB: down semaphore interrupted\n");
+	if (modelffb_lock())
 		return;
-	}
 
 	for (i = 0; i < size; i++) {
 		if (i % 8 == 0)
@@ -737,19 +712,19 @@ static inline void modelffb_dump_register(uint16_t modelf_addr, size_t size)
 	}
 	printk("\n");
 
-	up(&parinfo->access_sem);
+	modelffb_unlock();
 }
 
 static inline uint16_t modelffb_read_register(uint16_t modelf_addr)
 {
 	uint16_t ret_val;
 
-	if (down_interruptible(&parinfo->access_sem)) {
-		printk(KERN_ERR "MODELFFB: down semaphore interrupted\n");
-		return -EBUSY;
-	}
+	ret_val = modelffb_lock();
+	if (ret_val)
+		return ret_val;
+
 	ret_val = __modelffb_reg_read(modelf_addr);
-	up(&parinfo->access_sem);
+	modelffb_unlock();
 
 	return ret_val;
 }
@@ -758,12 +733,10 @@ static inline void modelffb_write_register(uint16_t modelf_addr, uint16_t modelf
 {
 	printk(KERN_INFO "MODELFFB: write register 0x%04x = 0x%04x", modelf_addr, modelf_data);
 
-	if (down_interruptible(&parinfo->access_sem)) {
-		printk(KERN_ERR "MODELFFB: down semaphore interrupted\n");
+	if (modelffb_lock())
 		return;
-	}
 	__modelffb_reg_write(modelf_addr, modelf_data);
-	up(&parinfo->access_sem);
+	modelffb_unlock();
 }
 
 static int __modelffb_send_init_code(void)
@@ -961,11 +934,9 @@ static int modelffb_chip_init(void)
 	uint16_t readval;
 	int retval = 0;
 
-	if (down_interruptible(&parinfo->access_sem)) {
-		printk(KERN_ERR "MODELFFB: down semaphore interrupted\n");
-		retval = -EBUSY;
+	retval = modelffb_lock();
+	if (retval)
 		goto err;
-	}
 
 	__modelffb_reset();
 
@@ -1067,14 +1038,14 @@ static int modelffb_chip_init(void)
 		goto up_sem;
 	}
 
-	up(&parinfo->access_sem);
+	modelffb_unlock();
 #ifdef CONFIG_MODELF_DEBUG
 	printk(KERN_INFO "MODELFFB: init done\n");
 #endif
 	return 0;
 
 up_sem:
-	up(&parinfo->access_sem);
+	modelffb_unlock();
 err:
 	printk(KERN_INFO "MODELFFB: chip_init failed\n");
 	return retval;
@@ -1208,12 +1179,11 @@ static int modelffb_send_image(int x, int y, int width, int height)
 {
 	int retval = 0;
 
-	if (down_interruptible(&parinfo->access_sem)) {
-		printk(KERN_ERR "MODELFFB: down semaphore interrupted\n");
-		return -EBUSY;
-	}
+	retval = modelffb_lock();
+	if (retval)
+		return retval;
 	retval = __modelffb_send_image(x, y, width, height);
-	up(&parinfo->access_sem);
+	modelffb_unlock();
 	return retval;
 }
 
@@ -1246,17 +1216,16 @@ static int modelffb_fill_update_buffer(uint8_t color)
 {
 	int retval = 0;
 
-	if (down_interruptible(&parinfo->access_sem)) {
-		printk(KERN_ERR "MODELFFB: down semaphore interrupted\n");
-		return -EBUSY;
-	}
+	retval = modelffb_lock();
+	if (retval)
+		return retval;
 
 	__modelffb_fill_frame_buffer(color);
 	__modelffb_simple_command(MODELF_COM_INIT_UPDATE_BUFFER);
 	__modelffb_simple_command(MODELF_COM_WAIT_TRIGGER_DONE);
 	retval = __modelffb_wait_for_HRDY_ready(MODELF_TIMEOUT_MS);
 
-	up(&parinfo->access_sem);
+	modelffb_unlock();
 	return retval;
 }
 
@@ -1293,12 +1262,6 @@ static int modelffb_cleanup_full(int waveform_mode)
 	printk(KERN_INFO "MODELFFB: cleanup full in effect\n");
 #endif
 
-	if (down_interruptible(&parinfo->access_sem)) {
-		printk(KERN_ERR "MODELFFB: down semaphore interrupted\n");
-		return -EBUSY;
-	}
-
-        /* Enable power to the EPD panel */
 #if (defined(CONFIG_MODELF_PL_HARDWARE) \
      || defined(CONFIG_MODELF_PL_HARDWARE_MODULE))
         retval = pl_hardware_enable(parinfo->pl_hardware);
@@ -1308,17 +1271,21 @@ static int modelffb_cleanup_full(int waveform_mode)
         }
 #endif
 
+	retval = modelffb_lock();
+	if (retval)
+		goto err_power_off;
+
 	retval = __modelffb_cleanup_full(waveform_mode);
 
-        /* Disable power to the EPD panel */
+	modelffb_unlock();
+
+err_power_off:
 #if (defined(CONFIG_MODELF_PL_HARDWARE) \
      || defined(CONFIG_MODELF_PL_HARDWARE_MODULE))
         pl_hardware_disable(parinfo->pl_hardware);
-#endif
-
 err_exit:
-	up(&parinfo->access_sem);
-	retval = 0;
+#endif
+	retval = 0; /* ToDo: really? */
 	return retval;
 }
 
@@ -1342,10 +1309,6 @@ static int modelffb_update_full(int waveform_mode)
 	printk(KERN_INFO "MODELFFB: update full in effect\n");
 #endif
 
-	if (down_interruptible(&parinfo->access_sem)) {
-		printk(KERN_ERR "MODELFFB: down semaphore interrupted\n");
-		return -EBUSY;
-	}
         /* Enable power to the EPD panel */
 #if (defined(CONFIG_MODELF_PL_HARDWARE) \
      || defined(CONFIG_MODELF_PL_HARDWARE_MODULE))
@@ -1356,16 +1319,20 @@ static int modelffb_update_full(int waveform_mode)
         }
 #endif
 
+	retval = modelffb_lock();
+	if (retval)
+		goto err_power_off;
+
 	retval = __modelffb_update_full(waveform_mode);
 
-        /* Disable power to the EPD panel */
+	modelffb_unlock();
+
+err_power_off:
 #if (defined(CONFIG_MODELF_PL_HARDWARE) \
      || defined(CONFIG_MODELF_PL_HARDWARE_MODULE))
         pl_hardware_disable(parinfo->pl_hardware);
-#endif
-
 err_exit:
-	up(&parinfo->access_sem);
+#endif
 	return retval;
 }
 
@@ -1463,12 +1430,11 @@ static int modelffb_request_lut(int x, int y, int width, int height)
 {
 	int retval = 0;
 
-	if (down_interruptible(&parinfo->lut_in_use_sem)) {
-		printk(KERN_ERR "MODELFFB: down semaphore interrupted\n");
-		return -EBUSY;
-	}
+	retval = modelffb_lock();
+	if (retval)
+		return retval;
 	__modelffb_request_lut(x, y, width, height);
-	up(&parinfo->lut_in_use_sem);
+	modelffb_unlock();
 	return retval;
 }
 
@@ -1494,12 +1460,13 @@ static int __modelffb_sync_lut(void)
 
 static int modelffb_sync_lut(void)
 {
-	if (down_interruptible(&parinfo->lut_in_use_sem)) {
-		printk(KERN_ERR "MODELFFB: down semaphore interrupted\n");
-		return -EBUSY;
-	}
+	int retval;
+
+	retval = modelffb_lock();
+	if (retval)
+		return retval;
 	__modelffb_sync_lut();
-	up(&parinfo->lut_in_use_sem);
+	modelffb_unlock();
 	return 0;
 }
 
@@ -1536,10 +1503,9 @@ static int modelffb_enqueue_lut_queue(int oneshot_type, int waveform_mode,
 	int retval = 0;
 	int next;
 
-	if (down_interruptible(&parinfo->lut_queue_sem)) {
-		printk(KERN_ERR "MODELFFB: down semaphore interrupted\n");
-		return -EBUSY;
-	}
+	retval = modelffb_lock();
+	if (retval)
+		return retval;
 
 	next = (parinfo->lut_queue_head + parinfo->lut_queue_count) % MODELF_MAX_LUT_QUEUE_NUM;
 
@@ -1557,7 +1523,7 @@ static int modelffb_enqueue_lut_queue(int oneshot_type, int waveform_mode,
 		retval = -ENOMEM;
 	}
 
-	up(&parinfo->lut_queue_sem);
+	modelffb_unlock();
 	return retval;
 }
 
@@ -1613,32 +1579,26 @@ static void modelffb_cleanup_area_lut(int x, int y, int width, int height,
 {
 #if (defined(CONFIG_MODELF_PL_HARDWARE) \
      || defined(CONFIG_MODELF_PL_HARDWARE_MODULE))
-	int retval;
-#endif
-
-	if (down_interruptible(&parinfo->access_sem)) {
-		printk(KERN_ERR "MODELFFB: down semaphore interrupted\n");
-		return;
-	}
-       /* Enable power to the EPD panel */
-#if (defined(CONFIG_MODELF_PL_HARDWARE) \
-     || defined(CONFIG_MODELF_PL_HARDWARE_MODULE))
-        retval = pl_hardware_enable(parinfo->pl_hardware);
-        if (retval) {
+	if (pl_hardware_enable(parinfo->pl_hardware)) {
                 dev_err(parinfo->dev, "Failed to enable PL hardware\n");
-                goto err_exit;
+		return;
         }
 #endif
 
+	if (modelffb_lock())
+		goto err_power_off;
+
 	__modelffb_cleanup_area_lut(x, y, width, height, waveform_mode, lut);
-        /* Disable power to the EPD panel */
+
+	modelffb_unlock();
+
+err_power_off:
 #if (defined(CONFIG_MODELF_PL_HARDWARE) \
      || defined(CONFIG_MODELF_PL_HARDWARE_MODULE))
 /* this switched power off too early
         pl_hardware_disable(parinfo->pl_hardware); */
 #endif
-err_exit:
-	up(&parinfo->access_sem);
+	return;
 }
 
 static void modelffb_cleanup_area(int x, int y, int width, int height,
@@ -1646,38 +1606,32 @@ static void modelffb_cleanup_area(int x, int y, int width, int height,
 {
 #if (defined(CONFIG_MODELF_PL_HARDWARE) \
      || defined(CONFIG_MODELF_PL_HARDWARE_MODULE))
-	int retval;
-#endif
-	if (down_interruptible(&parinfo->access_sem)) {
-		printk(KERN_ERR "MODELFFB: down semaphore interrupted\n");
-		return;
-	}
-
-	__modelffb_wait_for_reg_value(MODELF_REG_LUT_STATUS, MODELF_BF_LUT_IN_USE, 0,
-		MODELF_TIMEOUT_MS);
-
-        /* Enable power to the EPD panel */
-#if (defined(CONFIG_MODELF_PL_HARDWARE) \
-     || defined(CONFIG_MODELF_PL_HARDWARE_MODULE))
-        retval = pl_hardware_enable(parinfo->pl_hardware);
-        if (retval) {
+        if (pl_hardware_enable(parinfo->pl_hardware)) {
                 dev_err(parinfo->dev, "Failed to enable PL hardware\n");
-                goto err_exit;
+		return;
         }
 #endif
+
+	if (modelffb_lock())
+		goto err_power_off;
+
+	__modelffb_wait_for_reg_value(MODELF_REG_LUT_STATUS,
+				      MODELF_BF_LUT_IN_USE, 0,
+				      MODELF_TIMEOUT_MS);
 	__modelffb_simple_command_p5(MODELF_COM_UPDATE_AREA,
 		MODELF_WAVEFORM_MODE(waveform_mode) | MODELF_UPDATE_LUT(0),
 		x & 0x1ff, y & 0x3ff, width & 0x1ff, height & 0x3ff);
 	__modelffb_simple_command(MODELF_COM_WAIT_TRIGGER_DONE);
 	__modelffb_wait_for_HRDY_ready(MODELF_TIMEOUT_MS);
 
-        /* Disable power to the EPD panel */
+	modelffb_unlock();
+
+err_power_off:
 #if (defined(CONFIG_MODELF_PL_HARDWARE) \
      || defined(CONFIG_MODELF_PL_HARDWARE_MODULE))
         pl_hardware_disable(parinfo->pl_hardware);
 #endif
-err_exit:
-	up(&parinfo->access_sem);
+	return;
 }
 
 static void __modelffb_update_area(int x, int y, int width, int height,
@@ -1693,30 +1647,25 @@ static void modelffb_update_area(int x, int y, int width, int height,
 {
 #if (defined(CONFIG_MODELF_PL_HARDWARE) \
      || defined(CONFIG_MODELF_PL_HARDWARE_MODULE))
-	int retval;
-#endif
-
-	if (down_interruptible(&parinfo->access_sem)) {
-		printk(KERN_ERR "MODELFFB: down semaphore interrupted\n");
-		return;
-	}
-        /* Enable power to the EPD panel */
-#if (defined(CONFIG_MODELF_PL_HARDWARE) \
-     || defined(CONFIG_MODELF_PL_HARDWARE_MODULE))
-        retval = pl_hardware_enable(parinfo->pl_hardware);
-        if (retval) {
+	if (pl_hardware_enable(parinfo->pl_hardware)) {
                 dev_err(parinfo->dev, "Failed to enable PL hardware\n");
-                goto err_exit;
+		return;
         }
 #endif
+
+	if (modelffb_lock())
+		goto err_power_off;
+
 	__modelffb_update_area(x, y, width, height, waveform_mode, lut);
-        /* Disable power to the EPD panel */
+
+	modelffb_unlock();
+
+err_power_off:
 #if (defined(CONFIG_MODELF_PL_HARDWARE) \
      || defined(CONFIG_MODELF_PL_HARDWARE_MODULE))
         pl_hardware_disable(parinfo->pl_hardware);
 #endif
-err_exit:
-	up(&parinfo->access_sem);
+	return;
 }
 
 static int modelffb_panel_init(void)
@@ -1736,12 +1685,10 @@ static void __modelffb_run(void)
 
 static void modelffb_run(void)
 {
-	if (down_interruptible(&parinfo->access_sem)) {
-		printk(KERN_ERR "MODELFFB: down semaphore interrupted\n");
+	if (modelffb_lock())
 		return;
-	}
 	__modelffb_run();
-	up(&parinfo->access_sem);
+	modelffb_unlock();
 
 #ifdef CONFIG_MODELF_DEBUG
 	printk(KERN_INFO "MODELFFB: WORKQUEUE: go into run mode\n");
@@ -1768,12 +1715,10 @@ static void __modelffb_sleep(void)
 
 static void modelffb_sleep(void)
 {
-	if (down_interruptible(&parinfo->access_sem)) {
-		printk(KERN_ERR "MODELFFB: down semaphore interrupted\n");
+	if (modelffb_lock())
 		return;
-	}
 	__modelffb_sleep();
-	up(&parinfo->access_sem);
+	modelffb_unlock();
 
 #ifdef CONFIG_MODELF_DEBUG
 	printk(KERN_INFO "MODELFFB: WORKQUEUE: go into sleep mode\n");
@@ -1801,10 +1746,8 @@ static void modelffb_measure_temperature(void)
 	printk(KERN_INFO "MODELFFB: measure temperature\n");
 #endif
 
-	if (down_interruptible(&parinfo->access_sem)) {
-		printk(KERN_ERR "MODELFFB: down semaphore interrupted\n");
+	if (modelffb_lock())
 		return;
-	}
 
 	/* only wait for LUTs if we're in run mode, shouldn't read synchronous
 	 * registers otherwise */
@@ -1836,7 +1779,7 @@ static void modelffb_measure_temperature(void)
 	else if (parinfo->power_mode == MODELF_POWER_SLEEP)
 		__modelffb_sleep();
 
-	up(&parinfo->access_sem);
+	modelffb_unlock();
 
 #if (defined(CONFIG_MODELF_PL_HARDWARE) \
      || defined(CONFIG_MODELF_PL_HARDWARE_MODULE))
@@ -1854,7 +1797,11 @@ static void modelffb_check_panel_resolution(void)
 {
 	struct fb_info *info = parinfo->fbinfo;
 
+	if (modelffb_lock())
+		return;
 	__modelffb_wait_for_HRDY_ready(MODELF_TIMEOUT_MS);
+	modelffb_unlock();
+
 	info->var.xres = modelffb_read_register(MODELF_REG_LINE_DATA_LENGTH);
 	info->var.xres_virtual = info->var.xres;
 	info->var.yres = modelffb_read_register(MODELF_REG_FRAME_DATA_LENGTH);
@@ -2023,6 +1970,12 @@ static int __devinit modelffb_framebuffer_alloc(struct spi_device *spi)
 	memset(parinfo->lut_in_use, 0, MODELF_MAX_LUT_NUM);
 	memset(parinfo->lut_queue, 0, MODELF_MAX_LUT_QUEUE_NUM);
 
+#ifdef CONFIG_I2C_SC18IS60X_SHARED_SPI
+	mutex_lock(&sc18is60x_spi_lock);
+	sc18is60x_shared_spi = parinfo->spi;
+	mutex_unlock(&sc18is60x_spi_lock);
+#endif
+
         /* get pmic regulators */
 #if (defined(CONFIG_MODELF_PL_HARDWARE) \
      || defined(CONFIG_MODELF_PL_HARDWARE_MODULE))
@@ -2060,6 +2013,11 @@ static int __devinit modelffb_framebuffer_alloc(struct spi_device *spi)
 out_regulator:
         pl_hardware_free(parinfo->pl_hardware);
 #endif
+#ifdef CONFIG_I2C_SC18IS60X_SHARED_SPI
+	mutex_lock(&sc18is60x_spi_lock);
+	sc18is60x_shared_spi = NULL;
+	mutex_unlock(&sc18is60x_spi_lock);
+#endif
 
 framebuffer_release:
 	framebuffer_release(info);
@@ -2070,6 +2028,13 @@ err:
 static void __devexit modelffb_framebuffer_release(void)
 {
 	struct fb_info *info = parinfo->fbinfo;
+
+#ifdef CONFIG_I2C_SC18IS60X_SHARED_SPI
+	mutex_lock(&sc18is60x_spi_lock);
+	sc18is60x_shared_spi = NULL;
+	mutex_unlock(&sc18is60x_spi_lock);
+#endif
+
 	kfree(info->pseudo_palette);
 #if (defined(CONFIG_MODELF_PL_HARDWARE) \
      || defined(CONFIG_MODELF_PL_HARDWARE_MODULE))
@@ -2154,8 +2119,14 @@ static void __modelffb_temperature_timer_handler(unsigned long data)
 
 static int modelffb_ready_to_standby_sleep(void)
 {
+	int retval;
+
 	modelffb_sync_lut();
-	return (__modelffb_check_HRDY_ready() && __modelffb_lut_is_empty());
+	modelffb_lock();
+	retval = __modelffb_check_HRDY_ready() && __modelffb_lut_is_empty();
+	modelffb_unlock();
+
+	return retval;
 }
 
 static void modelffb_commit_sleep(void)
@@ -2169,7 +2140,6 @@ static void modelffb_commit_sleep(void)
 
 		modelffb_sleep();
 
-        /* Disable power to the EPD panel */
 #if (defined(CONFIG_MODELF_PL_HARDWARE) \
      || defined(CONFIG_MODELF_PL_HARDWARE_MODULE))
         pl_hardware_disable(parinfo->pl_hardware);
@@ -2465,10 +2435,8 @@ static void modelffb_irq_work_function(struct work_struct *ws)
 	printk(KERN_INFO "MODELFFB: WORKQUEUE: HIRQ\n");
 #endif
 
-	if (down_interruptible(&parinfo->access_sem)) {
-		printk(KERN_ERR "MODELFFB: down semaphore interrupted\n");
+	if (modelffb_lock())
 		return;
-	}
 	__modelffb_run();
 	__modelffb_reg_write(MODELF_REG_DSPE_INT_STATUS, MODELF_INT_DSPE_ONE_LUT_FREE);
 	__modelffb_reg_write(MODELF_REG_INTERRUPT_STATUS, MODELF_INT_DISPLAY_ENGINE);
@@ -2525,7 +2493,7 @@ static void modelffb_irq_work_function(struct work_struct *ws)
 	else if (parinfo->power_mode == MODELF_POWER_SLEEP)
 		__modelffb_sleep();
 
-	up(&parinfo->access_sem);
+	modelffb_unlock();
 
 	__modelffb_set_sleep_timer();
 
@@ -3252,6 +3220,34 @@ static int __devinit modelffb_probe(struct spi_device *spi)
 	printk(KERN_INFO "MODELFFB: check rev: %d\n", CHECKREV);
 #endif
 
+#ifdef CONFIG_MODELF_CONNECTION_SPI
+#ifdef CONFIG_MODELF_SPI_WITHOUT_HDC
+	retval = gpio_request(MODELF_SPIHCS_GPIO, "MODELF_HCS");
+	if (retval) {
+		printk(KERN_ERR "MODELFFB: gpio not allocated\n");
+		goto err;
+	}
+	gpio_direction_output(MODELF_SPIHCS_GPIO, 1);
+	gpio_set_value(MODELF_SPIHCS_GPIO, 1);
+#else
+	retval = gpio_request(MODELF_SPIHDC_GPIO, "MODELF_HDC");
+	if (retval) {
+		printk(KERN_ERR "MODELFFB: gpio not allocated\n");
+		goto err;
+	}
+	gpio_direction_output(MODELF_SPIHDC_GPIO, 1);
+	gpio_set_value(MODELF_SPIHDC_GPIO, 1);
+#endif
+#else
+	if (gpio_request(MODELF_HRDY_GPIO, "MODELF_HRDY") < 0) {
+		printk(KERN_ERR "MODELFFB: MODELF_HRDY (GPIO %d) is busy\n",
+		       MODELF_HRDY_GPIO);
+		retval = -EBUSY;
+		goto err;
+	}
+	gpio_direction_input(MODELF_HRDY_GPIO);
+#endif
+
 #ifdef CONFIG_MODELF_CONNECTION_ASYNC
 	retval = modelffb_framebuffer_alloc(pdev);
 #elif CONFIG_MODELF_CONNECTION_SPI
@@ -3260,7 +3256,7 @@ static int __devinit modelffb_probe(struct spi_device *spi)
 #endif
 	if (retval != 0) {
 		printk(KERN_ERR "MODELFFB: failed to alloc frame buffer\n");
-		goto err;
+		goto free_gpio;
 	}
 
 	retval = modelffb_alloc_memory();
@@ -3280,39 +3276,11 @@ static int __devinit modelffb_probe(struct spi_device *spi)
 		goto release_bus;
 	}
 
-#ifdef CONFIG_MODELF_CONNECTION_ASYNC
-	if (gpio_request(MODELF_HRDY_GPIO, "MODELF_HRDY") < 0) {
-		printk(KERN_ERR "MODELFFB: MODELF_HRDY (GPIO %d) is busy\n", MODELF_HRDY_GPIO);
-		retval = -EBUSY;
-		goto remove_file;
-	}
-	gpio_direction_input(MODELF_HRDY_GPIO);
-#endif
 	parinfo->workqueue = create_singlethread_workqueue("modelf_workqueue");
 	if (!parinfo->workqueue) {
 		printk(KERN_ERR "MODELFFB: create workqueue failed\n");
 		goto free_gpio;
 	}
-
-#ifdef CONFIG_MODELF_CONNECTION_SPI
-#ifdef CONFIG_MODELF_SPI_WITHOUT_HDC
-	retval = gpio_request(MODELF_SPIHCS_GPIO, "MODELF_HCS");
-	if (retval != 0) {
-		printk(KERN_ERR "MODELFFB: gpio not allocated\n");
-		goto workqueue_destroy;
-	}
-	gpio_direction_output(MODELF_SPIHCS_GPIO, 1);
-	gpio_set_value(MODELF_SPIHCS_GPIO, 1);
-#else
-	retval = gpio_request(MODELF_SPIHDC_GPIO, "MODELF_HDC");
-	if (retval != 0) {
-		printk(KERN_ERR "MODELFFB: gpio not allocated\n");
-		goto workqueue_destroy;
-	}
-	gpio_direction_output(MODELF_SPIHDC_GPIO, 1);
-	gpio_set_value(MODELF_SPIHDC_GPIO, 1);
-#endif
-#endif
 
 	parinfo->status = 0;
 	parinfo->waveform_mode = MODELF_WAVEFORM_HIGH_QUALITY;
@@ -3333,17 +3301,19 @@ static int __devinit modelffb_probe(struct spi_device *spi)
 	init_timer(&parinfo->temperature_timer);
 	parinfo->temperature_timer.function = __modelffb_temperature_timer_handler;
 
-	printk(KERN_INFO "MODELFFB: modelF on %s has been probed.\n", MODELF_CONNECTION);
+	printk(KERN_INFO "MODELFFB: modelF on %s has been probed.\n",
+	       MODELF_CONNECTION);
 
 	return 0;
 
-#ifdef CONFIG_MODELF_CONNECTION_SPI
-workqueue_destroy:
-	flush_workqueue(parinfo->workqueue);
-	destroy_workqueue(parinfo->workqueue);
-#endif
 free_gpio:
-#ifdef CONFIG_MODELF_CONNECTION_ASYNC
+#ifdef CONFIG_MODELF_CONNECTION_SPI
+#ifdef CONFIG_MODELF_SPI_WITHOUT_HDC
+	gpio_free(MODELF_SPIHCS_GPIO);
+#else
+	gpio_free(MODELF_SPIHDC_GPIO);
+#endif
+#else
 	gpio_free(MODELF_HRDY_GPIO);
 #endif
 #ifdef CONFIG_MODELF_CONNECTION_ASYNC
@@ -3369,22 +3339,23 @@ static int __devexit modelffb_remove(struct spi_device *spi)
 	del_timer_sync(&parinfo->sleep_timer);
 	del_timer_sync(&parinfo->temperature_timer);
 
-	if ((parinfo->status & MODELF_STATUS_INIT_DONE) == MODELF_STATUS_INIT_DONE) {
+	if ((parinfo->status & MODELF_STATUS_INIT_DONE)
+	    == MODELF_STATUS_INIT_DONE) {
 		disable_irq_nosync(MODELF_HIRQ);
 		free_irq(MODELF_HIRQ, parinfo->dev);
 
 		if (parinfo->power_mode != MODELF_POWER_RUN)
 			modelffb_run();
 
-		if (down_interruptible(&parinfo->access_sem)) {
-			printk(KERN_ERR "MODELFFB: down semaphore interrupted\n");
-			return -EBUSY;
+		if (!modelffb_lock()) {
+			__modelffb_fill_frame_buffer(0xff);
+			__modelffb_simple_command(
+				MODELF_COM_INIT_UPDATE_BUFFER);
+			__modelffb_simple_command(
+				MODELF_COM_WAIT_TRIGGER_DONE);
+			__modelffb_wait_for_HRDY_ready(MODELF_TIMEOUT_MS);
+			modelffb_unlock();
 		}
-		__modelffb_fill_frame_buffer(0xff);
-		__modelffb_simple_command(MODELF_COM_INIT_UPDATE_BUFFER);
-		__modelffb_simple_command(MODELF_COM_WAIT_TRIGGER_DONE);
-		__modelffb_wait_for_HRDY_ready(MODELF_TIMEOUT_MS);
-		up(&parinfo->access_sem);
 
 		modelffb_cleanup_full(MODELF_WAVEFORM_WHITEOUT);
 		modelffb_sleep();
