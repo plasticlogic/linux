@@ -4497,6 +4497,9 @@ static void __init am335x_evm_init(void)
 #if defined(CONFIG_I2C_SC18IS60X) || defined(CONFIG_I2C_SC18IS60X_MODULE)
 	sc18is60x_init();
 #endif
+#ifdef CONFIG_MODELF_PL_Z5_0 /* this board uses the W1 pin to drive an LED */
+	beaglebone_w1gpio_free = false;
+#endif
 	am335x_evm_i2c_init();
 	omap_sdrc_init(NULL, NULL);
 	usb_musb_init(&musb_board_data);
