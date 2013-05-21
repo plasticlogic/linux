@@ -110,15 +110,62 @@ struct sc18is60x_dev {
 
 #ifdef CONFIG_I2C_SC18IS60X_SHARED_SPI
 /* hack to share same SPI device with another driver */
-extern struct spi_device *sc18is60x_get_spi(void);
-extern void sc18is60x_put_spi(struct spi_device *spi);
+static u8 sc18is60x_saved_spi_mode;
+struct spi_device *sc18is60x_shared_spi = NULL;
+EXPORT_SYMBOL(sc18is60x_shared_spi);
+DEFINE_MUTEX(sc18is60x_spi_lock);
+EXPORT_SYMBOL(sc18is60x_spi_lock);
+
+static struct spi_device *sc18is60x_get_spi(void)
+{
+	mutex_lock(&sc18is60x_spi_lock);
+
+	if (!sc18is60x_shared_spi)
+		goto exit_err_unlock;
+
+	sc18is60x_saved_spi_mode = sc18is60x_shared_spi->mode;
+	sc18is60x_shared_spi->mode = SPI_MODE_3;
+
+	if (spi_setup(sc18is60x_shared_spi)) {
+		dev_err(&sc18is60x_shared_spi->dev,
+			"Failed to set-up SPI bus in mode 3\n");
+		goto exit_err_unlock;
+	}
+
+	return sc18is60x_shared_spi;
+
+exit_err_unlock:
+	mutex_unlock(&sc18is60x_spi_lock);
+
+	return NULL;
+}
+
+static int sc18is60x_put_spi(struct spi_device *spi)
+{
+	int stat;
+
+	BUG_ON(spi != sc18is60x_shared_spi);
+
+	sc18is60x_shared_spi->mode = sc18is60x_saved_spi_mode;
+
+	stat = spi_setup(sc18is60x_shared_spi);
+	if (stat) {
+		dev_err(&sc18is60x_shared_spi->dev,
+			"Failed to restore original SPI mode\n");
+	}
+
+	mutex_unlock(&sc18is60x_spi_lock);
+
+	return stat;
+}
 #else
 # error "Not implemented yet."
-/* ToDo: register as an SPI driver for normal usage and allow more than one by
- * using proper device data handling with struct sc18is60x_dev */
+/* ToDo: register as an SPI driver for normal usage */
 static inline struct spi_device *sc18is60x_get_spi(void) {
+	return NULL;
 }
-static inline void sc18is60x_put_spi(struct spi_device *spi) {
+static inline int sc18is60x_put_spi(struct spi_device *spi) {
+	return -EINVAL;
 }
 #endif /* CONFIG_I2C_SC18IS60X_SHARED_SPI */
 
@@ -287,7 +334,7 @@ static int sc18is60x_double_msg(struct i2c_adapter *adap, struct i2c_msg *msgs,
 
 	if ((msg1->flags & I2C_M_RD) || !(msg2->flags & I2C_M_RD)){
 		dev_err(&adap->dev,
-			"Unsupported message sequence not supported, "
+			"Unsupported message sequence, "
 			"can only write and then read\n");
 		return -EINVAL;
 	}
@@ -304,9 +351,7 @@ static int sc18is60x_double_msg(struct i2c_adapter *adap, struct i2c_msg *msgs,
 	if (stat)
 		return stat;
 
-#if 1
-	mdelay(10);
-#endif
+	udelay(100);
 
 	data_out[SC18IS60X_CMD] = SC18IS60X_READ_BUFFER;
 	memset(&data_out[SC18IS60X_I2C_BUFFER], 0, msg2->len);
@@ -354,10 +399,10 @@ static int sc18is60x_master_xfer(struct i2c_adapter *adap,
 		stat = -EINVAL;
 	}
 
-	sc18is60x_put_spi(spi);
-
 	if (stat)
 		dev_err(&adap->dev, "Transaction failed\n");
+
+	stat = sc18is60x_put_spi(spi);
 
 	return stat ? stat : num;
 }
