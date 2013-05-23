@@ -1038,6 +1038,15 @@ static int modelffb_chip_init(void)
 		goto up_sem;
 	}
 
+#ifdef CONFIG_MODELF_PL_ROBIN /* vertical mirror to reverse source data */
+	__modelffb_simple_command_p1(MODELF_COM_ROTATE, 0x0400);
+	retval = __modelffb_wait_for_HRDY_ready(MODELF_TIMEOUT_MS);
+	if (retval) {
+		printk(KERN_ERR "MODELFFB: rotate command failed\n");
+		goto up_sem;
+	}
+#endif
+
 	modelffb_unlock();
 #ifdef CONFIG_MODELF_DEBUG
 	printk(KERN_INFO "MODELFFB: init done\n");
