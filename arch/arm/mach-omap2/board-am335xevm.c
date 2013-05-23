@@ -3335,18 +3335,21 @@ out2:
 	}
 }
 
+#if !defined(MODELF_PL_HARDWARE) && !defined(MODELF_PL_HARDWARE_MODULE)
 static struct at24_platform_data cape_eeprom_info = {
         .byte_len       = (256*1024) / 8,
         .page_size      = 64,
         .flags          = AT24_FLAG_ADDR16,
         .context        = (void *)NULL,
-		.setup		  = beaglebone_cape_setup,
+	.setup		= beaglebone_cape_setup,
 };
+#endif
 
 static struct i2c_board_info __initdata cape_i2c_boardinfo[] = {
 	{
 		I2C_BOARD_INFO("tlv320aic3x", 0x1b),
 	},
+#if !defined(MODELF_PL_HARDWARE) && !defined(MODELF_PL_HARDWARE_MODULE)
         {
                 I2C_BOARD_INFO("24c256", 0x54),
                 .platform_data  = &cape_eeprom_info,
@@ -3363,6 +3366,7 @@ static struct i2c_board_info __initdata cape_i2c_boardinfo[] = {
                 I2C_BOARD_INFO("24c256", 0x57),
                 .platform_data  = &cape_eeprom_info,
         },
+#endif
 };
 
 static void i2c2_init(int evm_id, int profile)
