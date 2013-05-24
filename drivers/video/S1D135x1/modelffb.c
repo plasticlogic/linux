@@ -1747,10 +1747,7 @@ static void modelffb_measure_temperature(void)
 	int temperature;
 	int stat;
 #endif
-#ifdef CONFIG_MODELF_PL_ROBIN
-	printk(KERN_INFO "MODELFFB: not measuring the temperature\n");
-	return;
-#endif
+
 #ifdef CONFIG_MODELF_DEBUG
 	printk(KERN_INFO "MODELFFB: measure temperature\n");
 #endif
@@ -1999,13 +1996,8 @@ static int __devinit modelffb_framebuffer_alloc(struct spi_device *spi)
         if (retval) {
                 dev_err(parinfo->dev,
                         "failed to initialize Plastic Logic hardware\n");
-#ifdef CONFIG_MODELF_PL_ROBIN
-		dev_err(parinfo->dev, "ignoring error for now\n");
-		retval = 0;
-#else
 		retval = -ENODEV;
 		goto out_regulator;
-#endif
         }
 
         retval = pl_hardware_set_vcom(parinfo->pl_hardware, 9742);

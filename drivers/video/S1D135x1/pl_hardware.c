@@ -259,9 +259,9 @@ static int pl_hardware_module_a_init(struct pl_hardware *p);
 /* Module A */
 static void pl_hardware_free_module_a(struct pl_hardware *p);
 #ifdef CONFIG_MODELF_PL_Z1_3
+static int pl_hardware_module_a_wait_pok(struct pl_hardware *p);
 static int pl_hardware_gpio_switch(struct pl_hardware *p, int gpio, bool on);
 #endif
-static int pl_hardware_module_a_wait_pok(struct pl_hardware *p);
 
 /* ----------------------------------------------------------------------------
  * public interface
@@ -387,13 +387,8 @@ EXPORT_SYMBOL(pl_hardware_set_vcom);
 int pl_hardware_enable(struct pl_hardware *p)
 {
 	if (!p->init_done) {
-#ifdef CONFIG_MODELF_PL_ROBIN /* ignoring error for now */
-		p->hv_on = true;
-		return 0;
-#else
 		printk("PLHW: Not initialised\n");
 		return -EINVAL;
-#endif
 	}
 
 	if (p->hv_on)
@@ -423,8 +418,8 @@ int pl_hardware_enable(struct pl_hardware *p)
 		STEP(pl_hardware_gpio_switch(p, GPIO_VCOM_SW_CLOSE, false),
 		     "COM open");
 		STEP(pl_hardware_gpio_switch(p, GPIO_PMIC_EN, true), "HV ON");
-#endif
 		STEP(pl_hardware_module_a_wait_pok(p), "wait for POK");
+#endif
 		STEP(pl_hardware_dac_write(p), "COM DAC value");
 		STEP(pl_hardware_dac_set_power(p, true), "DAC power on");
 #ifdef CONFIG_MODELF_PL_Z1_3
@@ -442,13 +437,8 @@ EXPORT_SYMBOL(pl_hardware_enable);
 int pl_hardware_disable(struct pl_hardware *p)
 {
 	if (!p->init_done) {
-#ifdef CONFIG_MODELF_PL_ROBIN /* ignoring error for now - coffee spill! */
-		p->hv_on = false;
-		return 0;
-#else
 		printk("PLHW: Not initialised\n");
 		return -EINVAL;
-#endif
 	}
 
 	if (!p->hv_on)
@@ -620,12 +610,6 @@ static int pl_hardware_hvpmic_wait_pok(struct pl_hardware *p)
 	unsigned timeout = 100;
 	int pok = 0;
 	int stat = 0;
-
-#ifdef CONFIG_MODELF_PL_ROBIN
-	printk("PLHW: sleeping instead of waiting for POK\n");
-	mdelay(100);
-	return 0;
-#endif
 
 	while (!pok) {
 		union hvpmic_fault fault;
@@ -867,14 +851,15 @@ EXPORT_SYMBOL(pl_hardware_is_module_a);
 
 static int pl_hardware_module_a_init(struct pl_hardware *p)
 {
+#ifdef CONFIG_MODELF_PL_ROBIN
+	p->is_module_a = true;
+
+	return 0;
+#else
 	int retval;
 
 	p->is_module_a = true;
 
-#ifdef CONFIG_MODELF_PL_ROBIN
-	retval = 0;
-	return 0;
-#else
 	if (gpio_request(GPIO_POK, "POK") < 0) {
 		printk(KERN_ERR "POK (GPIO %d) is busy.\n", GPIO_POK);
 		retval = -EBUSY;
@@ -905,7 +890,7 @@ free_pok:
 	gpio_free(GPIO_POK);
 error_ret:
 	return retval;
-#endif /* !CONFIG_MODELF_PL_ROBIN */
+#endif
 }
 
 static void pl_hardware_free_module_a(struct pl_hardware *p)
@@ -919,13 +904,9 @@ static void pl_hardware_free_module_a(struct pl_hardware *p)
 	}
 }
 
+#ifdef CONFIG_MODELF_PL_Z1_3
 static int pl_hardware_module_a_wait_pok(struct pl_hardware *p)
 {
-#if CONFIG_MODELF_PL_ROBIN
-	printk("PLHW: sleeping instead of waiting for POK (Module A)\n");
-	mdelay(100);
-	return 0;
-#else
 	static const unsigned POLL_DELAY_MS = 5;
 	unsigned timeout = 100;
 	int pok = 0;
@@ -950,10 +931,8 @@ static int pl_hardware_module_a_wait_pok(struct pl_hardware *p)
 	}
 
 	return stat;
-#endif
 }
 
-#ifdef CONFIG_MODELF_PL_Z1_3
 static int pl_hardware_gpio_switch(struct pl_hardware *p, int gpio, bool on)
 {
 	gpio_set_value(gpio, (on ? 1 : 0));
