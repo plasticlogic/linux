@@ -55,11 +55,12 @@
 /* ToDo: define in board file */
 struct pl_hardware_config pl_config = {
 #ifdef CONFIG_MODELF_PL_ROBIN
-        .i2c_bus_number = 4,
+	.i2c_bus_number = 4,
 #else
-        .i2c_bus_number = 3,
+	.i2c_bus_number = 3,
 #endif
-        .dac_i2c_address = 0x39,
+	.dac_i2c_address = 0x39,
+	.adc_i2c_address = 0x34,
 };
 
 static DEFINE_MUTEX(temperature_lock);
