@@ -43,16 +43,30 @@
 #define CPLD_MIN_VERSION 0x01
 #define CPLD_NB_BYTES 3
 
-/* VCOM DAC */
-/* ToDo: make platform-dependent */
+/* DAC */
+#define DAC5820_CMD_LOAD_IN_DAC_A__UP_DAC_B__OUT_AB 0x0
+#define DAC5820_CMD_EXT__DATA_0 0xF
+
+/* ADC */
+#define ADC11607_NB_RESULTS 4
+#define ADC11607_SEL_INT_REF_ON 0x1
+#define ADC11607_SEL_EXT_REF 0x2
+#define ADC11607_SEL_INT_REF 0x4
+#define ADC11607_SEL_AIN__REF_OUT 0x2
+#define ADC11607_MAX_VALUE 0x3FF
+#define ADC11607_INVALID_RESULT ((ADC11607_MAX_VALUE) + 1)
+
+/* VCOM */
 #define VCOM_MAX 13000
 #define VCOM_MIN 1000
 #define VCOM_DEFAULT ((VCOM_MAX + VCOM_MIN) / 2)
-#define VCOM_OFFSET (-19532)
-#define VCOM_COEF_INT 20
-#define VCOM_COEF_DEC 779
-#define DAC5820_CMD_LOAD_IN_DAC_A__UP_DAC_B__OUT_AB 0x0
-#define DAC5820_CMD_EXT__DATA_0 0xF
+#define VCOM_REF_ADC_CHANNEL 0
+#define VCOM_FB_ADC_CHANNEL 1
+#define VCOM_ADC_SCALE 10
+#define VCOM_VREF_MUL 24200
+#define VCOM_VREF_DIV 332
+#define VCOM_VGSWING 57089 /* Note: on other systems it's 70000 */
+#define VCOM_CORR_I 110
 
 /* HVPMIC MAX17135 timings */
 #define HVPMIC_NB_TIMINGS 8
@@ -148,7 +162,7 @@ struct pl_hardware_hvpmic {
 	__u8 timings[HVPMIC_NB_TIMINGS];
 };
 
-/* VCOM DAC definitions */
+/* DAC definitions */
 
 enum dac5820_pd {
 	DAC5820_PD_ON         = 0x0,
@@ -190,10 +204,58 @@ union dac5820_ext_payload {
 	char bytes[2];
 };
 
-struct pl_hardware_vcom_dac {
-	__u8 dac_value;
+struct pl_hardware_dac {
 	__u8 i2c_address;
-	int vcom_mv;
+};
+
+/* ADC definitions */
+
+struct adc11607_setup {
+	char reserved:1;
+	char reset:1;
+	char bip_uni:1;
+	char clk_sel:1;
+	char sel:3;
+	char setup_1:1;
+};
+
+struct adc11607_config {
+	char se_diff:1;
+	char cs:4;
+	char scan:2;
+	char config_0:1;
+};
+
+union adc11607_setup_config {
+	struct {
+		struct adc11607_setup setup;
+		struct adc11607_config config;
+	};
+	char bytes[2];
+};
+
+struct pl_hardware_adc {
+	__u8 i2c_address;
+	union adc11607_setup_config cmd;
+	unsigned nb_channels;
+	unsigned ref_mv;
+	int current_channel;
+	unsigned results[ADC11607_NB_RESULTS];
+};
+
+/* VCOM definitions */
+
+struct pl_hardware_vcom {
+	int ref_mv;
+	int target_mv;
+	int vref_mv;
+	int last_v_in;
+	int swing;
+	bool dac_measured;
+	int dac_offset;
+	int dac_dx;
+	int dac_dy;
+	int dac_step_mv;
 };
 
 /* Module A GPIO pins */
@@ -229,7 +291,9 @@ struct pl_hardware {
 	union pl_hardware_cpld cpld;
 #endif
 	struct pl_hardware_hvpmic hvpmic;
-	struct pl_hardware_vcom_dac vcom_dac;
+	struct pl_hardware_dac dac;
+	struct pl_hardware_adc adc;
+	struct pl_hardware_vcom vcom;
 	int last_temperature;
 	bool hv_on;
 	bool is_module_a;
@@ -249,13 +313,34 @@ static int pl_hardware_hvpmic_init(struct pl_hardware *p);
 static int pl_hardware_hvpmic_load_timings(struct pl_hardware *p);
 static int pl_hardware_hvpmic_wait_pok(struct pl_hardware *p);
 
-/* VCOM DAC */
+/* DAC */
 static int pl_hardware_dac_init(struct pl_hardware *p);
 static int pl_hardware_dac_set_power(struct pl_hardware *p,
 				     bool on);
-static void pl_hardware_dac_set_voltage(struct pl_hardware *p,
-					int vcom_mv);
-static int pl_hardware_dac_write(struct pl_hardware *p);
+static int pl_hardware_dac_write(struct pl_hardware *p, __u8 value);
+
+/* ADC */
+#ifndef CONFIG_MODELF_PL_ROBIN
+static int pl_hardware_adc_init(struct pl_hardware *p, unsigned init_channel);
+static void pl_hardware_adc_set_nb_channels(struct pl_hardware_adc *adc);
+static int pl_hardware_adc_select_channel(struct pl_hardware *p,
+					  unsigned channel);
+static void pl_hardware_adc_invalidate(struct pl_hardware_adc *adc);
+static int pl_hardware_adc_read_results(struct pl_hardware *p);
+static int pl_hardware_adc_get_mv(struct pl_hardware *p);
+static int pl_hardware_adc_read_mv(struct pl_hardware *p,
+				   unsigned channel, int *value);
+#endif
+
+/* VCOM calibration */
+static int pl_hardware_vcomcal_init(struct pl_hardware *p);
+static int pl_hardware_vcomcal_set_vcom(struct pl_hardware *p);
+#ifndef CONFIG_MODELF_PL_ROBIN
+static int pl_hardware_vcomcal_measure_dac(struct pl_hardware *p);
+static int pl_hardware_vcomcal_get_dac_value(struct pl_hardware *p,
+					     int vcom_mv);
+static void pl_hardware_vcomcal_scale_vcom(struct pl_hardware *p);
+#endif
 
 /* I2C helpers */
 static int pl_hardware_read_i2c_reg(struct i2c_adapter *i2c, __u8 addr,
@@ -309,7 +394,7 @@ int pl_hardware_init(struct pl_hardware *p,
 		return -EINVAL;
 
 	p->config = config;
-	printk("PLHW I2C bus number: %d\n", p->config->i2c_bus_number);
+	printk("PLHW: I2C bus number: %d\n", p->config->i2c_bus_number);
 
 	p->i2c = i2c_get_adapter(p->config->i2c_bus_number);
 	if (!p->i2c) {
@@ -339,38 +424,38 @@ int pl_hardware_init(struct pl_hardware *p,
 		stat = pl_hardware_module_a_init(p);
 		if (stat) {
 			printk("PLHW: Failed to initialise Module A\n");
-#ifdef CONFIG_MODELF_PL_Z5_0
-			goto err_free_z50;
-#else
-			goto err_free_i2c;
-#endif
+			goto err_free_all;
 		}
 	}
 
 	stat = pl_hardware_hvpmic_init(p);
 	if (stat) {
 		printk("PLHW: Failed to initialise HVPMIC\n");
-#ifdef CONFIG_MODELF_PL_Z5_0
-		goto err_free_z50;
-#else
-		goto err_free_i2c;
-#endif
+		goto err_free_all;
 	}
 
 	stat = pl_hardware_dac_init(p);
 	if (stat) {
 		printk("PLHW: Failed to intialise VCOM DAC\n");
-#ifdef CONFIG_MODELF_PL_Z5_0
-		goto err_free_z50;
-#else
-		goto err_free_i2c;
+		goto err_free_all;
+	}
+
+#ifndef CONFIG_MODELF_PL_ROBIN
+	stat = pl_hardware_adc_init(p, VCOM_FB_ADC_CHANNEL);
+	if (stat) {
+		printk("PLHW: Failed to initialise ADC\n");
+		goto err_free_all;
+	}
 #endif
+
+	stat = pl_hardware_vcomcal_init(p);
+	if (stat) {
+		printk("PLHW: Failed to initialise VCOM calibration\n");
+		goto err_free_all;
 	}
 
 	/* initialise to a value that temperature sensor can never indicate */
 	p->last_temperature = MIN_TEMPERATURE;
-
-	pl_hardware_dac_set_voltage(p, VCOM_DEFAULT);
 
 	printk("PLHW: ready.\n");
 
@@ -379,11 +464,11 @@ int pl_hardware_init(struct pl_hardware *p,
 
 	return 0;
 
+err_free_all:
 #ifdef CONFIG_MODELF_PL_Z5_0
-err_free_z50:
 	pl_hardware_z50_free(p);
-#endif
 err_free_i2c:
+#endif
 	i2c_put_adapter(p->i2c);
 err_exit:
 
@@ -407,8 +492,7 @@ void pl_hardware_free(struct pl_hardware *p)
 }
 EXPORT_SYMBOL(pl_hardware_free);
 
-int pl_hardware_set_vcom(struct pl_hardware *p,
-				  int vcom_mv)
+int pl_hardware_set_vcom(struct pl_hardware *p, int vcom_mv)
 {
 	if ((vcom_mv < VCOM_MIN) || (vcom_mv > VCOM_MAX)) {
 		printk("PLHW: VCOM voltage out of range: %dmV "
@@ -417,7 +501,11 @@ int pl_hardware_set_vcom(struct pl_hardware *p,
 		return -EINVAL;
 	}
 
-	pl_hardware_dac_set_voltage(p, vcom_mv);
+	p->vcom.ref_mv = vcom_mv;
+
+#ifndef CONFIG_MODELF_PL_ROBIN
+	pl_hardware_vcomcal_scale_vcom(p);
+#endif
 
 	return 0;
 }
@@ -455,8 +543,8 @@ int pl_hardware_enable(struct pl_hardware *p)
 		     "COM enable");
 		STEP(pl_hardware_cpld_switch(p, CPLD_COM_PSU, true),
 		     "COM PSU on");
-		STEP(pl_hardware_dac_write(p), "COM DAC value");
 		STEP(pl_hardware_dac_set_power(p, true), "DAC power on");
+		STEP(pl_hardware_vcomcal_set_vcom(p), "VCOM calibration");
 		STEP(pl_hardware_cpld_switch(p, CPLD_COM_SW_CLOSE, true),
 		     "COM close");
 #endif
@@ -467,8 +555,8 @@ int pl_hardware_enable(struct pl_hardware *p)
 		STEP(pl_hardware_gpio_switch(p, GPIO_PMIC_EN, true), "HV ON");
 		STEP(pl_hardware_module_a_wait_pok(p), "wait for POK");
 #endif
-		STEP(pl_hardware_dac_write(p), "COM DAC value");
 		STEP(pl_hardware_dac_set_power(p, true), "DAC power on");
+		STEP(pl_hardware_vcomcal_set_vcom(p), "VCOM calibration");
 #ifndef CONFIG_MODELF_PL_ROBIN
 		STEP(pl_hardware_gpio_switch(p, GPIO_VCOM_SW_CLOSE, true),
 		     "COM close");
@@ -624,7 +712,7 @@ int pl_hardware_hvpmic_init(struct pl_hardware *p)
 
 	printk("PLHW: HVPMIC rev 0x%02X, id 0x%02X\n",
 	       p->hvpmic.prod_rev, p->hvpmic.prod_id);
-	printk("PLHW timings on: %d, %d, %d, %d, "
+	printk("PLHW: timings on: %d, %d, %d, %d, "
 	       "timings off: %d, %d, %d, %d\n",
 	       timings[0], timings[1], timings[2], timings[3],
 	       timings[4], timings[5], timings[6], timings[7]);
@@ -689,23 +777,16 @@ static int pl_hardware_hvpmic_wait_pok(struct pl_hardware *p)
 	return stat;
 }
 
-/* VCOM DAC */
-
-#if 0
-static int pl_hardware_dac_set_power(struct pl_hardware *p,
-				     bool on);
-#endif
+/* DAC */
 
 static int pl_hardware_dac_init(struct pl_hardware *p)
 {
-	p->vcom_dac.i2c_address = p->config->dac_i2c_address;
-	p->vcom_dac.dac_value = 0;
+	p->dac.i2c_address = p->config->dac_i2c_address;
 
 	return 0;
 }
 
-static int pl_hardware_dac_set_power(struct pl_hardware *p,
-				     bool on)
+static int pl_hardware_dac_set_power(struct pl_hardware *p, bool on)
 {
 	union dac5820_ext_payload payload;
 
@@ -716,48 +797,323 @@ static int pl_hardware_dac_set_power(struct pl_hardware *p,
 	payload.ext_byte.b = 0;
 	payload.ext_byte.pd = on ? DAC5820_PD_ON : DAC5820_PD_OFF_100K;
 
-	return pl_hardware_i2c_rdwr(p->i2c, p->vcom_dac.i2c_address, 0,
+	return pl_hardware_i2c_rdwr(p->i2c, p->dac.i2c_address, 0,
 				    payload.bytes, sizeof payload);
 }
 
-static void pl_hardware_dac_set_voltage(struct pl_hardware *p,
-					int vcom_mv)
-{
-	long dac_value;
-	int round;
-
-	dac_value = (vcom_mv * VCOM_COEF_INT);
-	dac_value += (vcom_mv * VCOM_COEF_DEC / 1000);
-	dac_value += VCOM_OFFSET;
-	round = ((dac_value % 1000) > 500) ? 1 : 0;
-	dac_value /= 1000;
-	dac_value += round;
-
-	if (dac_value < 0)
-		p->vcom_dac.dac_value = 0;
-	else if (dac_value > 0xFF)
-		p->vcom_dac.dac_value = 0xFF;
-	else
-		p->vcom_dac.dac_value = dac_value;
-
-	p->vcom_dac.vcom_mv = vcom_mv;
-
-	printk("PLHW: VCOM DAC %dmV -> %d\n",
-	       p->vcom_dac.vcom_mv, p->vcom_dac.dac_value);
-}
-
-static int pl_hardware_dac_write(struct pl_hardware *p)
+static int pl_hardware_dac_write(struct pl_hardware *p, __u8 value)
 {
 	union dac5820_write_payload payload;
 
 	payload.cmd_byte.cmd = DAC5820_CMD_LOAD_IN_DAC_A__UP_DAC_B__OUT_AB;
-	payload.cmd_byte.data_high = (p->vcom_dac.dac_value >> 4) & 0xF;
-	payload.data_byte.data_low = p->vcom_dac.dac_value & 0xF;
+	payload.cmd_byte.data_high = (value >> 4) & 0xF;
+	payload.data_byte.data_low = value & 0xF;
 	payload.data_byte.reserved = 0;
 
-	return pl_hardware_i2c_rdwr(p->i2c, p->vcom_dac.i2c_address, 0,
+	return pl_hardware_i2c_rdwr(p->i2c, p->dac.i2c_address, 0,
 				    payload.bytes, sizeof payload);
 }
+
+/* ADC */
+
+#ifndef CONFIG_MODELF_PL_ROBIN
+static int pl_hardware_adc_init(struct pl_hardware *p, unsigned init_channel)
+{
+	struct adc11607_setup * const setup = &p->adc.cmd.setup;
+	struct adc11607_config * const config = &p->adc.cmd.config;
+
+	p->adc.i2c_address = p->config->adc_i2c_address;
+	p->adc.ref_mv = 2048;
+	p->adc.current_channel = init_channel;
+
+	setup->reset = 1;
+	setup->bip_uni = 0;
+	setup->clk_sel = 0;
+	setup->setup_1 = 1;
+	setup->sel = ADC11607_SEL_INT_REF | ADC11607_SEL_INT_REF_ON;
+
+	config->se_diff = 1;
+	config->cs = init_channel;
+	config->scan = 0;
+	config->config_0 = 0;
+
+	pl_hardware_adc_set_nb_channels(&p->adc);
+
+	if (init_channel >= p->adc.nb_channels) {
+		printk("PLHW: Invalid ADC channel number\n");
+		return -1;
+	}
+
+	pl_hardware_adc_invalidate(&p->adc);
+
+	return pl_hardware_i2c_rdwr(p->i2c, p->adc.i2c_address, 0,
+				    p->adc.cmd.bytes, sizeof p->adc.cmd);
+}
+
+static void pl_hardware_adc_set_nb_channels(struct pl_hardware_adc *adc)
+{
+	unsigned n;
+
+	if (!adc->cmd.config.se_diff)
+		n = 2;
+	else if ((adc->cmd.setup.sel == 2) || (adc->cmd.setup.sel == 3))
+		n = 3;
+	else
+		n = 4;
+
+	adc->nb_channels = n;
+}
+
+static int pl_hardware_adc_select_channel(struct pl_hardware *p,
+					  unsigned channel)
+{
+	if (channel >= p->adc.nb_channels) {
+		printk("PLHW: Invalid ADC channel number\n");
+		return -1;
+	}
+
+	if (channel == p->adc.current_channel)
+		return 0;
+
+	pl_hardware_adc_invalidate(&p->adc);
+	p->adc.cmd.config.cs = channel;
+	p->adc.current_channel = channel;
+
+	return pl_hardware_i2c_rdwr(p->i2c, p->adc.i2c_address, 0,
+				    &p->adc.cmd.config,
+				    sizeof p->adc.cmd.config);
+}
+
+static void pl_hardware_adc_invalidate(struct pl_hardware_adc *adc)
+{
+	int i;
+
+	for (i = 0; i < ADC11607_NB_RESULTS; ++i)
+		adc->results[i] = ADC11607_INVALID_RESULT;
+}
+
+static int pl_hardware_adc_read_results(struct pl_hardware *p)
+{
+	char data[32];
+	size_t n;
+	size_t read_n;
+	const char *it;
+	unsigned i;
+	int stat;
+
+	n = p->adc.cmd.config.cs + 1;
+	read_n = n * 2;
+
+	stat = pl_hardware_i2c_rdwr(p->i2c, p->adc.i2c_address, I2C_M_RD,
+				    data, read_n);
+	if (stat) {
+		printk("PLHW: Failed to read ADC results\n");
+		pl_hardware_adc_invalidate(&p->adc);
+		return stat;
+	}
+
+	for (it = data, i = 0; i < n; ++i, it += 2)
+		p->adc.results[i] = ((it[0] & 0x03) << 8) | it[1];
+
+	for (i = n; i < ADC11607_NB_RESULTS; ++i)
+		p->adc.results[i] = ADC11607_INVALID_RESULT;
+
+	return 0;
+}
+
+static int pl_hardware_adc_get_mv(struct pl_hardware *p)
+{
+	int adc_mv;
+
+	adc_mv = p->adc.results[p->adc.current_channel] * p->adc.ref_mv;
+
+	return DIV_ROUND_CLOSEST(adc_mv, ADC11607_MAX_VALUE);
+}
+
+static int pl_hardware_adc_read_mv(struct pl_hardware *p,
+				   unsigned channel, int *value)
+{
+	int stat;
+
+	stat = pl_hardware_adc_select_channel(p, channel);
+	if (stat)
+		return stat;
+
+	mdelay(2);
+
+	stat = pl_hardware_adc_read_results(p);
+	if (stat)
+		return stat;
+
+	*value = pl_hardware_adc_get_mv(p);
+
+	return 0;
+}
+#endif /* !CONFIG_MODELF_PL_ROBIN */
+
+/* VCOM calibration */
+
+static int pl_hardware_vcomcal_init(struct pl_hardware *p)
+{
+	p->vcom.ref_mv = VCOM_DEFAULT;
+	p->vcom.dac_measured = false;
+
+	return 0;
+}
+
+#ifdef CONFIG_MODELF_PL_ROBIN
+static int pl_hardware_vcomcal_set_vcom(struct pl_hardware *p)
+{
+	static const int VCOM_COEF_INT = 20;
+	static const int VCOM_COEF_DEC = 779;
+	static const int VCOM_OFFSET = -19532;
+	long dac_value;
+
+	dac_value = (p->vcom.ref_mv * VCOM_COEF_INT);
+	dac_value += (p->vcom.ref_mv * VCOM_COEF_DEC) / 1000;
+	dac_value += VCOM_OFFSET;
+	dac_value = DIV_ROUND_CLOSEST(dac_value, 1000);
+
+	if (dac_value < 0)
+		dac_value = 0;
+	else if (dac_value > 0xFF)
+		dac_value = 0xFF;
+	else
+		dac_value = dac_value;
+
+	return pl_hardware_dac_write(p, (u8)dac_value);
+}
+#else
+static int pl_hardware_vcomcal_set_vcom(struct pl_hardware *p)
+{
+	int v_in;
+	int delta_stop;
+	int delta;
+	int n;
+	int stat;
+
+	if (!p->vcom.dac_measured) {
+		stat = pl_hardware_vcomcal_measure_dac(p);
+		if (stat)
+			return stat;
+
+		pl_hardware_vcomcal_scale_vcom(p);
+	}
+
+	delta_stop = p->vcom.dac_step_mv * 6 / 5; /* give 20% margin */
+	delta = 0;
+	v_in = p->vcom.last_v_in;
+	n = 10;
+
+	do {
+		int dac_val;
+		int v_out;
+
+		dac_val = pl_hardware_vcomcal_get_dac_value(p, v_in);
+
+		stat = pl_hardware_dac_write(p,  dac_val);
+		if (stat)
+			return stat;
+
+		stat = pl_hardware_adc_read_mv(p, VCOM_FB_ADC_CHANNEL, &v_out);
+		if (stat)
+			return stat;
+
+		v_out *= VCOM_ADC_SCALE;
+		delta = p->vcom.target_mv - v_out;
+		p->vcom.last_v_in = v_in;
+		v_in += delta * VCOM_CORR_I / 100;
+	} while ((abs(delta) > delta_stop) && --n);
+
+	if (!n) {
+		printk("PLHW: VCOMCAL Failed to converge in time\n");
+		return -1;
+	}
+
+	return 0;
+}
+
+static int pl_hardware_vcomcal_measure_dac(struct pl_hardware *p)
+{
+	const int x1 = 85;
+	const int x2 = 170;
+	int y1;
+	int y2;
+	int vref;
+	int stat;
+
+	stat = pl_hardware_dac_write(p, x1);
+	if (stat)
+		return -1;
+
+	stat = pl_hardware_adc_read_mv(p, VCOM_FB_ADC_CHANNEL, &y1);
+	if (stat)
+		return -1;
+
+	stat = pl_hardware_dac_write(p, x2);
+	if (stat)
+		return -1;
+
+	stat = pl_hardware_adc_read_mv(p, VCOM_FB_ADC_CHANNEL, &y2);
+	if (stat)
+		return -1;
+
+	y1 *= VCOM_ADC_SCALE;
+	y2 *= VCOM_ADC_SCALE;
+
+	p->vcom.dac_dx = x2 - x1;
+	p->vcom.dac_dy = y2 - y1;
+
+	if (!p->vcom.dac_dx || !p->vcom.dac_dy) {
+		printk("PLHW: Failed to measure DAC characteristics\n");
+		return -1;
+	}
+
+	p->vcom.dac_offset = y1 - ((x1 * p->vcom.dac_dy) / p->vcom.dac_dx);
+	p->vcom.dac_step_mv = p->vcom.dac_dy / p->vcom.dac_dx;
+
+	printk("PLHW: DAC dx: %d, dy: %d, offset: %d, step: %d\n",
+	       p->vcom.dac_dx, p->vcom.dac_dy, p->vcom.dac_offset,
+	       p->vcom.dac_step_mv);
+
+	stat = pl_hardware_adc_read_mv(p, VCOM_REF_ADC_CHANNEL, &vref);
+	if (stat)
+		return stat;
+
+	p->vcom.swing = vref * VCOM_VREF_MUL;
+	p->vcom.swing = DIV_ROUND_CLOSEST(p->vcom.swing, VCOM_VREF_DIV);
+	p->vcom.dac_measured = true;
+
+	return 0;
+}
+
+static int pl_hardware_vcomcal_get_dac_value(struct pl_hardware *p,
+					     int vcom_mv)
+{
+	long dac_value;
+
+	dac_value = (vcom_mv - p->vcom.dac_offset) * p->vcom.dac_dx;
+	dac_value = DIV_ROUND_CLOSEST(dac_value, p->vcom.dac_dy);
+
+	if (dac_value < 0)
+		dac_value = 0;
+	else if (dac_value > 0xFF)
+		dac_value = 0xFF;
+
+	return dac_value;
+}
+
+static void pl_hardware_vcomcal_scale_vcom(struct pl_hardware *p)
+{
+	if (!p->vcom.dac_measured)
+		return;
+
+	p->vcom.target_mv = p->vcom.ref_mv * p->vcom.swing / VCOM_VGSWING;
+	p->vcom.last_v_in = p->vcom.target_mv;
+	printk("PLHW: scaled VCOM %d -> %d (swing: %d) mV\n",
+	       p->vcom.ref_mv, p->vcom.target_mv, p->vcom.swing);
+}
+#endif /* !CONFIG_MODELF_PL_ROBIN */
 
 /* I2C helpers */
 

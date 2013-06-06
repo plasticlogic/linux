@@ -18,6 +18,7 @@ struct pl_hardware;
 struct pl_hardware_config {
 	int i2c_bus_number;
 	__u8 dac_i2c_address;
+	__u8 adc_i2c_address;
 };
 
 extern struct pl_hardware *pl_hardware_alloc(void);
