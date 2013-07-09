@@ -833,6 +833,8 @@ static struct mxc_epdc_fb_mode panel_modes[] = {
 		.scan_dir_1_up = false,
 		.flip_top = false,
 		.sdclk_hold = true,
+		.left_border = 0,
+		.right_border = 0,
 	},
 	{
 		.vmode = &e60_v220_mode,
@@ -858,6 +860,8 @@ static struct mxc_epdc_fb_mode panel_modes[] = {
 		.scan_dir_1_up = false,
 		.flip_top = false,
 		.sdclk_hold = true,
+		.left_border = 0,
+		.right_border = 0,
 	},
 	{
 		.vmode = &e97_v110_mode,
@@ -883,6 +887,8 @@ static struct mxc_epdc_fb_mode panel_modes[] = {
 		.scan_dir_1_up = false,
 		.flip_top = false,
 		.sdclk_hold = true,
+		.left_border = 0,
+		.right_border = 0,
 	}
 };
 
