@@ -374,6 +374,8 @@ struct mxc_epdc_fb_mode {
 	bool scan_dir_1_up;
 	bool flip_top;
 	bool sdclk_hold;
+	int left_border;
+	int right_border;
 };
 
 struct mxc_epdc_fb_platform_data {

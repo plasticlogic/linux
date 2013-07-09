@@ -148,6 +148,7 @@ struct mxc_epdc_fb_data {
 	int default_bpp;
 	int native_width;
 	int native_height;
+	int epdc_xres;
 	int num_screens;
 	int epdc_irq;
 	struct device *dev;
@@ -756,7 +757,7 @@ void epdc_init_settings(struct mxc_epdc_fb_data *fb_data)
 	epdc_set_temp(mxc_epdc_fb_get_temp_index(fb_data, DEFAULT_TEMP));
 
 	/* EPDC_RES */
-	epdc_set_screen_res(epdc_mode->vmode->xres, epdc_mode->vmode->yres);
+	epdc_set_screen_res(fb_data->epdc_xres, epdc_mode->vmode->yres);
 
 	/*
 	 * EPDC_TCE_CTRL
@@ -836,10 +837,11 @@ void epdc_init_settings(struct mxc_epdc_fb_data *fb_data)
 	if (num_ce == 0)
 		num_ce = 1;
 	reg_val = EPDC_TCE_SDCFG_SDSHR
-	    | ((num_ce << EPDC_TCE_SDCFG_NUM_CE_OFFSET) &
-	       EPDC_TCE_SDCFG_NUM_CE_MASK)
-	    | ((epdc_mode->vmode->xres/num_ce << EPDC_TCE_SDCFG_PIXELS_PER_CE_OFFSET) &
-	       EPDC_TCE_SDCFG_PIXELS_PER_CE_MASK);
+		| ((num_ce << EPDC_TCE_SDCFG_NUM_CE_OFFSET) &
+		   EPDC_TCE_SDCFG_NUM_CE_MASK)
+		| (((fb_data->epdc_xres / num_ce)
+		    << EPDC_TCE_SDCFG_PIXELS_PER_CE_OFFSET) &
+		   EPDC_TCE_SDCFG_PIXELS_PER_CE_MASK);
 	if (epdc_mode->sddo_flip_bits)
 		reg_val |= EPDC_TCE_SDCFG_SDDO_REFORMAT_FLIP_PIXELS;
 	if (epdc_mode->sdclk_hold)
@@ -1265,7 +1267,7 @@ static int mxc_epdc_fb_set_par(struct fb_info *info)
 	 * Output is Y-only greyscale
 	 * Output width/height will vary based on update region size
 	 */
-	pxp_conf->out_param.width = screeninfo->xres;
+	pxp_conf->out_param.width = fb_data->epdc_xres;
 	pxp_conf->out_param.height = screeninfo->yres;
 	pxp_conf->out_param.pixel_fmt = PXP_PIX_FMT_GREY;
 
@@ -2207,6 +2209,8 @@ static void epdc_submit_work_func(struct work_struct *work)
 	adjust_coordinates(fb_data,
 		&upd_data_list->update_desc->upd_data.update_region,
 		&adj_update_region);
+
+	adj_update_region.left += fb_data->cur_mode->left_border;
 
 	/* Protect access to buffer queues and to update HW */
 	spin_lock_irqsave(&fb_data->queue_lock, flags);
@@ -3399,7 +3403,7 @@ static void draw_mode0(struct mxc_epdc_fb_data *fb_data)
 
 	/* Program EPDC update to process buffer */
 	epdc_set_update_addr(fb_data->phys_start);
-	epdc_set_update_coord(0, 0);
+	epdc_set_update_coord(fb_data->cur_mode->left_border, 0);
 	epdc_set_update_dimensions(xres, yres);
 	epdc_submit_update(0, fb_data->wv_modes.mode_init, UPDATE_MODE_FULL, true, 0xFF);
 
@@ -3876,7 +3880,8 @@ int __devinit mxc_epdc_fb_probe(struct platform_device *pdev)
 
 	fb_data->native_width = vmode->xres;
 	fb_data->native_height = vmode->yres;
-
+	fb_data->epdc_xres = (vmode->xres + fb_data->cur_mode->left_border +
+			      fb_data->cur_mode->right_border);
 	info->fbops = &mxc_epdc_fb_ops;
 	info->var.activate = FB_ACTIVATE_NOW;
 	info->pseudo_palette = fb_data->pseudo_palette;
@@ -4134,7 +4139,7 @@ int __devinit mxc_epdc_fb_probe(struct platform_device *pdev)
 	 * Output is Y-only greyscale
 	 * Output width/height will vary based on update region size
 	 */
-	pxp_conf->out_param.width = fb_data->info.var.xres;
+	pxp_conf->out_param.width = fb_data->epdc_xres;
 	pxp_conf->out_param.height = fb_data->info.var.yres;
 	pxp_conf->out_param.pixel_fmt = PXP_PIX_FMT_GREY;
 
