@@ -139,7 +139,7 @@ struct mxc_epdc_fb_data {
 	u32 pseudo_palette[16];
 	char fw_str[24];
 	struct list_head list;
-	struct mxc_epdc_fb_mode *cur_mode;
+	const struct mxc_epdc_fb_mode *cur_mode;
 	struct mxc_epdc_fb_platform_data *pdata;
 	int blank;
 	ssize_t map_size;
@@ -708,7 +708,7 @@ static void epdc_set_vertical_timing(u32 vert_start, u32 vert_end,
 
 void epdc_init_settings(struct mxc_epdc_fb_data *fb_data)
 {
-	struct mxc_epdc_fb_mode *epdc_mode = fb_data->cur_mode;
+	const struct mxc_epdc_fb_mode *epdc_mode = fb_data->cur_mode;
 	struct fb_var_screeninfo *screeninfo = &fb_data->epdc_fb_var;
 	u32 reg_val;
 	int num_ce;
@@ -1606,7 +1606,7 @@ static inline void reverse32(uint32_t *dst, const uint32_t *src, size_t n)
 static void copy_before_process(struct mxc_epdc_fb_data *fb_data,
 	struct update_data_list *upd_data_list)
 {
-	struct mxc_epdc_fb_mode *epdc_mode = fb_data->cur_mode;
+	const struct mxc_epdc_fb_mode *epdc_mode = fb_data->cur_mode;
 	struct mxcfb_update_data *upd_data =
 		&upd_data_list->update_desc->upd_data;
 	int i;
@@ -3639,6 +3639,37 @@ int __devinit mxc_epdc_fb_plhw_init(struct mxc_epdc_fb_data *fb_data)
 }
 #endif /* PL_HARDWARE */
 
+static const struct mxc_epdc_fb_mode *mxc_epdc_find_mode(
+	struct mxc_epdc_fb_data *fb_data, const char *mode_str,
+	const char *type_str)
+{
+	const size_t mode_str_len = strlen(mode_str);
+	int i;
+
+	for (i = 0; i < fb_data->pdata->num_modes; ++i) {
+		const struct mxc_epdc_fb_mode *mode =
+			&fb_data->pdata->epdc_mode[i];
+		const char *mode_type_str;
+
+		if (strncmp(mode->vmode->name, mode_str, mode_str_len))
+			continue;
+
+		if (!type_str)
+			return mode;
+
+		if (mode->vmode->name[mode_str_len] != '.')
+			continue;
+
+		mode_type_str = &mode->vmode->name[mode_str_len + 1];
+
+		if (strcmp(mode_type_str, type_str))
+			continue;
+
+		return mode;
+	}
+
+	return NULL;
+}
 
 int __devinit mxc_epdc_fb_probe(struct platform_device *pdev)
 {
@@ -3712,14 +3743,18 @@ int __devinit mxc_epdc_fb_probe(struct platform_device *pdev)
 	/* Set default (first defined mode) before searching for a match */
 	fb_data->cur_mode = &fb_data->pdata->epdc_mode[0];
 
-	if (panel_str)
-		for (i = 0; i < fb_data->pdata->num_modes; i++)
-			if (!strcmp(fb_data->pdata->epdc_mode[i].vmode->name,
-						panel_str)) {
-				fb_data->cur_mode =
-					&fb_data->pdata->epdc_mode[i];
-				break;
-			}
+	if (panel_str) {
+		const struct mxc_epdc_fb_mode *found_mode =
+			mxc_epdc_find_mode(fb_data, panel_str,
+					   mxc_epdc_fb_panel_type_modparam);
+
+		if (!found_mode)
+			found_mode =
+				mxc_epdc_find_mode(fb_data, panel_str, NULL);
+
+		if (found_mode)
+			fb_data->cur_mode = found_mode;
+	}
 
 	vmode = fb_data->cur_mode->vmode;
 
