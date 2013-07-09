@@ -3609,12 +3609,16 @@ int __devinit mxc_epdc_fb_plhw_init(struct mxc_epdc_fb_data *fb_data)
 		fb_data->plhw_conf.psu_n = mxc_epdc_fb_vcom_n_modparam;
 	}
 
-#if 1 /* temporary hack until 2bpp is always enabled */
-	fb_data->plhw_conf.source_2bpp =
-		(mxc_epdc_fb_vcom_n_modparam == 2) ? 1 : 0;
+#if 1 /* temporary hack to use 2bpp with dual and tiled configurations */
+	fb_data->plhw_conf.source_2bpp_conversion =
+		(mxc_epdc_fb_vcom_n_modparam == 2) ? true : false;
 #endif
+
 	fb_data->plhw_conf.interlaced_gates =
-		!strcmp(mxc_epdc_fb_panel_type_modparam, "Type10");
+		strcmp(mxc_epdc_fb_panel_type_modparam, "Type10") ? false:true;
+
+	fb_data->plhw_conf.source_cs_logic =
+		strcmp(mxc_epdc_fb_panel_type_modparam, "Type11") ? false:true;
 
 	ret = mxc_epdc_pl_hardware_init(fb_data->pl_hardware,
 					fb_data->pdata->plhw_pdata,
