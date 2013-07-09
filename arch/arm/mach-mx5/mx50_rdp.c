@@ -1010,7 +1010,7 @@ static void epdc_disable_pins(void)
 static struct fb_videomode pl_std_mode = {
 	.name = "PL_STD",
 	.refresh = 50,
-	.xres = 1440,
+	.xres = 1280,
 	.yres = 960,
 	.pixclock = 46e6,
 	.left_margin = 120, /* line_begin */
@@ -1027,7 +1027,7 @@ static struct fb_videomode pl_std_mode = {
 static struct fb_videomode pl_dual_mode = {
 	.name = "PL_DUAL",
 	.refresh = 50,
-	.xres = 1440,
+	.xres = 1280,
 	.yres = 1920,
 	.pixclock = 46e6,
 	.left_margin = 120, /* line_begin */
@@ -1044,7 +1044,7 @@ static struct fb_videomode pl_dual_mode = {
 static struct fb_videomode pl_tiled_mode = {
 	.name = "PL_TILED",
 	.refresh = 50,
-	.xres = 1440,
+	.xres = 1280,
 	.yres = 1920,
 	.pixclock = 46e6,
 	.left_margin = 120, /* line_begin */
@@ -1134,6 +1134,8 @@ static struct mxc_epdc_fb_mode panel_modes[] = {
 		.scan_dir_1_up = false,
 		.flip_top = false,
 		.sdclk_hold = false,
+		.left_border = 80,
+		.right_border = 80,
 	},
 	{
 		.vmode = &pl_dual_mode,
@@ -1159,6 +1161,8 @@ static struct mxc_epdc_fb_mode panel_modes[] = {
 		.scan_dir_1_up = false,
 		.flip_top = false,
 		.sdclk_hold = false,
+		.left_border = 80,
+		.right_border = 80,
 	},
 	{
 		.vmode = &pl_tiled_mode,
@@ -1184,6 +1188,8 @@ static struct mxc_epdc_fb_mode panel_modes[] = {
 		.scan_dir_1_up = false,
 		.flip_top = true,
 		.sdclk_hold = false,
+		.left_border = 80,
+		.right_border = 80,
 	},
 	{
 		.vmode = &e60_v110_mode,
@@ -1209,6 +1215,8 @@ static struct mxc_epdc_fb_mode panel_modes[] = {
 		.scan_dir_1_up = false,
 		.flip_top = false,
 		.sdclk_hold = true,
+		.left_border = 0,
+		.right_border = 0,
 	},
 	{
 		.vmode = &e60_v220_mode,
@@ -1234,6 +1242,8 @@ static struct mxc_epdc_fb_mode panel_modes[] = {
 		.scan_dir_1_up = false,
 		.flip_top = false,
 		.sdclk_hold = true,
+		.left_border = 0,
+		.right_border = 0,
 	},
 	{
 		.vmode = &e97_v110_mode,
@@ -1259,6 +1269,8 @@ static struct mxc_epdc_fb_mode panel_modes[] = {
 		.scan_dir_1_up = false,
 		.flip_top = false,
 		.sdclk_hold = true,
+		.left_border = 0,
+		.right_border = 0,
 	}
 };
 
