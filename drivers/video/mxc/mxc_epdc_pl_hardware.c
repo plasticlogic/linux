@@ -33,7 +33,7 @@
 #define HVPMIC_I2C_ADDRESS 0x48
 
 /* CPLD parameters */
-#define CPLD_REQ_VERSION 0x02
+#define CPLD_REQ_VERSION 0x03
 #define CPLD_NB_BYTES 3
 
 /* DAC */
@@ -79,7 +79,7 @@ enum pl_hardware_cpld_switch {
 	CPLD_COM_SW_EN,
 	CPLD_COM_SW_CLOSE,
 	CPLD_COM_PSU,
-	CPLD_BPCOM_CLAMP,
+	CPLD_SRC_CS_LOGIC,
 	CPLD_HVEN1,
 	CPLD_COM_SW_CLOSE1,
 	CPLD_PING_PONG,
@@ -89,7 +89,7 @@ enum pl_hardware_cpld_switch {
 
 struct cpld_byte_0 {
 	__u8 cpld_hven:1;
-	__u8 bpcom_clamp:1;
+	__u8 src_cs_logic:1;
 	__u8 version:6;
 };
 
@@ -533,7 +533,7 @@ int mxc_epdc_pl_hardware_enable(struct mxc_epdc_pl_hardware *p)
 		return -EINVAL;
 
 	psu = &p->psu[0];
-	STEP(pl_hardware_cpld_switch(p, CPLD_BPCOM_CLAMP, true),"BPCOM clamp");
+
 	STEP(pl_hardware_cpld_switch(p, CPLD_HVEN, true), "HV ON");
 	STEP(pl_hardware_hvpmic_wait_pok(p, psu), "wait for POK");
 	STEP(pl_hardware_cpld_switch(p, CPLD_COM_SW_EN, true), "COM enable");
@@ -619,19 +619,29 @@ static int pl_hardware_cpld_init(struct mxc_epdc_pl_hardware *p)
 		return -ENODEV;
 	}
 
-	if (p->conf->source_2bpp) {
-		printk("PLHW: Enabling 2bpp mode\n");
-		stat = pl_hardware_cpld_switch(p, CPLD_SOURCE_2BPP, true);
-		if (stat)
-			return stat;
-	}
+	if (p->conf->source_2bpp_conversion)
+		printk("PLHW: Enabling 2bpp conversion mode\n");
 
-	if (p->conf->interlaced_gates) {
+	stat = pl_hardware_cpld_switch(p, CPLD_SOURCE_2BPP,
+				       p->conf->source_2bpp_conversion);
+	if (stat)
+		return stat;
+
+	if (p->conf->interlaced_gates)
 		printk("PLHW: Enabling interlaced gates\n");
-		stat = pl_hardware_cpld_switch(p, CPLD_PING_PONG, true);
-		if (stat)
-			return stat;
-	}
+
+	stat = pl_hardware_cpld_switch(p, CPLD_PING_PONG,
+				       p->conf->interlaced_gates);
+	if (stat)
+		return stat;
+
+	if (p->conf->source_cs_logic)
+		printk("PLHW: Enabling source chip select logic\n");
+
+	stat = pl_hardware_cpld_switch(p, CPLD_SRC_CS_LOGIC,
+				       p->conf->source_cs_logic);
+	if (stat)
+		return stat;
 
 	for (i = 0; i < MXC_EPDC_PL_HARDWARE_GPIO_N; ++i) {
 		printk("PLHW: Fast GPIO init: %s %d\n",
@@ -683,7 +693,7 @@ static int pl_hardware_cpld_switch(struct mxc_epdc_pl_hardware *p,
 	case CPLD_COM_SW_EN:    p->cpld.b1.vcom_sw_en    = on ? 1 : 0;  break;
 	case CPLD_COM_SW_CLOSE: p->cpld.b1.vcom_sw_close = on ? 1 : 0;  break;
 	case CPLD_COM_PSU:      p->cpld.b1.vcom_psu_en   = on ? 1 : 0;  break;
-	case CPLD_BPCOM_CLAMP:  p->cpld.b0.bpcom_clamp   = on ? 1 : 0;  break;
+	case CPLD_SRC_CS_LOGIC: p->cpld.b0.src_cs_logic  = on ? 1 : 0;  break;
 	case CPLD_HVEN1:        p->cpld.b2.cpld_hven1    = on ? 1 : 0;  break;
 	case CPLD_COM_SW_CLOSE1: p->cpld.b2.vcom_sw_close1 = on ? 1 : 0; break;
 	case CPLD_PING_PONG:    p->cpld.b2.ping_pong     = on ? 1 : 0;  break;

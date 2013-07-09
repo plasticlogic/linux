@@ -33,8 +33,9 @@ struct mxc_epdc_plhw_pdata {
 
 struct mxc_epdc_plhw_config {
 	int psu_n;
-	int source_2bpp;
-	int interlaced_gates;
+	bool source_2bpp_conversion; /* convert 2bpp data for 4bpp display */
+	bool interlaced_gates;       /* gate lines are interlaced odd/even */
+	bool source_cs_logic;        /* generate CS signals (no cascading) */
 };
 
 extern struct mxc_epdc_pl_hardware *mxc_epdc_pl_hardware_alloc(void);
