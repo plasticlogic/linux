@@ -143,7 +143,13 @@ fw-shipped-$(CONFIG_FB_MXC_EINK_PANEL) += imx/epdc_E60_V110.fw \
                 imx/epdc_E97_V110.fw \
                 imx/epdc_PL_STD.fw \
                 imx/epdc_PL_DUAL.fw \
-                imx/epdc_PL_TILED.fw
+                imx/epdc_PL_TILED.fw \
+                imx/epdc_PL_STD.Type4.fw \
+                imx/epdc_PL_DUAL.Type4.fw \
+                imx/epdc_PL_TILED.Type4.fw \
+                imx/epdc_PL_STD.Type10.fw \
+                imx/epdc_PL_DUAL.Type10.fw \
+                imx/epdc_PL_TILED.Type10.fw
 
 fw-shipped-all := $(fw-shipped-y) $(fw-shipped-m) $(fw-shipped-)
 
