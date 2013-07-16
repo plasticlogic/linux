@@ -2008,6 +2008,8 @@ static int __devinit modelffb_framebuffer_alloc(struct spi_device *spi)
         }
 #endif
 
+	parinfo->opt_clear_on_exit = false;
+
 	return 0;
 
 #if (defined(CONFIG_MODELF_PL_HARDWARE) \
@@ -2846,6 +2848,28 @@ end:
 	return retval;
 }
 
+static void modelffb_setopt(struct fb_info *info, char *tokbuf, size_t len)
+{
+	char *opt;
+	char *value;
+
+	opt = strsep(&tokbuf, " \t\n");
+
+	if (!opt)
+		return;
+
+	value = strsep(&tokbuf, " \t\n");
+
+	if (!strcmp(opt, "clear_on_exit") && value) {
+		long unsigned int int_value;
+
+		if (kstrtoul(value, 10, &int_value))
+			return;
+
+		parinfo->opt_clear_on_exit = int_value ? true : false;
+	}
+}
+
 static ssize_t modelffb_store_control(struct device *dev,
 	struct device_attribute *attr, const char *buf, size_t count)
 {
@@ -2871,6 +2895,9 @@ static ssize_t modelffb_store_control(struct device *dev,
 	else if (strcmp(tok, "set") == 0) {
 	/* echo set element value > /sys/devices/platform/modelffb/control */
 		__modelffb_set_element(next_tok);
+	}
+	else if (!strcmp(tok, "setopt")) {
+		modelffb_setopt(info, next_tok, count);
 	}
 	else if ((parinfo->status & MODELF_STATUS_INIT_DONE) == 0) {
 		printk(KERN_ERR "MODELFFB: not yet init done\n");
@@ -3332,6 +3359,27 @@ err:
 	return retval;
 }
 
+static void __devexit do_clear_on_exit(void)
+{
+	if (parinfo->power_mode != MODELF_POWER_RUN)
+		modelffb_run();
+
+	if (modelffb_lock())
+		return;
+
+	__modelffb_fill_frame_buffer(0xff);
+	__modelffb_simple_command(
+		MODELF_COM_INIT_UPDATE_BUFFER);
+	__modelffb_simple_command(
+		MODELF_COM_WAIT_TRIGGER_DONE);
+	__modelffb_wait_for_HRDY_ready(MODELF_TIMEOUT_MS);
+
+	modelffb_unlock();
+
+	modelffb_cleanup_full(MODELF_WAVEFORM_WHITEOUT);
+	modelffb_sleep();
+}
+
 #ifdef CONFIG_MODELF_CONNECTION_ASYNC
 static int __devexit modelffb_remove(struct platform_device *pdev)
 #elif CONFIG_MODELF_CONNECTION_SPI
@@ -3346,21 +3394,8 @@ static int __devexit modelffb_remove(struct spi_device *spi)
 		disable_irq_nosync(MODELF_HIRQ);
 		free_irq(MODELF_HIRQ, parinfo->dev);
 
-		if (parinfo->power_mode != MODELF_POWER_RUN)
-			modelffb_run();
-
-		if (!modelffb_lock()) {
-			__modelffb_fill_frame_buffer(0xff);
-			__modelffb_simple_command(
-				MODELF_COM_INIT_UPDATE_BUFFER);
-			__modelffb_simple_command(
-				MODELF_COM_WAIT_TRIGGER_DONE);
-			__modelffb_wait_for_HRDY_ready(MODELF_TIMEOUT_MS);
-			modelffb_unlock();
-		}
-
-		modelffb_cleanup_full(MODELF_WAVEFORM_WHITEOUT);
-		modelffb_sleep();
+		if (parinfo->opt_clear_on_exit)
+			do_clear_on_exit();
 
 		modelffb_unregister_framebuffer();
 		modelffb_free_vram();
