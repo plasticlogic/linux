@@ -653,7 +653,7 @@ static inline void modelffb_sync_set_status(enum modelffb_sync_status status)
 	wake_up_interruptible(&parinfo->sync_update_wait);
 }
 
-static inline void modelffb_wait_sync(const char *status_str)
+static inline void modelffb_sync_wait(const char *status_str)
 {
 	static const char *status_table[MODELFFB_SYNC_N] = {
 		[MODELFFB_SYNC_IDLE] = "idle",
@@ -673,6 +673,24 @@ static inline void modelffb_wait_sync(const char *status_str)
 
 	wait_event_interruptible(parinfo->sync_update_wait,
 				 (parinfo->sync_status == status));
+}
+
+static inline void modelffb_sync_wait_power(const char *power_str)
+{
+	bool power_state;
+
+	if (!strcmp(power_str, "on")) {
+		power_state = true;
+	} else if (!strcmp(power_str, "off")) {
+		power_state = false;
+	} else {
+		printk(KERN_ERR "Invalid power state: %s\n", power_str);
+		return;
+	}
+
+	wait_event_interruptible(parinfo->sync_update_wait,
+				 (pl_hardware_is_enabled(parinfo->pl_hardware)
+				  == power_state));
 }
 
 /* =========== model F operations =========== */
@@ -1317,6 +1335,7 @@ static int modelffb_cleanup_full(int waveform_mode)
                 dev_err(parinfo->dev, "Failed to enable PL hardware\n");
                 goto err_exit;
         }
+	wake_up_interruptible(&parinfo->sync_update_wait);
 #endif
 
 	retval = modelffb_lock();
@@ -1331,6 +1350,7 @@ err_power_off:
 #if (defined(CONFIG_MODELF_PL_HARDWARE) \
      || defined(CONFIG_MODELF_PL_HARDWARE_MODULE))
         pl_hardware_disable(parinfo->pl_hardware);
+	wake_up_interruptible(&parinfo->sync_update_wait);
 err_exit:
 #endif
 	retval = 0; /* ToDo: really? */
@@ -1369,6 +1389,7 @@ static int modelffb_update_full(int waveform_mode)
                 dev_err(parinfo->dev, "Failed to enable PL hardware\n");
                 goto err_exit;
         }
+	wake_up_interruptible(&parinfo->sync_update_wait);
 #endif
 
 	retval = modelffb_lock();
@@ -1383,6 +1404,7 @@ err_power_off:
 #if (defined(CONFIG_MODELF_PL_HARDWARE) \
      || defined(CONFIG_MODELF_PL_HARDWARE_MODULE))
         pl_hardware_disable(parinfo->pl_hardware);
+	wake_up_interruptible(&parinfo->sync_update_wait);
 err_exit:
 #endif
 	return retval;
@@ -1636,6 +1658,7 @@ static void modelffb_cleanup_area_lut(int x, int y, int width, int height,
                 dev_err(parinfo->dev, "Failed to enable PL hardware\n");
 		return;
         }
+	wake_up_interruptible(&parinfo->sync_update_wait);
 #endif
 
 	if (modelffb_lock())
@@ -1648,8 +1671,10 @@ static void modelffb_cleanup_area_lut(int x, int y, int width, int height,
 err_power_off:
 #if (defined(CONFIG_MODELF_PL_HARDWARE) \
      || defined(CONFIG_MODELF_PL_HARDWARE_MODULE))
-/* this switched power off too early
-        pl_hardware_disable(parinfo->pl_hardware); */
+#if 0 /* this switched power off too early */
+        pl_hardware_disable(parinfo->pl_hardware);
+	wake_up_interruptible(&parinfo->sync_update_wait);
+#endif
 #endif
 	return;
 }
@@ -1663,6 +1688,7 @@ static void modelffb_cleanup_area(int x, int y, int width, int height,
                 dev_err(parinfo->dev, "Failed to enable PL hardware\n");
 		return;
         }
+	wake_up_interruptible(&parinfo->sync_update_wait);
 #endif
 
 	if (modelffb_lock())
@@ -1684,6 +1710,7 @@ err_power_off:
 #if (defined(CONFIG_MODELF_PL_HARDWARE) \
      || defined(CONFIG_MODELF_PL_HARDWARE_MODULE))
         pl_hardware_disable(parinfo->pl_hardware);
+	wake_up_interruptible(&parinfo->sync_update_wait);
 #endif
 	return;
 }
@@ -1705,6 +1732,7 @@ static void modelffb_update_area(int x, int y, int width, int height,
                 dev_err(parinfo->dev, "Failed to enable PL hardware\n");
 		return;
         }
+	wake_up_interruptible(&parinfo->sync_update_wait);
 #endif
 
 	if (modelffb_lock())
@@ -1718,6 +1746,7 @@ err_power_off:
 #if (defined(CONFIG_MODELF_PL_HARDWARE) \
      || defined(CONFIG_MODELF_PL_HARDWARE_MODULE))
         pl_hardware_disable(parinfo->pl_hardware);
+	wake_up_interruptible(&parinfo->sync_update_wait);
 #endif
 	return;
 }
@@ -2191,6 +2220,7 @@ static void modelffb_commit_sleep(void)
 #if (defined(CONFIG_MODELF_PL_HARDWARE) \
      || defined(CONFIG_MODELF_PL_HARDWARE_MODULE))
         pl_hardware_disable(parinfo->pl_hardware);
+	wake_up_interruptible(&parinfo->sync_update_wait);
 #endif
 #ifdef CONFIG_MODELF_DEBUG
 		printk(KERN_INFO "MODELFFB: WORKQUEUE: go into standby mode\n");
@@ -3009,7 +3039,15 @@ static ssize_t modelffb_store_control(struct device *dev,
 		if (unlikely(!tok))
 			printk(KERN_ERR "No sync status provided\n");
 		else
-			modelffb_wait_sync(tok);
+			modelffb_sync_wait(tok);
+	}
+	else if (!strcmp(tok, "power")) {
+		tok = strsep(&next_tok, " \t\n");
+
+		if (unlikely(!tok))
+			printk(KERN_ERR "No power status provided\n");
+		else
+			modelffb_sync_wait_power(tok);
 	}
 	else if (strcmp(tok, "suspend_update") == 0) {
 	/* echo suspend_update > /sys/devices/platform/modelffb/control */
