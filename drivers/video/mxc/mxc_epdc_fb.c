@@ -3623,6 +3623,9 @@ int __devinit mxc_epdc_fb_plhw_init(struct mxc_epdc_fb_data *fb_data)
 
 	fb_data->plhw_conf.source_cs_logic = pl_7lvl ? false : true;
 
+	fb_data->plhw_conf.power_seq = pl_7lvl ?
+		MXC_EPDC_PL_HARDWARE_SEQ_0 : MXC_EPDC_PL_HARDWARE_SEQ_1;
+
 	ret = mxc_epdc_pl_hardware_init(fb_data->pl_hardware,
 					fb_data->pdata->plhw_pdata,
 					&fb_data->plhw_conf);

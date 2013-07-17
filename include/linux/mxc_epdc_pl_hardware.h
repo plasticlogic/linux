@@ -31,11 +31,18 @@ struct mxc_epdc_plhw_pdata {
 	int fast_gpio[MXC_EPDC_PL_HARDWARE_GPIO_N];
 };
 
+enum mxc_epdc_plhw_power_seq {
+	MXC_EPDC_PL_HARDWARE_SEQ_0,  /* rails: SN, GP, GN, SP */
+	MXC_EPDC_PL_HARDWARE_SEQ_1,  /* rails: SN, GN, GP, SP */
+	MXC_EPDC_PL_HARDWARE_SEQ_N
+};
+
 struct mxc_epdc_plhw_config {
 	int psu_n;
 	bool source_2bpp_conversion; /* convert 2bpp data for 4bpp display */
 	bool interlaced_gates;       /* gate lines are interlaced odd/even */
 	bool source_cs_logic;        /* generate CS signals (no cascading) */
+	enum mxc_epdc_plhw_power_seq power_seq; /* power sequence identifier */
 };
 
 extern struct mxc_epdc_pl_hardware *mxc_epdc_pl_hardware_alloc(void);

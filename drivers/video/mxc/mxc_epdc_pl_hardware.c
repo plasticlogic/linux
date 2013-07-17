@@ -63,14 +63,6 @@
 
 /* HVPMIC MAX17135 timings */
 #define HVPMIC_NB_TIMINGS 8
-#define HVPMIC_TIMING_UP_VGNEG 8
-#define HVPMIC_TIMING_UP_VSNEG 2
-#define HVPMIC_TIMING_UP_VSPOS 11
-#define HVPMIC_TIMING_UP_VGPOS 3
-#define HVPMIC_TIMING_DOWN_VGPOS 0
-#define HVPMIC_TIMING_DOWN_VSPOS 0
-#define HVPMIC_TIMING_DOWN_VSNEG 0
-#define HVPMIC_TIMING_DOWN_VGNEG 0
 
 /* CPLD definitions */
 
@@ -763,17 +755,17 @@ static void pl_hardware_cpld_write_fast_data(struct mxc_epdc_pl_hardware *p)
 int pl_hardware_hvpmic_init(struct mxc_epdc_pl_hardware *p,
 			    struct pl_hardware_psu *psu)
 {
-	u8 timings[HVPMIC_NB_TIMINGS];
+	static const u8 timings_table
+		[MXC_EPDC_PL_HARDWARE_SEQ_N][HVPMIC_NB_TIMINGS] = {
+		[MXC_EPDC_PL_HARDWARE_SEQ_0] = {
+			8, 2, 11, 3, 0, 0, 0, 0
+		},
+		[MXC_EPDC_PL_HARDWARE_SEQ_1] = {
+			3, 2, 11, 8, 0, 0, 0, 0
+		},
+	};
+	const u8 *timings;
 	int stat;
-
-	timings[0] = HVPMIC_TIMING_UP_VGNEG;
-	timings[1] = HVPMIC_TIMING_UP_VSNEG;
-	timings[2] = HVPMIC_TIMING_UP_VSPOS;
-	timings[3] = HVPMIC_TIMING_UP_VGPOS;
-	timings[4] = HVPMIC_TIMING_DOWN_VGPOS;
-	timings[5] = HVPMIC_TIMING_DOWN_VSPOS;
-	timings[6] = HVPMIC_TIMING_DOWN_VSNEG;
-	timings[7] = HVPMIC_TIMING_DOWN_VGNEG;
 
 	stat = pl_hardware_psu_read_i2c_reg(p, psu, HVPMIC_I2C_ADDRESS,
 					    HVPMIC_REG_PROD_REV,
@@ -786,6 +778,12 @@ int pl_hardware_hvpmic_init(struct mxc_epdc_pl_hardware *p,
 					    &psu->hvpmic.prod_id, 1);
 	if (stat)
 		return stat;
+
+	if (p->conf->power_seq >= MXC_EPDC_PL_HARDWARE_SEQ_N) {
+		return -EINVAL;
+	}
+
+	timings = timings_table[p->conf->power_seq];
 
 	memcpy(psu->hvpmic.timings, timings, HVPMIC_NB_TIMINGS);
 
