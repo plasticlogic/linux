@@ -64,6 +64,13 @@ struct modelffb_oneshot_info {
 	int height;
 };
 
+enum modelffb_sync_status {
+	MODELFFB_SYNC_IDLE = 0,
+	MODELFFB_SYNC_PENDING,
+	MODELFFB_SYNC_BUSY,
+	MODELFFB_SYNC_N,
+};
+
 struct modelffb_par {
 	struct fb_info *fbinfo;
 	uint32_t command_addr;
@@ -91,6 +98,8 @@ struct modelffb_par {
 	int need_cleanup;
 	int power_mode;
 	uint32_t image_pool;
+	wait_queue_head_t sync_update_wait;
+	enum modelffb_sync_status sync_status;
 	struct platform_device *pdev;
 	struct spi_device *spi;
 	struct device *dev;

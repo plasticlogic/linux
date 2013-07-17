@@ -645,7 +645,38 @@ static int __modelffb_data_transfer_wait(uint16_t *data, size_t n)
 }
 #endif
 
+/* =========== Synchronous update support =========== */
+
+static inline void modelffb_sync_set_status(enum modelffb_sync_status status)
+{
+	parinfo->sync_status = status;
+	wake_up_interruptible(&parinfo->sync_update_wait);
+}
+
+static inline void modelffb_wait_sync(const char *status_str)
+{
+	static const char *status_table[MODELFFB_SYNC_N] = {
+		[MODELFFB_SYNC_IDLE] = "idle",
+		[MODELFFB_SYNC_PENDING] = "pending",
+		[MODELFFB_SYNC_BUSY] = "busy",
+	};
+	enum modelffb_sync_status status;
+
+	for (status = 0; status < MODELFFB_SYNC_N; ++status)
+		if (!strcmp(status_str, status_table[status]))
+			break;
+
+	if (status == MODELFFB_SYNC_N) {
+		printk(KERN_ERR "Invalid sync status: %s\n", status_str);
+		return;
+	}
+
+	wait_event_interruptible(parinfo->sync_update_wait,
+				 (parinfo->sync_status == status));
+}
+
 /* =========== model F operations =========== */
+
 #ifdef CONFIG_MODELF_DEBUG
 static void __modelffb_print_reg(uint16_t reg)
 {
@@ -1235,6 +1266,9 @@ static int modelffb_fill_update_buffer(uint8_t color)
 	__modelffb_simple_command(MODELF_COM_WAIT_TRIGGER_DONE);
 	retval = __modelffb_wait_for_HRDY_ready(MODELF_TIMEOUT_MS);
 
+	if (!retval)
+		modelffb_sync_set_status(MODELFFB_SYNC_BUSY);
+
 	modelffb_unlock();
 	return retval;
 }
@@ -1261,6 +1295,10 @@ static int __modelffb_cleanup_full(int waveform_mode)
 	__modelffb_simple_command(MODELF_COM_WAIT_TRIGGER_DONE);
 	__modelffb_simple_command(MODELF_COM_WAIT_FRAME_END);
 	retval = __modelffb_wait_for_HRDY_ready(MODELF_TIMEOUT_MS);
+
+	if (!retval)
+		modelffb_sync_set_status(MODELFFB_SYNC_BUSY);
+
 	return retval;
 }
 
@@ -1308,6 +1346,10 @@ static int __modelffb_update_full(int waveform_mode)
 	__modelffb_simple_command(MODELF_COM_WAIT_TRIGGER_DONE);
 	__modelffb_simple_command(MODELF_COM_WAIT_FRAME_END);
 	retval = __modelffb_wait_for_HRDY_ready(MODELF_TIMEOUT_MS);
+
+	if (!retval)
+		modelffb_sync_set_status(MODELFFB_SYNC_BUSY);
+
 	return retval;
 }
 
@@ -1582,6 +1624,7 @@ static void __modelffb_cleanup_area_lut(int x, int y, int width, int height,
 		x & 0x1ff, y & 0x3ff, width & 0x1ff, height & 0x3ff);
 	__modelffb_simple_command(MODELF_COM_WAIT_TRIGGER_DONE);
 	__modelffb_wait_for_HRDY_ready(MODELF_TIMEOUT_MS);
+	modelffb_sync_set_status(MODELFFB_SYNC_BUSY);
 }
 
 static void modelffb_cleanup_area_lut(int x, int y, int width, int height,
@@ -1633,6 +1676,7 @@ static void modelffb_cleanup_area(int x, int y, int width, int height,
 		x & 0x1ff, y & 0x3ff, width & 0x1ff, height & 0x3ff);
 	__modelffb_simple_command(MODELF_COM_WAIT_TRIGGER_DONE);
 	__modelffb_wait_for_HRDY_ready(MODELF_TIMEOUT_MS);
+	modelffb_sync_set_status(MODELFFB_SYNC_BUSY);
 
 	modelffb_unlock();
 
@@ -2349,6 +2393,8 @@ static int __modelffb_queue_cleanup(int waveform_mode, int x, int y, int width, 
 {
 	int retval = 0;
 
+	modelffb_sync_set_status(MODELFFB_SYNC_PENDING);
+
 	if (parinfo->suspend_update == MODELF_SUSPEND_UPDATE) {
 		__modelffb_queue_oneshot(MODELF_ONESHOT_TYPE_CLENUP, waveform_mode,
 			x, y, width, height);
@@ -2475,6 +2521,8 @@ static void modelffb_irq_work_function(struct work_struct *ws)
 					os_info->width, os_info->height,
 					os_info->waveform_mode, free_lut);
 		}
+
+		modelffb_sync_set_status(MODELFFB_SYNC_IDLE);
 	}
 	else if (__modelffb_lut_is_empty()) {
 		if (parinfo->need_flush_image == MODELF_NEED_FLUSH_IMAGE) {
@@ -2955,6 +3003,14 @@ static ssize_t modelffb_store_control(struct device *dev,
 
 		__modelffb_queue_cleanup(waveform_mode, x, y, width, height);
 	}
+	else if (!strcmp(tok, "sync")) {
+		tok = strsep(&next_tok, " \t\n");
+
+		if (unlikely(!tok))
+			printk(KERN_ERR "No sync status provided\n");
+		else
+			modelffb_wait_sync(tok);
+	}
 	else if (strcmp(tok, "suspend_update") == 0) {
 	/* echo suspend_update > /sys/devices/platform/modelffb/control */
 		__modelffb_queue_suspend_update(MODELF_SUSPEND_UPDATE);
@@ -3329,6 +3385,8 @@ static int __devinit modelffb_probe(struct spi_device *spi)
 	parinfo->sleep_timer.function = __modelffb_sleep_timer_handler;
 	init_timer(&parinfo->temperature_timer);
 	parinfo->temperature_timer.function = __modelffb_temperature_timer_handler;
+	init_waitqueue_head(&parinfo->sync_update_wait);
+	parinfo->sync_status = MODELFFB_SYNC_IDLE;
 
 	printk(KERN_INFO "MODELFFB: modelF on %s has been probed.\n",
 	       MODELF_CONNECTION);
