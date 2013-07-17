@@ -608,6 +608,12 @@ int pl_hardware_disable(struct pl_hardware *p)
 }
 EXPORT_SYMBOL(pl_hardware_disable);
 
+bool pl_hardware_is_enabled(struct pl_hardware *p)
+{
+	return p->hv_on;
+}
+EXPORT_SYMBOL(pl_hardware_is_enabled);
+
 #undef STEP
 
 /* ----------------------------------------------------------------------------
