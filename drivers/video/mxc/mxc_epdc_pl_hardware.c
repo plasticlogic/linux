@@ -270,6 +270,7 @@ struct mxc_epdc_pl_hardware {
 	union pl_hardware_cpld cpld;
 	struct pl_hardware_cpld_fast_data fast_cpld;
 	struct pl_hardware_psu psu[2];
+	bool pmic_reinit;
 };
 
 /* CPLD */
@@ -297,6 +298,7 @@ static int pl_hardware_hvpmic_load_timings(struct mxc_epdc_pl_hardware *p,
 					   struct pl_hardware_psu *psu);
 static int pl_hardware_hvpmic_wait_pok(struct mxc_epdc_pl_hardware *p,
 				       struct pl_hardware_psu *psu);
+static int mxc_epdc_pl_hardware_reinit_hvpmic(struct mxc_epdc_pl_hardware *p);
 
 /* DAC */
 static int pl_hardware_dac_init(struct mxc_epdc_pl_hardware *p,
@@ -412,6 +414,8 @@ int mxc_epdc_pl_hardware_init(struct mxc_epdc_pl_hardware *p,
 		       "(min is 1, max is 2)\n", conf->psu_n);
 		return -EINVAL;
 	}
+	
+	p->pmic_reinit = false;
 
 	p->pdata = pdata;
 	p->conf = conf;
@@ -556,6 +560,18 @@ int mxc_epdc_pl_hardware_disable(struct mxc_epdc_pl_hardware *p)
 
 	if (!p->init_done)
 		return -EINVAL;
+
+	/* If we're using Type11 power-up sequence and this is the first power-down,
+	 * set the PMIC timings again as the first update would have caused a voltage drop
+	 * causing the PMIC to reset. This is a temporary fix! 
+	 */
+	if (p->pmic_reinit == false && p->conf->power_seq == MXC_EPDC_PL_HARDWARE_SEQ_1)
+	{
+		if (mxc_epdc_pl_hardware_reinit_hvpmic(p))
+			return -EINVAL;
+		else
+			p->pmic_reinit = true;
+	}
 
 	psu = &p->psu[0];
 	STEP(pl_hardware_cpld_switch(p, CPLD_COM_SW_CLOSE, false),"COM open");
@@ -758,10 +774,10 @@ int pl_hardware_hvpmic_init(struct mxc_epdc_pl_hardware *p,
 	static const u8 timings_table
 		[MXC_EPDC_PL_HARDWARE_SEQ_N][HVPMIC_NB_TIMINGS] = {
 		[MXC_EPDC_PL_HARDWARE_SEQ_0] = {
-			8, 2, 11, 3, 0, 0, 0, 0
+                       8, 2, 11, 3, 0, 0, 0, 0
 		},
 		[MXC_EPDC_PL_HARDWARE_SEQ_1] = {
-			3, 2, 11, 8, 0, 0, 0, 0
+                       3, 2, 11, 8, 0, 0, 0, 0
 		},
 	};
 	const u8 *timings;
@@ -855,6 +871,31 @@ static int pl_hardware_hvpmic_wait_pok(struct mxc_epdc_pl_hardware *p,
 	}
 
 	return stat;
+}
+
+static int mxc_epdc_pl_hardware_reinit_hvpmic(struct mxc_epdc_pl_hardware *p)
+{
+	int i, stat;
+
+	if (!p->conf->psu_n || (p->conf->psu_n > 2)) {
+		printk("PLHW: Invalid number of PSUs: %d "
+		       "(min is 1, max is 2)\n", p->conf->psu_n);
+		return -EINVAL;
+	}
+
+	for (i = 0; i < p->conf->psu_n; ++i) {
+		struct pl_hardware_psu *psu = &p->psu[i];
+
+		psu->i2c_sel_id = i;
+
+		stat = pl_hardware_hvpmic_init(p, psu);
+		if (stat) {
+			printk("PLHW: Failed to initialise HVPMIC\n");
+			return -EINVAL;
+		}
+	}
+
+	return 0;
 }
 
 /* DAC */
