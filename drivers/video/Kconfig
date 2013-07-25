@@ -2444,6 +2444,14 @@ config MODELF_DEBUG
 	help
 	  This outputs lots of debug information.
 
+config MODELF_DEFERRED_IO
+	bool "Use frame buffer deferred IO"
+	depends on FB_MODELF
+	depends on FB_DEFERRED_IO
+	help
+	  Choose this option to automatically generate display updates using
+	  the frame buffer deferred IO framework.
+
 choice
 	prompt "Connection"
 	depends on FB_MODELF

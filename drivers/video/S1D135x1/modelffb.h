@@ -84,7 +84,9 @@ struct modelffb_par {
 	uint32_t status;
 	uint16_t keycode1;
 	uint16_t keycode2;
+#ifdef CONFIG_MODELF_DEFERRED_IO
 	int vram_updated;
+#endif
 	int suspend_update;
 	struct workqueue_struct *workqueue;
 	struct semaphore access_sem;

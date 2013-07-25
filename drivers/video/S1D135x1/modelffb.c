@@ -30,6 +30,9 @@
 #include <linux/semaphore.h>
 #include <linux/spi/spi.h>
 #include <linux/timer.h>
+#ifndef CONFIG_MODELF_DEFERRED_IO
+#include <linux/mm.h>
+#endif
 
 #include <plat/gpmc.h>
 #include <mach/board-am335xevm.h>
@@ -1191,6 +1194,7 @@ static int __modelffb_send_image(int x, int y, int width, int height)
 	uint32_t start_jiffy = jiffies;
 	uint32_t delta_jiffy;
 #endif
+
 	switch (info->var.bits_per_pixel) {
 	case 1:
 		for (line = y; line < y + height; line++) {
@@ -1958,8 +1962,46 @@ static int modelffb_check_var(struct fb_var_screeninfo *var, struct fb_info *inf
 	}
 }
 
+#ifndef CONFIG_MODELF_DEFERRED_IO
+static int modelffb_mmap(struct fb_info *info, struct vm_area_struct *vma)
+{
+	unsigned long start = vma->vm_start;
+	unsigned long size = vma->vm_end - vma->vm_start;
+	unsigned long offset = vma->vm_pgoff << PAGE_SHIFT;
+	unsigned long page, pos;
+
+	if ((offset + size) > info->fix.smem_len)
+		return -EINVAL;
+
+	pos = (unsigned long)info->fix.smem_start + offset;
+
+	while (size > 0) {
+		page = vmalloc_to_pfn((void *)pos);
+		if (remap_pfn_range(vma, start, page, PAGE_SIZE, PAGE_SHARED)) {
+			return -EAGAIN;
+		}
+
+		start += PAGE_SIZE;
+		pos += PAGE_SIZE;
+		if (size > PAGE_SIZE)
+			size -= PAGE_SIZE;
+		else
+			size = 0;
+	}
+
+	vma->vm_flags |= VM_RESERVED;	/* avoid to swap out this VMA */
+
+	return 0;
+}
+#endif
+
 static struct fb_ops modelffb_ops = {
 	.owner		= THIS_MODULE,
+#ifndef CONFIG_MODELF_DEFERRED_IO
+	.fb_read	= fb_sys_read,
+	.fb_write	= fb_sys_write,
+	.fb_mmap	= modelffb_mmap,
+#endif
 	.fb_fillrect	= sys_fillrect,
 	.fb_copyarea	= sys_copyarea,
 	.fb_imageblit	= sys_imageblit,
@@ -2124,10 +2166,15 @@ static void __devexit modelffb_framebuffer_release(void)
 static int modelffb_alloc_vram(void)
 {
 	struct fb_info *info = parinfo->fbinfo;
+	size_t mem_len;
 	int retval = 0;
 
-	info->fix.smem_len	= info->var.xres * info->var.yres * 2;
-	info->fix.mmio_len	= info->var.xres * info->var.yres * 2;
+	mem_len = info->var.xres * info->var.yres * 2;
+#ifndef CONFIG_MODELF_DEFERRED_IO
+	mem_len = roundup(mem_len, PAGE_SIZE);
+#endif
+	info->fix.smem_len	= mem_len;
+	info->fix.mmio_len	= mem_len;
 	info->fix.line_length	= info->var.xres * 2;
 
 	info->screen_base = vmalloc(info->fix.smem_len + 4);
@@ -2313,15 +2360,19 @@ static void modelffb_oneshot_cleanup(int waveform_mode, int x, int y, int width,
 #endif
 		if (modelffb_enqueue_lut_queue(MODELF_ONESHOT_TYPE_CLENUP, waveform_mode,
 				x, y, width, height) < 0) {
+#ifdef CONFIG_MODELF_DEFERRED_IO
 			if (parinfo->vram_updated == MODELF_VRAM_NEED_UPDATE)
 				parinfo->need_flush_image = MODELF_NEED_FLUSH_IMAGE;
+#endif
 			parinfo->need_cleanup = MODELF_NEED_CLEANUP;
 			printk(KERN_INFO "MODELFFB: lut queue has been overflowed\n");
 			printk(KERN_INFO "MODELFFB: cleanup all will be committed later\n");
 		}
 	}
 	else {
+#ifdef CONFIG_MODELF_DEFERRED_IO
 		if (parinfo->vram_updated == MODELF_VRAM_NEED_UPDATE)
+#endif
 			modelffb_send_image(x, y, width, height);
 		modelffb_cleanup_area_lut(x, y, width, height, waveform_mode,
 					  free_lut);
@@ -2344,18 +2395,19 @@ static void modelffb_oneshot_work_function(struct work_struct *ws)
 #ifdef CONFIG_MODELF_DEBUG
 		printk(KERN_INFO "MODELFFB: update is resumed\n");
 #endif
-	}
-	else if (work->oneshot_type == MODELF_ONESHOT_TYPE_CLENUP)
+	} else if (work->oneshot_type == MODELF_ONESHOT_TYPE_CLENUP) {
 		modelffb_oneshot_cleanup(work->waveform_mode,
 			work->x, work->y, work->width, work->height);
-	else if (parinfo->vram_updated == MODELF_VRAM_NO_NEED_UPDATE) {
+#ifdef CONFIG_MODELF_DEFERRED_IO
+	} else if (parinfo->vram_updated == MODELF_VRAM_NO_NEED_UPDATE) {
 #ifdef CONFIG_MODELF_DEBUG
 		printk(KERN_INFO "MODELFFB: VRAM is up to date\n");
 #endif
-	}
-	else
+#endif
+	} else {
 		modelffb_oneshot(work->waveform_mode,
 			work->x, work->y, work->width, work->height);
+	}
 
 #ifdef CONFIG_MODELF_DEBUG
 	__modelffb_print_lut();
@@ -2465,7 +2517,9 @@ static void modelffb_suspend_update_work_function(struct work_struct *ws)
 	else if (work->update == MODELF_RESUME_UPDATE) {
 #ifdef CONFIG_MODELF_DEBUG
 		printk(KERN_INFO "MODELFFB: WORKQUEUE: resume update\n");
+#ifdef CONFIG_MODELF_DEFERRED_IO
 		parinfo->vram_updated = MODELF_VRAM_NO_NEED_UPDATE;
+#endif
 #endif
 
 		modelffb_commit_run();
@@ -2538,9 +2592,11 @@ static void modelffb_irq_work_function(struct work_struct *ws)
 
 			__modelffb_dequeue_lut_queue();
 
+#ifdef CONFIG_MODELF_DEFERRED_IO
 			if (parinfo->vram_updated == MODELF_VRAM_NEED_UPDATE)
 				__modelffb_send_image(os_info->x, os_info->y,
 					os_info->width, os_info->height);
+#endif
 
 			if (os_info->oneshot_type == MODELF_ONESHOT_TYPE_ONESHOT)
 				__modelffb_update_area(os_info->x, os_info->y,
@@ -2558,7 +2614,9 @@ static void modelffb_irq_work_function(struct work_struct *ws)
 		if (parinfo->need_flush_image == MODELF_NEED_FLUSH_IMAGE) {
 			__modelffb_reset_lut_queue();
 			parinfo->need_flush_image = MODELF_NO_NEED_FLUSH_IMAGE;
+#ifdef CONFIG_MODELF_DEFERRED_IO
 			parinfo->vram_updated = MODELF_VRAM_NO_NEED_UPDATE;
+#endif
 			__modelffb_send_all_image();
 		}
 
@@ -2593,6 +2651,7 @@ static irqreturn_t __modelffb_irq_handler(int irq, void *dev_id)
 	return IRQ_HANDLED;
 }
 
+#ifdef CONFIG_MODELF_DEFERRED_IO
 static void modelffb_deferred_io_work_function(struct work_struct *ws)
 {
 #ifdef CONFIG_MODELF_DEBUG
@@ -2627,15 +2686,18 @@ static struct fb_deferred_io __modelffb_defio = {
 	.delay		= HZ / MODELF_DEFERRED_IO_DELAY_DENOMINATOR,
 	.deferred_io	= __modelffb_dpy_deferred_io,
 };
+#endif /* CONFIG_MODELF_DEFERRED_IO */
 
 static int __devinit modelffb_register_framebuffer(void)
 {
 	struct fb_info *info = parinfo->fbinfo;
 	int retval;
 
+#ifdef CONFIG_MODELF_DEFERRED_IO
 	info->fbdefio = &__modelffb_defio;
 	fb_deferred_io_init(info);
 	parinfo->vram_updated = MODELF_VRAM_NO_NEED_UPDATE;
+#endif
 
 	retval = register_framebuffer(info);
 	if(retval < 0) {
@@ -2646,7 +2708,9 @@ static int __devinit modelffb_register_framebuffer(void)
 	return 0;
 
 err:
+#ifdef CONFIG_MODELF_DEFERRED_IO
 	fb_deferred_io_cleanup(info);
+#endif
 	return retval;
 }
 
@@ -2655,7 +2719,9 @@ static void modelffb_unregister_framebuffer(void)
 	struct fb_info *info = parinfo->fbinfo;
 
 	unregister_framebuffer(info);
+#ifdef CONFIG_MODELF_DEFERRED_IO
 	fb_deferred_io_cleanup(info);
+#endif
 }
 
 static int modelffb_modelf_init(void)
@@ -3425,6 +3491,14 @@ static int __devinit modelffb_probe(struct spi_device *spi)
 	parinfo->temperature_timer.function = __modelffb_temperature_timer_handler;
 	init_waitqueue_head(&parinfo->sync_update_wait);
 	parinfo->sync_status = MODELFFB_SYNC_IDLE;
+
+	printk(KERN_INFO "MODELFFB: deferred I/O "
+#ifdef CONFIG_MODELF_DEFERRED_IO
+	       "enabled"
+#else
+	       "disabled"
+#endif
+	       "\n");
 
 	printk(KERN_INFO "MODELFFB: modelF on %s has been probed.\n",
 	       MODELF_CONNECTION);
