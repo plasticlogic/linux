@@ -30,6 +30,7 @@
 #include <linux/semaphore.h>
 #include <linux/spi/spi.h>
 #include <linux/timer.h>
+#include <linux/pmeter.h>
 #ifndef CONFIG_MODELF_DEFERRED_IO
 #include <linux/mm.h>
 #endif
@@ -47,6 +48,13 @@
 
 /* Set to 1 to use the MT PROM */
 #define USE_MTP 0
+
+/* Set to 1 to enable pmeter synchronous update messages */
+#if 1
+# define SYNC_LOG(msg, ...) pmeter_logf("epsync "msg, ##__VA_ARGS__)
+#else
+# define SYNC_LOG
+#endif
 
 #if (defined(CONFIG_MODELF_PL_HARDWARE) \
      || defined(CONFIG_MODELF_PL_HARDWARE_MODULE))
@@ -650,8 +658,17 @@ static int __modelffb_data_transfer_wait(uint16_t *data, size_t n)
 
 /* =========== Synchronous update support =========== */
 
+static const char *modelffb_sync_status_table[MODELFFB_SYNC_N] = {
+	[MODELFFB_SYNC_IDLE] = "idle",
+	[MODELFFB_SYNC_PENDING] = "pending",
+	[MODELFFB_SYNC_BUSY] = "busy",
+};
+
 static inline void modelffb_sync_set_status(enum modelffb_sync_status status)
 {
+	SYNC_LOG("%d -> %d %s",
+		 parinfo->sync_status, status,
+		 modelffb_sync_status_table[status]);
 	parinfo->sync_status = status;
 	wake_up_interruptible(&parinfo->sync_update_wait);
 }
@@ -674,8 +691,10 @@ static inline void modelffb_sync_wait(const char *status_str)
 		return;
 	}
 
+	SYNC_LOG("wait %d %s", status, modelffb_sync_status_table[status]);
 	wait_event_interruptible(parinfo->sync_update_wait,
 				 (parinfo->sync_status == status));
+	SYNC_LOG("wait OK %d %s", status, modelffb_sync_status_table[status]);
 }
 
 static inline void modelffb_sync_wait_power(const char *power_str)
@@ -691,9 +710,11 @@ static inline void modelffb_sync_wait_power(const char *power_str)
 		return;
 	}
 
+	SYNC_LOG("power %d %s", power_state, power_str);
 	wait_event_interruptible(parinfo->sync_update_wait,
 				 (pl_hardware_is_enabled(parinfo->pl_hardware)
 				  == power_state));
+	SYNC_LOG("power OK %d %s", power_state, power_str);
 }
 
 /* =========== model F operations =========== */
@@ -1288,9 +1309,6 @@ static int modelffb_fill_update_buffer(uint8_t color)
 	__modelffb_simple_command(MODELF_COM_WAIT_TRIGGER_DONE);
 	retval = __modelffb_wait_for_HRDY_ready(MODELF_TIMEOUT_MS);
 
-	if (!retval)
-		modelffb_sync_set_status(MODELFFB_SYNC_BUSY);
-
 	modelffb_unlock();
 	return retval;
 }
@@ -1318,8 +1336,10 @@ static int __modelffb_cleanup_full(int waveform_mode)
 	__modelffb_simple_command(MODELF_COM_WAIT_FRAME_END);
 	retval = __modelffb_wait_for_HRDY_ready(MODELF_TIMEOUT_MS);
 
-	if (!retval)
+	if (!retval) {
+		SYNC_LOG("cleanup");
 		modelffb_sync_set_status(MODELFFB_SYNC_BUSY);
+	}
 
 	return retval;
 }
@@ -1371,8 +1391,10 @@ static int __modelffb_update_full(int waveform_mode)
 	__modelffb_simple_command(MODELF_COM_WAIT_FRAME_END);
 	retval = __modelffb_wait_for_HRDY_ready(MODELF_TIMEOUT_MS);
 
-	if (!retval)
+	if (!retval) {
+		SYNC_LOG("update");
 		modelffb_sync_set_status(MODELFFB_SYNC_BUSY);
+	}
 
 	return retval;
 }
@@ -1650,6 +1672,7 @@ static void __modelffb_cleanup_area_lut(int x, int y, int width, int height,
 		x & 0x1ff, y & 0x3ff, width & 0x1ff, height & 0x3ff);
 	__modelffb_simple_command(MODELF_COM_WAIT_TRIGGER_DONE);
 	__modelffb_wait_for_HRDY_ready(MODELF_TIMEOUT_MS);
+	SYNC_LOG("cleanup_area_lut");
 	modelffb_sync_set_status(MODELFFB_SYNC_BUSY);
 }
 
@@ -1706,6 +1729,7 @@ static void modelffb_cleanup_area(int x, int y, int width, int height,
 		x & 0x1ff, y & 0x3ff, width & 0x1ff, height & 0x3ff);
 	__modelffb_simple_command(MODELF_COM_WAIT_TRIGGER_DONE);
 	__modelffb_wait_for_HRDY_ready(MODELF_TIMEOUT_MS);
+	SYNC_LOG("cleanup_area");
 	modelffb_sync_set_status(MODELFFB_SYNC_BUSY);
 
 	modelffb_unlock();
@@ -2475,6 +2499,7 @@ static int __modelffb_queue_cleanup(int waveform_mode, int x, int y, int width, 
 {
 	int retval = 0;
 
+	SYNC_LOG("queue_cleanup");
 	modelffb_sync_set_status(MODELFFB_SYNC_PENDING);
 
 	if (parinfo->suspend_update == MODELF_SUSPEND_UPDATE) {
@@ -2563,6 +2588,8 @@ end:
 static void modelffb_irq_work_function(struct work_struct *ws)
 {
 	int free_lut;
+
+	SYNC_LOG("IRQ");
 
 	del_timer_sync(&parinfo->sleep_timer);
 #ifdef CONFIG_MODELF_DEBUG
