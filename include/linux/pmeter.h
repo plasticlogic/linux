@@ -1,7 +1,7 @@
 /*
  * pmeter.h -- Performance Meter driver interface definition
  *
- * Copyright (c) 2011 Plastic Logic Limited
+ * Copyright (c) 2011, 2012, 2013 Plastic Logic Limited
  *
  * Authors: Guillaume Tucker <guillaume.tucker@plasticlogic.com>
  *
@@ -39,7 +39,37 @@ struct pmeter_record {
 	char tag[PMETER_TAG_SZ];
 };
 
-#ifdef __KERNEL__
+#ifndef __KERNEL__ /* user-side functions */
+
+#include <fcntl.h>
+#include <unistd.h>
+
+#define pmeter_logf(msg, ...) do {					\
+		char buf[PMETER_TAG_SZ];				\
+		snprintf(buf, PMETER_TAG_SZ, msg, ##__VA_ARGS__);	\
+		pmeter_log(buf);					\
+	} while (0)
+
+static inline void pmeter_log(const char *tag)
+{
+	int fd;
+	size_t n;
+
+	fd = open("/dev/pmeter", O_WRONLY);
+
+	if (fd < 0)
+		return;
+
+	for (n = 0; (tag[n] != '\0') && (n < PMETER_TAG_SZ); ++n);
+
+	(void) write(fd, tag, n);
+
+	close(fd);
+
+	return;
+}
+
+#else /* __KERNEL__ */
 
 /* -- kernel internal usage -- */
 
