@@ -265,6 +265,33 @@ static inline void my_spi_read(struct spi_device *spi, void *buffer,
                 printk(KERN_ERR "MODELFFB: SPI read error: %d\n", error);
 }
 
+static inline void __modelffb_write_n16_spi(struct spi_device *spi,
+					    const uint16_t *data, size_t n)
+{
+	struct spi_message m;
+	struct spi_transfer t[5];
+	int error;
+	size_t i;
+
+	BUG_ON(n > 5);
+
+	spi_message_init(&m);
+	memset(t, 0, (n * sizeof(struct spi_transfer)));
+
+	for (i = 0; i < n; ++i) {
+		struct spi_transfer *it = &t[i];
+
+		it->tx_buf = &data[i];
+		it->len = sizeof(uint16_t);
+		it->bits_per_word = 16;
+		spi_message_add_tail(it, &m);
+	}
+
+        error = spi_sync(spi, &m);
+        if (error < 0)
+                printk(KERN_ERR "MODELFFB: SPI write error: %d\n", error);
+}
+
 static inline void __modelffb_write_command_spi(uint16_t command)
 {
 #ifdef CONFIG_MODELF_SWAP_SPI_BYTE
@@ -514,41 +541,72 @@ static inline void __modelffb_command_p1(uint16_t command, uint16_t param1)
 	__modelffb_write_data(param1);
 }
 
-static inline void __modelffb_command_p2(uint16_t command, uint16_t param1, uint16_t param2)
+static inline void __modelffb_command_p2(uint16_t command, uint16_t param1,
+					 uint16_t param2)
 {
+#if CONFIG_MODELF_CONNECTION_SPI
+	const uint16_t data[2] = { param1, param2 };
+
+	__modelffb_command(command);
+	__modelffb_write_n16_spi(parinfo->spi, data, 2);
+#else
 	__modelffb_command(command);
 	__modelffb_write_data(param1);
 	__modelffb_write_data(param2);
+#endif
 }
 
-static inline void __modelffb_command_p3(uint16_t command, uint16_t param1, uint16_t param2,
-	uint16_t param3)
+static inline void __modelffb_command_p3(uint16_t command, uint16_t param1,
+					 uint16_t param2, uint16_t param3)
 {
+#if CONFIG_MODELF_CONNECTION_SPI
+	const uint16_t data[3] = { param1, param2, param3 };
+
+	__modelffb_command(command);
+	__modelffb_write_n16_spi(parinfo->spi, data, 3);
+#else
 	__modelffb_command(command);
 	__modelffb_write_data(param1);
 	__modelffb_write_data(param2);
 	__modelffb_write_data(param3);
+#endif
 }
 
-static inline void __modelffb_command_p4(uint16_t command, uint16_t param1, uint16_t param2,
-	uint16_t param3, uint16_t param4)
+static inline void __modelffb_command_p4(uint16_t command, uint16_t param1,
+					 uint16_t param2,uint16_t param3,
+					 uint16_t param4)
 {
+#if CONFIG_MODELF_CONNECTION_SPI
+	const uint16_t data[4] = { param1, param2, param3, param4 };
+
+	__modelffb_command(command);
+	__modelffb_write_n16_spi(parinfo->spi, data, 4);
+#else
 	__modelffb_command(command);
 	__modelffb_write_data(param1);
 	__modelffb_write_data(param2);
 	__modelffb_write_data(param3);
 	__modelffb_write_data(param4);
+#endif
 }
 
-static inline void __modelffb_command_p5(uint16_t command, uint16_t param1, uint16_t param2,
-	uint16_t param3, uint16_t param4, uint16_t param5)
+static inline void __modelffb_command_p5(uint16_t command, uint16_t param1,
+					 uint16_t param2, uint16_t param3,
+					 uint16_t param4, uint16_t param5)
 {
+#if CONFIG_MODELF_CONNECTION_SPI
+	const uint16_t data[5] = { param1, param2, param3, param4, param5 };
+
+	__modelffb_command(command);
+	__modelffb_write_n16_spi(parinfo->spi, data, 5);
+#else
 	__modelffb_command(command);
 	__modelffb_write_data(param1);
 	__modelffb_write_data(param2);
 	__modelffb_write_data(param3);
 	__modelffb_write_data(param4);
 	__modelffb_write_data(param5);
+#endif
 }
 
 static inline void __modelffb_simple_command(uint16_t command)
