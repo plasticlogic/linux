@@ -1211,8 +1211,8 @@ static int __modelffb_send_image(int x, int y, int width, int height)
 	int retval = 0;
 	struct fb_info *info = parinfo->fbinfo;
 	int line;
-#if (defined(CONFIG_MODELF_DEBUG) || TIME_SEND_IMAGE)
-	uint32_t start_jiffy = jiffies;
+#if TIME_SEND_IMAGE
+	const uint32_t start_jiffy = jiffies;
 	uint32_t delta_jiffy;
 #endif
 
@@ -1249,10 +1249,11 @@ static int __modelffb_send_image(int x, int y, int width, int height)
 		break;
 	}
 
-#if (defined(CONFIG_MODELF_DEBUG) || TIME_SEND_IMAGE)
+#if TIME_SEND_IMAGE
 	delta_jiffy = jiffies - start_jiffy;
-	printk(KERN_INFO "MODELFFB: image (%d, %d) - (%d, %d) sent in %dms\n",
-	       x, y, (x + width - 1), (y + height - 1),
+	printk(KERN_INFO
+	       "MODELFFB: image (%d, %d) %dx%d (%d pixels) sent in %dms\n",
+	       x, y, width, height, (width * height),
 	       (delta_jiffy * 1000 / HZ));
 #endif
 
