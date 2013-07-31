@@ -454,13 +454,18 @@ static inline int __modelffb_wait_for_HRDY_ready(int ms_timeout)
 		}
 		msleep(1);
 	}
-	printk(KERN_ERR "MODELFFB: HRDY timeout, MODELF_REG_SYSTEM_STATUS = 0x%04x, MODELF_REG_POWER_SAVE_MODE = 0x%04X\n",
+	printk(KERN_ERR
+	       "MODELFFB: HRDY timeout, "
+	       "MODELF_REG_SYSTEM_STATUS = 0x%04x, "
+	       "MODELF_REG_POWER_SAVE_MODE = 0x%04X\n",
 		__modelffb_reg_read(MODELF_REG_SYSTEM_STATUS),
 		__modelffb_reg_read(MODELF_REG_POWER_SAVE_MODE)); 
 	return -EBUSY;
 
 success:
+#ifdef CONFIG_MODELF_CONNECTION_ASYNC
 	__modelffb_reg_read(MODELF_REG_SYSTEM_STATUS);
+#endif
 	return 0;
 }
 
@@ -469,7 +474,8 @@ static int __modelffb_delay_for_HRDY_ready(int ms_timeout)
 	uint32_t start_jiffy = jiffies;
 
 	/* sync GPMC access and gpio peep timing */
-	if ((__modelffb_reg_read(MODELF_REG_SYSTEM_STATUS) & MODELF_BF_INT_HRDY_STATUS) != 0)
+	if ((__modelffb_reg_read(MODELF_REG_SYSTEM_STATUS)
+	     & MODELF_BF_INT_HRDY_STATUS))
 		goto success;
 
 	/* poll gpio afterward */
@@ -481,13 +487,18 @@ static int __modelffb_delay_for_HRDY_ready(int ms_timeout)
 		}
 		udelay(1);
 	}
-	printk(KERN_ERR "MODELFFB: HRDY timeout, MODELF_REG_SYSTEM_STATUS = 0x%04x, MODELF_REG_POWER_SAVE_MODE = 0x%04X\n",
+	printk(KERN_ERR
+	       "MODELFFB: HRDY timeout, "
+	       "MODELF_REG_SYSTEM_STATUS = 0x%04x, "
+	       "MODELF_REG_POWER_SAVE_MODE = 0x%04X\n",
 		__modelffb_reg_read(MODELF_REG_SYSTEM_STATUS),
 		__modelffb_reg_read(MODELF_REG_POWER_SAVE_MODE)); 
 	return -EBUSY;
 
 success:
+#ifdef CONFIG_MODELF_CONNECTION_ASYNC
 	__modelffb_reg_read(MODELF_REG_SYSTEM_STATUS);
+#endif
 	return 0;
 }
 
@@ -591,7 +602,8 @@ static inline int __modelffb_wait_for_reg_value(uint16_t reg, uint16_t mask,
 		}
 		msleep(1);
 	}
-	printk(KERN_ERR "MODELFFB: read reg %04x timeouted for 0x%04x\n", reg, value);
+	printk(KERN_ERR "MODELFFB: read reg %04x timed out for 0x%04x\n",
+	       reg, value);
 	return -EBUSY;
 
 success:
