@@ -174,7 +174,7 @@ static void __devexit __modelffb_release_bus(void)
 	__modelffb_release_asyncbus();
 }
 
-static void __modelffb_write_command_async(uint16_t command)
+static inline void __modelffb_write_command_async(uint16_t command)
 {
 	*(uint16_t*)parinfo->command_addr = command;
 }
@@ -184,14 +184,15 @@ static void __modelffb_write_data_async(uint16_t data)
 	*(uint16_t*)parinfo->data_addr = data;
 }
 
-static void __modelffb_write_n_data_async(uint16_t *data, size_t n)
+static void __modelffb_write_n_data_async(const uint16_t *data, size_t n)
 {
 	int i;
 
 	i = 0;
 	while ((i + 1) * MODELF_DATA_SIZE < n) {
 		memcpy((void*)parinfo->data_addr,
-			(uint16_t*)data + i * MODELF_DATA_SIZE / 2, MODELF_DATA_SIZE);
+		       data + i * MODELF_DATA_SIZE / 2,
+		       MODELF_DATA_SIZE);
 		i++;
 	}
 
@@ -223,7 +224,8 @@ static void __devexit __modelffb_release_bus(void)
 {
 }
 
-static void my_spi_write(struct spi_device *spi, void *buffer, size_t bytes)
+static void my_spi_write(struct spi_device *spi, const void *buffer,
+			 size_t bytes)
 {
 	int error;
 	struct spi_message m;
@@ -287,7 +289,7 @@ static void __modelffb_write_data_spi(uint16_t data)
 #endif
 }
 
-static void __modelffb_write_n_data_spi(uint16_t *data, size_t n)
+static void __modelffb_write_n_data_spi(const uint16_t *data, size_t n)
 {
 	int i;
 #ifdef CONFIG_MODELF_SWAP_SPI_BYTE
@@ -342,24 +344,22 @@ static uint16_t __modelffb_read_data_spi(void)
  * Disordered command/data may cause problem.
  */
 
-static int __modelffb_write_data(uint16_t data)
+static void __modelffb_write_data(uint16_t data)
 {
 #ifdef CONFIG_MODELF_CONNECTION_ASYNC
 	__modelffb_write_data_async(data);
 #elif CONFIG_MODELF_CONNECTION_SPI
 	__modelffb_write_data_spi(data);
 #endif
-	return 0;
 }
 
-static int __modelffb_write_n_data(uint16_t *data, size_t n)
+static void __modelffb_write_n_data(const uint16_t *data, size_t n)
 {
 #ifdef CONFIG_MODELF_CONNECTION_ASYNC
 	__modelffb_write_n_data_async(data, n);
 #elif CONFIG_MODELF_CONNECTION_SPI
 	__modelffb_write_n_data_spi(data, n);
 #endif
-	return 0;
 }
 
 static uint16_t __modelffb_read_data(void)
@@ -378,29 +378,26 @@ static uint16_t __modelffb_read_dummy_data(void)
 }
 #endif
 
-static int __modelffb_immediate_command(uint16_t command)
+static void __modelffb_immediate_command(uint16_t command)
 {
 #ifdef CONFIG_MODELF_CONNECTION_ASYNC
 	__modelffb_write_command_async(command);
 #elif CONFIG_MODELF_CONNECTION_SPI
 	__modelffb_write_command_spi(command);
 #endif
-	return 0;
 }
 
-static int __modelffb_command_end(void)
+static void __modelffb_command_end(void)
 {
 #ifdef CONFIG_MODELF_SPI_WITHOUT_HDC
 	gpio_set_value(MODELF_SPIHCS_GPIO, 1);
 #endif
-	return 0;
 }
 
-static int __modelffb_immediate_simple_command(uint16_t command)
+static void __modelffb_immediate_simple_command(uint16_t command)
 {
 	__modelffb_immediate_command(command);
 	__modelffb_command_end();
-	return 0;
 }
 
 static uint16_t __modelffb_reg_read(uint16_t address)
@@ -492,10 +489,10 @@ success:
 	return 0;
 }
 
-static int __modelffb_command(uint16_t command)
+static void __modelffb_command(uint16_t command)
 {
 	__modelffb_wait_for_HRDY_ready(MODELF_TIMEOUT_MS);
-	return __modelffb_immediate_command(command);
+	__modelffb_immediate_command(command);
 }
 
 static inline void __modelffb_command_p1(uint16_t command, uint16_t param1)
@@ -541,11 +538,10 @@ static inline void __modelffb_command_p5(uint16_t command, uint16_t param1, uint
 	__modelffb_write_data(param5);
 }
 
-static int __modelffb_simple_command(uint16_t command)
+static void __modelffb_simple_command(uint16_t command)
 {
 	__modelffb_command(command);
 	__modelffb_command_end();
-	return 0;
 }
 static inline void __modelffb_simple_command_p1(uint16_t command, uint16_t param1)
 {
