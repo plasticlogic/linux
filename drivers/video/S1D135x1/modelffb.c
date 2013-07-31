@@ -292,6 +292,38 @@ static inline void __modelffb_write_n16_spi(struct spi_device *spi,
                 printk(KERN_ERR "MODELFFB: SPI write error: %d\n", error);
 }
 
+static inline uint16_t __modelffb_read_reg_spi(struct spi_device *spi,
+					       uint16_t address)
+{
+	struct spi_message m;
+	struct spi_transfer t[3];
+	uint16_t readval;
+	int error;
+
+	spi_message_init(&m);
+	memset(t, 0, (2 * sizeof(struct spi_transfer)));
+
+	t[0].tx_buf = &address;
+	t[0].len = sizeof(address);
+	t[0].bits_per_word = 16;
+	spi_message_add_tail(&t[0], &m);
+
+	t[1].rx_buf = &readval;
+	t[1].len = sizeof(readval);
+	t[1].bits_per_word = 16;
+	memcpy(&t[2], &t[1], sizeof(struct spi_transfer));
+	spi_message_add_tail(&t[1], &m);
+	spi_message_add_tail(&t[2], &m);
+
+	error = spi_sync(spi, &m);
+        if (error < 0) {
+                printk(KERN_ERR "MODELFFB: SPI reg read error: %d\n", error);
+		return error;
+	}
+
+	return readval;
+}
+
 static inline void __modelffb_write_command_spi(uint16_t command)
 {
 #ifdef CONFIG_MODELF_SWAP_SPI_BYTE
@@ -434,11 +466,12 @@ static inline uint16_t __modelffb_reg_read(uint16_t address)
 	uint16_t readval;
 
 	__modelffb_immediate_command(MODELF_COM_READ_REG);
-	__modelffb_write_data(address);
 #ifdef CONFIG_MODELF_CONNECTION_SPI
-	__modelffb_read_dummy_data();
-#endif
+	readval = __modelffb_read_reg_spi(parinfo->spi, address);
+#else
+	__modelffb_write_data(address);
 	readval = __modelffb_read_data();
+#endif
 	__modelffb_command_end();
 
 	return readval;
