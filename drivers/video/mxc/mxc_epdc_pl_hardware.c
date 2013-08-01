@@ -270,7 +270,6 @@ struct mxc_epdc_pl_hardware {
 	union pl_hardware_cpld cpld;
 	struct pl_hardware_cpld_fast_data fast_cpld;
 	struct pl_hardware_psu psu[2];
-	bool pmic_reinit;
 };
 
 /* CPLD */
@@ -415,8 +414,6 @@ int mxc_epdc_pl_hardware_init(struct mxc_epdc_pl_hardware *p,
 		return -EINVAL;
 	}
 	
-	p->pmic_reinit = false;
-
 	p->pdata = pdata;
 	p->conf = conf;
 
@@ -561,17 +558,19 @@ int mxc_epdc_pl_hardware_disable(struct mxc_epdc_pl_hardware *p)
 	if (!p->init_done)
 		return -EINVAL;
 
-	/* If we're using Type11 power-up sequence and this is the first power-down,
-	 * set the PMIC timings again as the first update would have caused a voltage drop
-	 * causing the PMIC to reset. This is a temporary fix! 
+#if 1
+	/* TEMPORARY FIX
+	 *
+	 * If we're using Type11 power-up sequence then always reload the PMIC
+	 * timings as it might have reset during the update.
 	 */
-	if (p->pmic_reinit == false && p->conf->power_seq == MXC_EPDC_PL_HARDWARE_SEQ_1)
-	{
+	if (p->conf->power_seq == MXC_EPDC_PL_HARDWARE_SEQ_1) {
+		printk("PLHW: Reloading the HVPMIC timings\n");
+
 		if (mxc_epdc_pl_hardware_reinit_hvpmic(p))
 			return -EINVAL;
-		else
-			p->pmic_reinit = true;
 	}
+#endif
 
 	psu = &p->psu[0];
 	STEP(pl_hardware_cpld_switch(p, CPLD_COM_SW_CLOSE, false),"COM open");
