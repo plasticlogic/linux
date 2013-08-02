@@ -1323,7 +1323,7 @@ static int __modelffb_send_image(int x, int y, int width, int height)
 			__modelffb_pool_read_shaped_1bit_image(x, line, width);
 			__modelffb_command_p5(MODELF_COM_LOAD_IMAGE_AREA,
 				1, x & 0x1ff, line & 0x3ff, width & 0x1ff, 1 & 0x3ff);
-			__modelffb_data_transfer((uint16_t*)parinfo->image_pool,
+			__modelffb_data_transfer(parinfo->image_pool,
 				((width + 15) / 16) * 2); /* 16-bit access */
 		}
 		break;
@@ -1342,7 +1342,7 @@ static int __modelffb_send_image(int x, int y, int width, int height)
 			__modelffb_pool_read_shaped_16bit_image(x, line, width);
 			__modelffb_command_p5(MODELF_COM_LOAD_IMAGE_AREA, MODELF_BPP_8,
 				x & 0x1ff, line & 0x3ff, width & 0x1ff, 1 & 0x3ff);
-			__modelffb_data_transfer((uint16_t*)parinfo->image_pool,
+			__modelffb_data_transfer(parinfo->image_pool,
 				((width + 1) / 2) * 2); /* 16-bit access */
 		}
 		break;
@@ -2311,7 +2311,7 @@ static int modelffb_alloc_vram(void)
 		goto err;
 	}
 
-	parinfo->image_pool = (uint32_t)kmalloc(info->fix.line_length, GFP_KERNEL);
+	parinfo->image_pool = kmalloc(info->fix.line_length, GFP_KERNEL);
 	if (!info->screen_base) {
 		printk(KERN_ERR "MODELFFB: failed to alloc image pool\n");
 		retval = -ENOMEM;
@@ -2335,7 +2335,7 @@ static void __devexit modelffb_free_vram(void)
 {
 	struct fb_info *info = parinfo->fbinfo;
 	printk(KERN_ERR "MODELFFB: modelffb_free_vram()\n");
-	kfree((void*)parinfo->image_pool);
+	kfree(parinfo->image_pool);
 	vfree(info->screen_base);
 }
 
