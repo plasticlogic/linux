@@ -1257,7 +1257,7 @@ static inline uint8_t __swap_bit(uint8_t b)
 	return parinfo->bit_swap_table[b];
 }
 
-static void __modelffb_pool_reed_shaped_1bit_image(int x, int y, int width)
+static void __modelffb_pool_read_shaped_1bit_image(int x, int y, int width)
 {
 	int i;
 	struct fb_info *info = parinfo->fbinfo;
@@ -1277,7 +1277,7 @@ static void __modelffb_pool_reed_shaped_1bit_image(int x, int y, int width)
  * this one is based on the one here
  * http://stackoverflow.com/questions/2442576/how-does-one-convert-16-bit-rgb565-to-24-bit-rgb888
  */
-static inline uint8_t __modelffb_8bit_desaturete(uint16_t color)
+static inline uint8_t __modelffb_8bit_desaturate(uint16_t color)
 {
 	uint32_t red, green, blue;
 	uint8_t grey;
@@ -1294,7 +1294,7 @@ static inline uint8_t __modelffb_8bit_desaturete(uint16_t color)
 	return grey;
 }
 
-static void __modelffb_pool_reed_shaped_16bit_image(int x, int y, int width)
+static void __modelffb_pool_read_shaped_16bit_image(int x, int y, int width)
 {
 	int i;
 	struct fb_info *info = parinfo->fbinfo;
@@ -1303,7 +1303,7 @@ static void __modelffb_pool_reed_shaped_16bit_image(int x, int y, int width)
 
 	for (i = x; i < (x + width); i++) {
 		*(uint8_t*)(parinfo->image_pool + (i - x)) =
-			__modelffb_8bit_desaturete(*(uint16_t*)(start + (i - x) * 2));
+			__modelffb_8bit_desaturate(*(uint16_t*)(start + (i - x) * 2));
 	}
 }
 
@@ -1320,7 +1320,7 @@ static int __modelffb_send_image(int x, int y, int width, int height)
 	switch (info->var.bits_per_pixel) {
 	case 1:
 		for (line = y; line < y + height; line++) {
-			__modelffb_pool_reed_shaped_1bit_image(x, line, width);
+			__modelffb_pool_read_shaped_1bit_image(x, line, width);
 			__modelffb_command_p5(MODELF_COM_LOAD_IMAGE_AREA,
 				1, x & 0x1ff, line & 0x3ff, width & 0x1ff, 1 & 0x3ff);
 			__modelffb_data_transfer((uint16_t*)parinfo->image_pool,
@@ -1339,7 +1339,7 @@ static int __modelffb_send_image(int x, int y, int width, int height)
 		break;
 	case 16:
 		for (line = y; line < y + height; line++) {
-			__modelffb_pool_reed_shaped_16bit_image(x, line, width);
+			__modelffb_pool_read_shaped_16bit_image(x, line, width);
 			__modelffb_command_p5(MODELF_COM_LOAD_IMAGE_AREA, MODELF_BPP_8,
 				x & 0x1ff, line & 0x3ff, width & 0x1ff, 1 & 0x3ff);
 			__modelffb_data_transfer((uint16_t*)parinfo->image_pool,
