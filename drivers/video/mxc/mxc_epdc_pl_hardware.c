@@ -28,6 +28,9 @@
 #include <linux/delay.h>
 #include <linux/mxc_epdc_pl_hardware.h>
 
+/* Set to 1 to reload the HVPMIC timings during power down of SEQ1 */
+#define SEQ1_HVPMIC_RELOAD 1
+
 /* I2C addresses */
 #define CPLD_I2C_ADDRESS 0x70
 #define HVPMIC_I2C_ADDRESS 0x48
@@ -270,6 +273,9 @@ struct mxc_epdc_pl_hardware {
 	union pl_hardware_cpld cpld;
 	struct pl_hardware_cpld_fast_data fast_cpld;
 	struct pl_hardware_psu psu[2];
+#if SEQ1_HVPMIC_RELOAD
+	bool hvpmic_loaded;
+#endif
 };
 
 /* CPLD */
@@ -297,7 +303,6 @@ static int pl_hardware_hvpmic_load_timings(struct mxc_epdc_pl_hardware *p,
 					   struct pl_hardware_psu *psu);
 static int pl_hardware_hvpmic_wait_pok(struct mxc_epdc_pl_hardware *p,
 				       struct pl_hardware_psu *psu);
-static int mxc_epdc_pl_hardware_reinit_hvpmic(struct mxc_epdc_pl_hardware *p);
 
 /* DAC */
 static int pl_hardware_dac_init(struct mxc_epdc_pl_hardware *p,
@@ -416,6 +421,9 @@ int mxc_epdc_pl_hardware_init(struct mxc_epdc_pl_hardware *p,
 	
 	p->pdata = pdata;
 	p->conf = conf;
+#if SEQ1_HVPMIC_RELOAD
+	p->hvpmic_loaded = false;
+#endif
 
 	p->i2c = i2c_get_adapter(p->pdata->i2c_bus_number);
 	if (!p->i2c) {
@@ -462,6 +470,11 @@ int mxc_epdc_pl_hardware_init(struct mxc_epdc_pl_hardware *p,
 	}
 
 	printk("PLHW: Ready, number of PSUs: %d\n", conf->psu_n);
+
+#if SEQ1_HVPMIC_RELOAD
+	if (p->conf->power_seq == MXC_EPDC_PL_HARDWARE_SEQ_1)
+		printk("PLHW: HVPMIC reload work-around enabled\n");
+#endif
 
 	p->init_done = true;
 
@@ -558,17 +571,25 @@ int mxc_epdc_pl_hardware_disable(struct mxc_epdc_pl_hardware *p)
 	if (!p->init_done)
 		return -EINVAL;
 
-#if 1
+#if SEQ1_HVPMIC_RELOAD
 	/* TEMPORARY FIX
 	 *
-	 * If we're using Type11 power-up sequence then always reload the PMIC
-	 * timings as it might have reset during the update.
+	 * If we're using Type11 power-up sequence (SEQ1) then always reload
+	 * the HVPMIC timings as it might have reset during the update.
 	 */
 	if (p->conf->power_seq == MXC_EPDC_PL_HARDWARE_SEQ_1) {
-		printk("PLHW: Reloading the HVPMIC timings\n");
+		int i;
 
-		if (mxc_epdc_pl_hardware_reinit_hvpmic(p))
-			return -EINVAL;
+		for (i = 0; i < p->conf->psu_n; ++i) {
+			struct pl_hardware_psu *psu = &p->psu[i];
+			int stat;
+
+			stat = pl_hardware_hvpmic_init(p, psu);
+			if (stat) {
+				printk("PLHW: Failed to initialise HVPMIC\n");
+				return stat;
+			}
+		}
 	}
 #endif
 
@@ -782,6 +803,10 @@ int pl_hardware_hvpmic_init(struct mxc_epdc_pl_hardware *p,
 	const u8 *timings;
 	int stat;
 
+#if SEQ1_HVPMIC_RELOAD /* only do this once */
+	if (!p->hvpmic_loaded) {
+#endif
+
 	stat = pl_hardware_psu_read_i2c_reg(p, psu, HVPMIC_I2C_ADDRESS,
 					    HVPMIC_REG_PROD_REV,
 					    &psu->hvpmic.prod_rev, 1);
@@ -798,16 +823,27 @@ int pl_hardware_hvpmic_init(struct mxc_epdc_pl_hardware *p,
 		return -EINVAL;
 	}
 
+#if SEQ1_HVPMIC_RELOAD
+	}
+#endif
+
 	timings = timings_table[p->conf->power_seq];
 
 	memcpy(psu->hvpmic.timings, timings, HVPMIC_NB_TIMINGS);
 
+#if SEQ1_HVPMIC_RELOAD /* print the messages only once */
+	if (!p->hvpmic_loaded) {
+#endif
 	printk("PLHW: HVPMIC rev 0x%02X, id 0x%02X\n",
 	       psu->hvpmic.prod_rev, psu->hvpmic.prod_id);
 	printk("PLHW: Timings on: %d, %d, %d, %d, "
 	       "timings off: %d, %d, %d, %d\n",
 	       timings[0], timings[1], timings[2], timings[3],
 	       timings[4], timings[5], timings[6], timings[7]);
+#if SEQ1_HVPMIC_RELOAD
+		p->hvpmic_loaded = true;
+	}
+#endif
 
 	return pl_hardware_hvpmic_load_timings(p, psu);
 }
@@ -870,31 +906,6 @@ static int pl_hardware_hvpmic_wait_pok(struct mxc_epdc_pl_hardware *p,
 	}
 
 	return stat;
-}
-
-static int mxc_epdc_pl_hardware_reinit_hvpmic(struct mxc_epdc_pl_hardware *p)
-{
-	int i, stat;
-
-	if (!p->conf->psu_n || (p->conf->psu_n > 2)) {
-		printk("PLHW: Invalid number of PSUs: %d "
-		       "(min is 1, max is 2)\n", p->conf->psu_n);
-		return -EINVAL;
-	}
-
-	for (i = 0; i < p->conf->psu_n; ++i) {
-		struct pl_hardware_psu *psu = &p->psu[i];
-
-		psu->i2c_sel_id = i;
-
-		stat = pl_hardware_hvpmic_init(p, psu);
-		if (stat) {
-			printk("PLHW: Failed to initialise HVPMIC\n");
-			return -EINVAL;
-		}
-	}
-
-	return 0;
 }
 
 /* DAC */
