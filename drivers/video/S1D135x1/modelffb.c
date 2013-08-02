@@ -50,10 +50,15 @@
 #define USE_MTP 0
 
 /* Set to 1 to enable pmeter synchronous update messages */
-#if 1
+#if 0
 # define SYNC_LOG(msg, ...) pmeter_logf("epsync "msg, ##__VA_ARGS__)
+static const char *modelffb_sync_status_table[MODELFFB_SYNC_N] = {
+	[MODELFFB_SYNC_IDLE] = "idle",
+	[MODELFFB_SYNC_PENDING] = "pending",
+	[MODELFFB_SYNC_BUSY] = "busy",
+};
 #else
-# define SYNC_LOG
+# define SYNC_LOG(msg, ...)
 #endif
 
 #if (defined(CONFIG_MODELF_PL_HARDWARE) \
@@ -759,12 +764,6 @@ static int __modelffb_data_transfer_wait(uint16_t *data, size_t n)
 #endif
 
 /* =========== Synchronous update support =========== */
-
-static const char *modelffb_sync_status_table[MODELFFB_SYNC_N] = {
-	[MODELFFB_SYNC_IDLE] = "idle",
-	[MODELFFB_SYNC_PENDING] = "pending",
-	[MODELFFB_SYNC_BUSY] = "busy",
-};
 
 static inline void modelffb_sync_set_status(enum modelffb_sync_status status)
 {
