@@ -99,7 +99,8 @@ struct modelffb_par {
 	int need_flush_image;
 	int need_cleanup;
 	int power_mode;
-	uint32_t image_pool;
+	void *image_pool;
+	int image_pool_lines;
 	wait_queue_head_t sync_update_wait;
 	enum modelffb_sync_status sync_status;
 	struct platform_device *pdev;

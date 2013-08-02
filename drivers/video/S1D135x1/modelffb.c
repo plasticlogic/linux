@@ -61,6 +61,9 @@ static const char *modelffb_sync_status_table[MODELFFB_SYNC_N] = {
 # define SYNC_LOG(msg, ...)
 #endif
 
+/* Maximum image pool size in bytes */
+#define IMAGE_POOL_MAX_SZ (32 * 1024)
+
 #if (defined(CONFIG_MODELF_PL_HARDWARE) \
      || defined(CONFIG_MODELF_PL_HARDWARE_MODULE))
 #include <linux/mutex.h>
@@ -1294,22 +1297,29 @@ static inline uint8_t __modelffb_8bit_desaturate(uint16_t color)
 	return grey;
 }
 
-static void __modelffb_pool_read_shaped_16bit_image(int x, int y, int width)
+static void __modelffb_pool_read_shaped_16bit_image(int x, int y, int width,
+						    int lines)
 {
-	int i;
 	struct fb_info *info = parinfo->fbinfo;
-	uint32_t start = (uint32_t)info->screen_base +
-		(uint32_t)info->fix.line_length * y + x * 2;
+	uint8_t *out = parinfo->image_pool;
+	int line;
 
-	for (i = x; i < (x + width); i++) {
-		*(uint8_t*)(parinfo->image_pool + (i - x)) =
-			__modelffb_8bit_desaturate(*(uint16_t*)(start + (i - x) * 2));
+	for (line = 0; line < lines; ++line) {
+		const uint16_t *in = (const uint16_t *)
+			(info->screen_base +
+			 info->fix.line_length * (line + y) +
+			 x * sizeof(uint16_t));
+		int i;
+
+		for (i = 0; i < width; ++i)
+			*out++ = __modelffb_8bit_desaturate(*in++);
 	}
 }
 
 static int __modelffb_send_image(int x, int y, int width, int height)
 {
 	int retval = 0;
+	const int last_line = y + height;
 	struct fb_info *info = parinfo->fbinfo;
 	int line;
 #if TIME_SEND_IMAGE
@@ -1319,7 +1329,7 @@ static int __modelffb_send_image(int x, int y, int width, int height)
 
 	switch (info->var.bits_per_pixel) {
 	case 1:
-		for (line = y; line < y + height; line++) {
+		for (line = y; line < last_line; line++) {
 			__modelffb_pool_read_shaped_1bit_image(x, line, width);
 			__modelffb_command_p5(MODELF_COM_LOAD_IMAGE_AREA,
 				1, x & 0x1ff, line & 0x3ff, width & 0x1ff, 1 & 0x3ff);
@@ -1328,7 +1338,7 @@ static int __modelffb_send_image(int x, int y, int width, int height)
 		}
 		break;
 	case 8:
-		for (line = y; line < y + height; line++) {
+		for (line = y; line < last_line; line++) {
 			__modelffb_command_p5(MODELF_COM_LOAD_IMAGE_AREA, MODELF_BPP_8,
 				x & 0x1ff, line & 0x3ff, width & 0x1ff, 1 & 0x3ff);
 			__modelffb_data_transfer(
@@ -1338,12 +1348,20 @@ static int __modelffb_send_image(int x, int y, int width, int height)
 		}
 		break;
 	case 16:
-		for (line = y; line < y + height; line++) {
-			__modelffb_pool_read_shaped_16bit_image(x, line, width);
-			__modelffb_command_p5(MODELF_COM_LOAD_IMAGE_AREA, MODELF_BPP_8,
-				x & 0x1ff, line & 0x3ff, width & 0x1ff, 1 & 0x3ff);
-			__modelffb_data_transfer(parinfo->image_pool,
-				((width + 1) / 2) * 2); /* 16-bit access */
+		for (line = y; line < last_line;) {
+			const int lines = min(parinfo->image_pool_lines,
+					      (last_line - line));
+			const size_t length = width * lines;
+
+			__modelffb_pool_read_shaped_16bit_image(
+				x, line, width, lines);
+			__modelffb_command_p5(
+				MODELF_COM_LOAD_IMAGE_AREA, MODELF_BPP_8,
+				(x & 0x1ff), (line & 0x3ff), (width & 0x1ff),
+				(lines & 0x3ff));
+			__modelffb_data_transfer( /* 16-bit access */
+				parinfo->image_pool, ((length + 1) / 2) * 2);
+			line += lines;
 		}
 		break;
 	default:
@@ -2292,6 +2310,7 @@ static void __devexit modelffb_framebuffer_release(void)
 static int modelffb_alloc_vram(void)
 {
 	struct fb_info *info = parinfo->fbinfo;
+	size_t image_pool_size;
 	size_t mem_len;
 	int retval = 0;
 
@@ -2311,7 +2330,11 @@ static int modelffb_alloc_vram(void)
 		goto err;
 	}
 
-	parinfo->image_pool = kmalloc(info->fix.line_length, GFP_KERNEL);
+	parinfo->image_pool_lines = IMAGE_POOL_MAX_SZ / info->fix.line_length;
+	image_pool_size = info->fix.line_length * parinfo->image_pool_lines;
+	printk(KERN_INFO "MODELFFB: image pool lines: %d, size: %zu\n",
+	       parinfo->image_pool_lines, image_pool_size);
+	parinfo->image_pool = kmalloc(image_pool_size, GFP_KERNEL);
 	if (!info->screen_base) {
 		printk(KERN_ERR "MODELFFB: failed to alloc image pool\n");
 		retval = -ENOMEM;
