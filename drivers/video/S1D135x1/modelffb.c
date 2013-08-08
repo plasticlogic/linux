@@ -2268,6 +2268,7 @@ static int __devinit modelffb_framebuffer_alloc(struct spi_device *spi)
 #endif
 
 	parinfo->opt_clear_on_exit = false;
+	parinfo->opt_clear_on_init = true;
 
 	return 0;
 
@@ -2910,10 +2911,12 @@ static int modelffb_modelf_init(void)
 		goto free_vram;
 	}
 
-	stat = modelffb_panel_init();
-	if (stat) {
-		printk(KERN_ERR "MODELFFB: panel_init failed\n");
-		goto framebuffer_unregister;
+	if (parinfo->opt_clear_on_init) {
+		stat = modelffb_panel_init();
+		if (stat) {
+			printk(KERN_ERR "MODELFFB: panel_init failed\n");
+			goto framebuffer_unregister;
+		}
 	}
 
 	stat = request_irq(MODELF_HIRQ, __modelffb_irq_handler,
@@ -3163,6 +3166,14 @@ static void modelffb_setopt(struct fb_info *info, char *tokbuf, size_t len)
 			return;
 
 		parinfo->opt_clear_on_exit = int_value ? true : false;
+	} else if (!strcmp(opt, "clear_on_init") && value) {
+		long unsigned int int_value;
+
+		if (kstrtoul(value, 10, &int_value))
+			return;
+
+		printk("CLEAR ON INIT: %d\n", (int)int_value);
+		parinfo->opt_clear_on_init = int_value ? true : false;
 	}
 }
 

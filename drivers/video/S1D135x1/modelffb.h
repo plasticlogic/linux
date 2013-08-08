@@ -117,6 +117,7 @@ struct modelffb_par {
         struct pl_hardware *pl_hardware;
 #endif
 	bool opt_clear_on_exit;
+	bool opt_clear_on_init;
 };
 
 struct modelffb_cleanup_work {
