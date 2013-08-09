@@ -52,6 +52,8 @@
 #include <linux/regulator/driver.h>
 #include <linux/fsl_devices.h>
 #include <linux/bitops.h>
+#include <mach/iomux-v3.h>
+#include <mach/iomux-mx50.h>
 
 #include "epdc_regs.h"
 
@@ -96,6 +98,10 @@ MODULE_PARM_DESC(panel_type, "Panel type identifier");
 #define MERGE_OK	0
 #define MERGE_FAIL	1
 #define MERGE_BLOCK	2
+
+/* Pin definitions for Type11 preinitialisation bitbash */
+#define EPDC_GDSP	(2*32 + 17)	/*GPIO_3_17 */
+#define EPDC_GDCLK	(2*32 + 16)	/*GPIO_3_16 */
 
 static unsigned long default_bpp = 16;
 
@@ -249,6 +255,11 @@ struct waveform_data_header {
 struct mxcfb_waveform_data_file {
 	struct waveform_data_header wdh;
 	u32 *data;	/* Temperature Range Table + Waveform Data */
+};
+
+static iomux_v3_cfg_t epdc_pads_gpio[] = {
+	MX50_PAD_EPDC_GDCLK__GPIO_3_16,
+	MX50_PAD_EPDC_GDSP__GPIO_3_17,
 };
 
 void __iomem *epdc_base;
@@ -885,7 +896,9 @@ void epdc_init_settings(struct mxc_epdc_fb_data *fb_data)
 	reg_val = ((0 << EPDC_GPIO_PWRCTRL_OFFSET) & EPDC_GPIO_PWRCTRL_MASK)
 	    | ((0 << EPDC_GPIO_BDR_OFFSET) & EPDC_GPIO_BDR_MASK);
 	__raw_writel(reg_val, EPDC_GPIO);
+	
 }
+
 
 static void epdc_powerup(struct mxc_epdc_fb_data *fb_data)
 {
@@ -3496,6 +3509,7 @@ static void mxc_epdc_fb_fw_handler(const struct firmware *fw,
 	/* Enable pix clk for EPDC */
 	clk_enable(fb_data->epdc_clk_pix);
 	clk_set_rate(fb_data->epdc_clk_pix, fb_data->cur_mode->vmode->pixclock);
+	
 
 	epdc_init_sequence(fb_data);
 
@@ -3598,10 +3612,44 @@ static struct device_attribute fb_attrs[] = {
 
 #if (defined(CONFIG_FB_MXC_EPDC_PL_HARDWARE) \
      || defined(CONFIG_FB_MXC_EPDC_PL_HARDWARE_MODULE))
+
+
 int __devinit mxc_epdc_fb_plhw_init(struct mxc_epdc_fb_data *fb_data)
 {
 	int ret;
+	int gpio_ret = 0, i;
 	bool pl_7lvl;
+	
+	/* 'Workaround' to pre-init Type11 gate driver chips by bitbashing */
+	if (!strcmp(mxc_epdc_fb_panel_type_modparam, "Type11"))
+	{
+		/* Set GDCLK and GDSP to GPIO */
+		mxc_iomux_v3_setup_multiple_pads(epdc_pads_gpio, ARRAY_SIZE(epdc_pads_gpio));
+		gpio_direction_output(EPDC_GDCLK, 0);
+		gpio_direction_output(EPDC_GDSP, 0);
+
+		/* Pulse GDSP, then run GDCLK for 960 pulses, exercising all gate outputs */
+		gpio_set_value(EPDC_GDSP, 1);
+		udelay(15);
+		gpio_set_value(EPDC_GDSP, 0);
+		udelay(15);
+		gpio_set_value(EPDC_GDSP, 1);
+		udelay(15);
+		gpio_set_value(EPDC_GDCLK, 1);
+		udelay(15);
+		gpio_set_value(EPDC_GDCLK, 0);
+		udelay(15);
+		gpio_set_value(EPDC_GDSP, 0);
+
+		for (i = 0; i < 959; i++)
+		{
+			gpio_set_value(EPDC_GDCLK, 1);
+			gpio_set_value(EPDC_GDCLK, 0);
+		}
+
+		printk("Pre-initialisation done\n");
+		/* Enable_pins called during epdc_powerup will re-claim GDSP and GDCLK for the EPDC */
+	}
 
 	if (!mxc_epdc_fb_vcom_n_modparam) {
 		dev_err(fb_data->dev, "Warning: No VCOM voltage supplied.\n");
