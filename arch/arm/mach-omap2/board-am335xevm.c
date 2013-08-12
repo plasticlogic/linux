@@ -1018,7 +1018,7 @@ static struct pinmux_config uart2_pin_mux[] = {
 * @pin_mux - single module pin-mux structure which defines pin-mux
 *			details for all its pins.
 */
-static void setup_pin_mux(struct pinmux_config *pin_mux)
+static void setup_pin_mux(const struct pinmux_config *pin_mux)
 {
 	int i;
 
@@ -3715,6 +3715,29 @@ static void modelf_init(int evm_id, int profile)
 }
 #endif /* CONFIG_FB_MODELF */
 
+static void pldek_gpio_init(void)
+{
+	static const struct pinmux_config pldek_pin_mux[] = {
+		{"ecap0_in_pwm0_out.gpio0_7",
+		 OMAP_MUX_MODE7 | AM33XX_PIN_INPUT_PULLDOWN},
+		{"uart1_rxd.gpio0_14",
+		 OMAP_MUX_MODE7 | AM33XX_PIN_INPUT_PULLDOWN},
+		{"gpmc_ad1.gpio1_1",
+		 OMAP_MUX_MODE7 | AM33XX_PIN_INPUT_PULLDOWN},
+		{"gpmc_a1.gpio1_17",
+		 OMAP_MUX_MODE7 | AM33XX_PIN_INPUT_PULLDOWN},
+		{"gpmc_csn0.gpio1_29",
+		 OMAP_MUX_MODE7 | AM33XX_PIN_INPUT_PULLDOWN},
+		{"mcasp0_fsr.gpio3_19",
+		 OMAP_MUX_MODE7 | AM33XX_PIN_INPUT_PULLDOWN},
+		{"mcasp0_ahclkx.gpio3_21",
+		 OMAP_MUX_MODE7 | AM33XX_PIN_INPUT_PULLDOWN},
+		{NULL, 0}
+	};
+
+	setup_pin_mux(pldek_pin_mux);
+}
+
 #if (defined(CONFIG_MODELF_PL_Z1_3) || defined(CONFIG_MODELF_PL_ROBIN))
 /* setup spi0 for EPSON model F */
 static struct spi_board_info am335x_modelf_spi0_info[] = {
@@ -3950,6 +3973,7 @@ static struct evm_dev_cfg beaglebone_dev_cfg[] = {
 	{spi1_modelf_init, DEV_ON_BASEBOARD, PROFILE_ALL},
 	{plz5_keys_init,DEV_ON_BASEBOARD, PROFILE_ALL},
 #endif
+	{pldek_gpio_init, DEV_ON_BASEBOARD, PROFILE_ALL},
 	{NULL, 0, 0},
 };
 
