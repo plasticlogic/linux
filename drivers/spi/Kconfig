@@ -417,6 +417,14 @@ config SPI_SPIDEV
 	  Note that this application programming interface is EXPERIMENTAL
 	  and hence SUBJECT TO CHANGE WITHOUT NOTICE while it stabilizes.
 
+config SPI_SPIDEV_HOTPLUG
+	bool "Enable dynamic configuration hotplug"
+	depends on SPI_SPIDEV
+	help
+	  This enables the spidev configuration to be dynamically used when the
+	  driver module is loaded.  The SPI device is then freed when the
+	  driver is removed, enabling another driver to use it.
+
 config SPI_TLE62X0
 	tristate "Infineon TLE62X0 (for power switching)"
 	depends on SYSFS

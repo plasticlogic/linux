@@ -4,6 +4,8 @@
  * Copyright (C) 2006 SWAPP
  *	Andrea Paterniani <a.paterniani@swapp-eng.it>
  * Copyright (C) 2007 David Brownell (simplification, cleanup)
+ * Copyright (C) 2013 Plastic Logic Limited (dynamic hotplug)
+ *	Guillaume Tucker <guillaume.tucker@plasticlogic.com>
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -25,6 +27,7 @@
 #include <linux/ioctl.h>
 #include <linux/fs.h>
 #include <linux/device.h>
+#include <linux/platform_device.h>
 #include <linux/err.h>
 #include <linux/list.h>
 #include <linux/errno.h>
@@ -657,6 +660,60 @@ static struct spi_driver spidev_spi_driver = {
 	 */
 };
 
+/* ----------------------------------------------------------------------------
+ * Platform driver to enable dynamic hotplug configuration
+ */
+
+#ifdef CONFIG_SPI_SPIDEV_HOTPLUG
+
+static int __devinit spidev_hotplug_probe(struct platform_device *pdev)
+{
+	struct spi_board_info *info = pdev->dev.platform_data;
+	struct spi_master *master;
+	struct spi_device *device;
+
+	master = spi_busnum_to_master(info->bus_num);
+	if (!master) {
+		dev_err(&pdev->dev, "Failed to get master SPI bus\n");
+		return -ENODEV;
+	}
+
+	device = spi_new_device(master, info);
+	if (!device) {
+		dev_err(&pdev->dev, "Failed to create new SPI device\n");
+		return -ENODEV;
+	}
+
+	platform_set_drvdata(pdev, device);
+
+	dev_info(&pdev->dev, "spidev hotplug %d.%d ready\n",
+		 info->bus_num, info->chip_select);
+
+	return 0;
+}
+
+static int __devexit spidev_hotplug_remove(struct platform_device *pdev)
+{
+	struct spi_device *device = platform_get_drvdata(pdev);
+
+	spi_unregister_device(device);
+
+	dev_info(&pdev->dev, "spidev hotplug removed\n");
+
+	return 0;
+}
+
+static struct platform_driver spidev_hotplug_driver = {
+	.probe = spidev_hotplug_probe,
+	.remove = __devexit_p(spidev_hotplug_remove),
+	.driver = {
+		.name = "spidev_hotplug",
+		.owner = THIS_MODULE,
+	},
+};
+
+#endif /* CONFIG_SPI_SPIDEV_HOTPLUG */
+
 /*-------------------------------------------------------------------------*/
 
 static int __init spidev_init(void)
@@ -683,12 +740,25 @@ static int __init spidev_init(void)
 		class_destroy(spidev_class);
 		unregister_chrdev(SPIDEV_MAJOR, spidev_spi_driver.driver.name);
 	}
+
+#ifdef CONFIG_SPI_SPIDEV_HOTPLUG
+	status = platform_driver_register(&spidev_hotplug_driver);
+	if (status < 0) {
+		spi_unregister_driver(&spidev_spi_driver);
+		class_destroy(spidev_class);
+		unregister_chrdev(SPIDEV_MAJOR, spidev_spi_driver.driver.name);
+	}
+#endif
+
 	return status;
 }
 module_init(spidev_init);
 
 static void __exit spidev_exit(void)
 {
+#ifdef CONFIG_SPI_SPIDEV_HOTPLUG
+	platform_driver_unregister(&spidev_hotplug_driver);
+#endif
 	spi_unregister_driver(&spidev_spi_driver);
 	class_destroy(spidev_class);
 	unregister_chrdev(SPIDEV_MAJOR, spidev_spi_driver.driver.name);
