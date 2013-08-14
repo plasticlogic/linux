@@ -726,40 +726,6 @@ static struct pinmux_config spi0_pin_mux[] = {
 	{NULL, 0},
 };
 
-/* Pin mux for Epson modelF SPI */
-#if (defined(CONFIG_MODELF_PL_Z1_3) || defined(CONFIG_MODELF_PL_ROBIN))
-static struct pinmux_config modelf_spi_pin_mux[] = {
-	{"spi0_sclk.spi0_sclk",	OMAP_MUX_MODE0 | AM33XX_PIN_INPUT},
-	{"spi0_sclk.spi0_sclk",	OMAP_MUX_MODE0 | AM33XX_PIN_INPUT},
-#if 0 /* use normal SPI chip-select */
-	{"spi0_cs0.spi0_cs0",	OMAP_MUX_MODE0 | AM33XX_PIN_OUTPUT},
-#else /* use GPIO-controlled chip-select */
-	{"spi0_cs0.gpio0_5", 	OMAP_MUX_MODE7 | AM33XX_PIN_OUTPUT},
-#endif
-#ifdef CONFIG_MODELF_SWAP_SPI_IO
-	{"spi0_d0.spi0_d0",	OMAP_MUX_MODE0 | AM33XX_PIN_OUTPUT},
-	{"spi0_d1.spi0_d1",	(OMAP_MUX_MODE0 | AM33XX_PULL_ENBL
-				 | AM33XX_PULL_UP | AM33XX_INPUT_EN)},
-#else
-	{"spi0_d0.spi0_d0",		OMAP_MUX_MODE0 | AM33XX_PIN_INPUT},
-	{"spi0_d1.spi0_d1",		OMAP_MUX_MODE0 | AM33XX_PIN_OUTPUT},
-#endif
-	{NULL, 0},
-};
-#elif defined(CONFIG_MODELF_PL_Z5)
-static struct pinmux_config modelf_spi_pin_mux[] = {
-	{"mcasp0_aclkx.spi1_sclk", OMAP_MUX_MODE3 | AM33XX_PULL_ENBL
-		| AM33XX_INPUT_EN},
-	{"mcasp0_fsx.spi1_d0", OMAP_MUX_MODE3 | AM33XX_PULL_ENBL
-		| AM33XX_PULL_UP | AM33XX_INPUT_EN},
-	{"mcasp0_axr0.spi1_d1", OMAP_MUX_MODE3 | AM33XX_PULL_ENBL
-		| AM33XX_INPUT_EN},
-	/* Epson Driver needs to manually control CS so map as GPIO */
-	{"mcasp0_ahclkr.gpio3_17", OMAP_MUX_MODE7 | AM33XX_PIN_OUTPUT },
-	{NULL, 0},
-};
-#endif
-
 /* Module pin mux for SPI flash */
 static struct pinmux_config spi1_pin_mux[] = {
 	{"mcasp0_aclkx.spi1_sclk", OMAP_MUX_MODE3 | AM33XX_PULL_ENBL
@@ -1427,10 +1393,10 @@ static struct platform_device lcd3a1_keys = {
 
 /* pinmux for Plasticlogic Hummingbird Z5 keys */
 static struct pinmux_config pl5_keys_pin_mux[] = {
-	{"gpmc_ad11.gpio0_27",  OMAP_MUX_MODE7 | AM33XX_PIN_INPUT}, // Left
-	{"gpmc_ad15.gpio1_15",  OMAP_MUX_MODE7 | AM33XX_PIN_INPUT}, //Right
-	{"gpmc_clk.gpio2_1",    OMAP_MUX_MODE7 | AM33XX_PIN_INPUT}, // Up
-	{"gpmc_ad14.gpio1_14",  OMAP_MUX_MODE7 | AM33XX_PIN_INPUT}, //Down
+	{"gpmc_ad11.gpio0_27",  OMAP_MUX_MODE7 | AM33XX_PIN_INPUT}, /* Left */
+	{"gpmc_ad15.gpio1_15",  OMAP_MUX_MODE7 | AM33XX_PIN_INPUT}, /* Right */
+	{"gpmc_clk.gpio2_1",    OMAP_MUX_MODE7 | AM33XX_PIN_INPUT}, /* Up */
+	{"gpmc_ad14.gpio1_14",  OMAP_MUX_MODE7 | AM33XX_PIN_INPUT}, /* Down */
 	{NULL, 0},
 };
 
@@ -1850,79 +1816,6 @@ static struct pwmss_platform_data  pwm_pdata[3] = {
 		.version = PWM_VERSION_1,
 	},
 };
-
-#if defined(CONFIG_FB_MODELF) || defined(CONFIG_FB_MODELF_MODULE)
-
-/* Module pin mux for EPSON model F */
-static struct pinmux_config modelf_pin_mux[] = {
-#ifndef CONFIG_MODELF_PL_Z5
-	{"lcd_pclk.gpio2_24", 	OMAP_MUX_MODE7 | AM33XX_PIN_INPUT},
-#endif
-	{"gpmc_wen.gpio2_4",	OMAP_MUX_MODE7 | AM33XX_PIN_OUTPUT_PULLUP},
-	{"gpmc_oen_ren.gpio2_3",OMAP_MUX_MODE7 | AM33XX_PIN_OUTPUT_PULLUP},
-	{"gpmc_ad0.gpio1_0",	OMAP_MUX_MODE7 | AM33XX_PIN_INPUT},
-	{"gpmc_ad1.gpio1_1",	OMAP_MUX_MODE7 | AM33XX_PIN_INPUT},
-	{"gpmc_ad2.gpio1_2",	OMAP_MUX_MODE7 | AM33XX_PIN_INPUT},
-	{"gpmc_ad3.gpmc_ad3",	OMAP_MUX_MODE0 | AM33XX_PIN_INPUT},
-	{"gpmc_ad4.gpmc_ad4",	OMAP_MUX_MODE0 | AM33XX_PIN_INPUT},
-	{"gpmc_ad5.gpmc_ad5",	OMAP_MUX_MODE0 | AM33XX_PIN_INPUT},
-	{"gpmc_ad6.gpmc_ad6",	OMAP_MUX_MODE0 | AM33XX_PIN_INPUT},
-	{"gpmc_ad7.gpmc_ad7",	OMAP_MUX_MODE0 | AM33XX_PIN_INPUT},
-	{"gpmc_ad8.gpmc_ad8",	OMAP_MUX_MODE0 | AM33XX_PIN_INPUT},
-	{"gpmc_ad9.gpmc_ad9",	OMAP_MUX_MODE0 | AM33XX_PIN_INPUT},
-	{"gpmc_ad10.gpmc_ad10",	OMAP_MUX_MODE0 | AM33XX_PIN_INPUT},
-	{"gpmc_ad11.gpmc_ad11",	OMAP_MUX_MODE0 | AM33XX_PIN_INPUT},
-	{"gpmc_ad12.gpmc_ad12",	OMAP_MUX_MODE0 | AM33XX_PIN_INPUT},
-	{"gpmc_ad13.gpmc_ad13",	OMAP_MUX_MODE0 | AM33XX_PIN_INPUT},
-	{"gpmc_ad14.gpmc_ad14",	OMAP_MUX_MODE0 | AM33XX_PIN_INPUT},
-	{"gpmc_ad15.gpmc_ad15",	OMAP_MUX_MODE0 | AM33XX_PIN_INPUT},
-	{"gpmc_wait0.gpio0_30",		OMAP_MUX_MODE7 | AM33XX_PIN_INPUT},
-	{"xdma_event_intr1.gpio0_20",	OMAP_MUX_MODE7 | AM33XX_PIN_INPUT},
-	{NULL, 0},
- };
-
-static struct pinmux_config modelf_pl_pin_mux[] = {
-	/* HD/C, not used but drive low */
-	{"gpmc_a1.gpio1_17",  OMAP_MUX_MODE7 | AM33XX_PIN_OUTPUT},
-	/* POK */
-	{"uart1_txd.gpio0_15",     OMAP_MUX_MODE7 | AM33XX_PIN_INPUT},
-	/* VCOM switch open / close */
-	{"uart1_rxd.gpio0_14", OMAP_MUX_MODE7 | AM33XX_PIN_OUTPUT},
-#if (defined(CONFIG_MODELF_PL_Z1_3) || defined(CONFIG_MODELF_PL_ROBIN))
-	/* MAX17135 HV_EN */
-	{"mcasp0_ahclkx.gpio3_21", OMAP_MUX_MODE7 | AM33XX_PIN_OUTPUT},
-#elif defined(CONFIG_MODELF_PL_Z5)
-	/* MAX17135 HV_EN */
-	{"lcd_ac_bias_en.gpio2_25", OMAP_MUX_MODE7 | AM33XX_PIN_OUTPUT},
-	/* i2c buffer enable / disable */
-	{"gpmc_ad4.gpio1_4",     OMAP_MUX_MODE7 | AM33XX_PIN_OUTPUT},
-	/* 3V3 enable / disable */
-	{"gpmc_ad1.gpio1_1",     OMAP_MUX_MODE7 | AM33XX_PIN_OUTPUT},
-	/* Solomon VPP enable  -set low */
-	{"gpmc_csn0.gpio1_29",   OMAP_MUX_MODE7 | AM33XX_PIN_OUTPUT},
-	/* Solomon/Epson select */
-	{"lcd_pclk.gpio2_24",    OMAP_MUX_MODE7 | AM33XX_PIN_INPUT},
-	/* HIRQ */
-	{"mcasp0_ahclkx.gpio3_21", OMAP_MUX_MODE7 | AM33XX_PIN_INPUT},
-	/* GPIO1 - external trigger */
-	{"gpmc_ad0.gpio1_0",     OMAP_MUX_MODE7 | AM33XX_PIN_OUTPUT},
-	/* GPIO2 - external trigger */
-	{"lcd_vsync.gpio2_22",   OMAP_MUX_MODE7 | AM33XX_PIN_OUTPUT},
-	/* GPIO3 - external trigger */
-	{"lcd_hsync.gpio2_23",   OMAP_MUX_MODE7 | AM33XX_PIN_OUTPUT},
-	/* LED1 - */
-	{"gpmc_ad2.gpio1_2",   OMAP_MUX_MODE7 | AM33XX_PIN_OUTPUT},
-	/* LED2 - */
-	{"gpmc_ad6.gpio1_6",   OMAP_MUX_MODE7 | AM33XX_PIN_OUTPUT},
-	/* LED3 - */
-	{"gpmc_ad3.gpio1_3",   OMAP_MUX_MODE7 | AM33XX_PIN_OUTPUT},
-	/* LED4 - */
-	{"gpmc_ad7.gpio1_7",   OMAP_MUX_MODE7 | AM33XX_PIN_OUTPUT},
-#endif
-	{NULL, 0},
-};
-
-#endif /* CONFIG_FB_MODELF */
 
 static int backlight_enable = false;
 
@@ -2374,15 +2267,6 @@ static void haptics_init(int evm_id, int profile)
 	am33xx_register_ehrpwm(2, &pwm_pdata[2]);
 }
 
-#if defined(CONFIG_FB_MODELF) || defined(CONFIG_FB_MODELF_MODULE)
-static void modelf_init(int evm_id, int profile)
-{
-	setup_pin_mux(modelf_pin_mux);
-	setup_pin_mux(modelf_pl_pin_mux);
-	setup_pin_mux(modelf_spi_pin_mux);
-}
-#endif /* CONFIG_FB_MODELF */
-
 /* NAND partition information */
 static struct mtd_partition am335x_nand_partitions[] = {
 /* All the partition sizes are listed in terms of NAND block size */
@@ -2501,6 +2385,59 @@ static struct spi_board_info bone_spidev2_info[] = {
 		.chip_select   = 0,
 	},
 };
+
+#ifdef CONFIG_SPI_SPIDEV_HOTPLUG
+static struct platform_device am33xx_spidev_hotplug_device = {
+	.name = "spidev_hotplug",
+	.dev = {
+		.platform_data = bone_spidev2_info,
+	},
+};
+
+static void spidev_hotplug_init(int evm_id, int profile)
+{
+	beaglebone_spi1_free = 0;
+
+	if (platform_device_register(&am33xx_spidev_hotplug_device))
+		pr_warning("spidev hotplug registration failed\n");
+}
+#endif /* CONFIG_SPI_SPIDEV_HOTPLUG */
+
+#if defined(CONFIG_FB_MODELF) || defined(CONFIG_FB_MODELF_MODULE)
+static struct spi_board_info am335x_modelf_spi_info[] = {
+	{
+		.modalias      = "modelffb_spi",
+		.platform_data = NULL,
+		.irq           = -1,
+		.max_speed_hz  = 16000000,
+#if defined(CONFIG_MODELF_PL_Z1_3) || defined(CONFIG_MODELF_PL_ROBIN)
+		.bus_num       = 1,
+#elif defined(CONFIG_MODELF_PL_Z5)
+		.bus_num       = 2,
+#endif
+		.chip_select   = 0,
+		.mode = SPI_MODE_0,
+	},
+};
+
+static struct modelffb_platform_data am33xx_modelf_platform_data = {
+	.spi_info = am335x_modelf_spi_info,
+};
+
+static struct platform_device am33xx_modelf_device = {
+	.name			= "modelffb",
+	.id			= -1,
+	.dev = {
+		.platform_data = &am33xx_modelf_platform_data,
+	},
+};
+
+static void modelf_init(int evm_id, int profile)
+{
+	if (platform_device_register(&am33xx_modelf_device))
+		pr_warning("modelf registration failed\n");
+}
+#endif /* CONFIG_FB_MODELF */
 
 static struct gpmc_timings am335x_nand_timings = {
 	.sync_clk = 0,
@@ -3678,46 +3615,108 @@ static void spi1_init(int evm_id, int profile)
 	return;
 }
 
+static const struct pinmux_config pldek_pin_mux[] = {
+#if (defined(CONFIG_MODELF_PL_Z1_3) || defined(CONFIG_MODELF_PL_ROBIN))
+	{"spi0_sclk.spi0_sclk",     OMAP_MUX_MODE0 | AM33XX_PIN_INPUT},
+	{"spi0_sclk.spi0_sclk",     OMAP_MUX_MODE0 | AM33XX_PIN_INPUT},
+	{"spi0_cs0.gpio0_5",        OMAP_MUX_MODE7 | AM33XX_PIN_OUTPUT},
+#ifdef CONFIG_MODELF_SWAP_SPI_IO /* to work around hardware errors */
+	{"spi0_d0.spi0_d0",         OMAP_MUX_MODE0 | AM33XX_PIN_OUTPUT},
+	{"spi0_d1.spi0_d1",        (OMAP_MUX_MODE0 | AM33XX_PULL_ENBL |
+				    AM33XX_PULL_UP | AM33XX_INPUT_EN)},
+#else
+	{"spi0_d0.spi0_d0",         OMAP_MUX_MODE0 | AM33XX_PIN_INPUT},
+	{"spi0_d1.spi0_d1",         OMAP_MUX_MODE0 | AM33XX_PIN_OUTPUT},
+#endif
+#endif /* PL_Z1_3 || PL_ROBIN */
+
+#if defined(CONFIG_MODELF_PL_Z5) || defined(CONFIG_SPI_SPIDEV_HOTPLUG)
+	{"mcasp0_aclkx.spi1_sclk", (OMAP_MUX_MODE3 | AM33XX_PULL_ENBL |
+				    AM33XX_INPUT_EN)},
+	{"mcasp0_fsx.spi1_d0",     (OMAP_MUX_MODE3 | AM33XX_PULL_ENBL |
+				    AM33XX_PULL_UP | AM33XX_INPUT_EN)},
+	{"mcasp0_axr0.spi1_d1",    (OMAP_MUX_MODE3 | AM33XX_PULL_ENBL |
+				    AM33XX_INPUT_EN)},
+#endif /* PL_Z5 || SPIDEV_HOTPLUG */
+
+#ifdef CONFIG_MODELF_PL_Z5
+	/* SPI CS driven as GPIO */
+	{"mcasp0_ahclkr.gpio3_17", OMAP_MUX_MODE7 | AM33XX_PIN_OUTPUT },
+	/* VCC_EN */
+	{"gpmc_ad1.gpio1_1",       OMAP_MUX_MODE7 | AM33XX_PIN_INPUT_PULLDOWN},
+
+	/* Solomon control signals */
+
+	/* VCOM_EN (HB Z4.x) */
+	{"ecap0_in_pwm0_out.gpio0_7", (OMAP_MUX_MODE7 |
+				       AM33XX_PIN_INPUT_PULLDOWN)},
+	/* VCOM_EN */
+	{"uart1_rxd.gpio0_14",     OMAP_MUX_MODE7 | AM33XX_PIN_INPUT_PULLDOWN},
+	/* HDC */
+	{"gpmc_a1.gpio1_17",       OMAP_MUX_MODE7 | AM33XX_PIN_INPUT_PULLDOWN},
+	/* OTP_EN */
+	{"gpmc_csn0.gpio1_29",     OMAP_MUX_MODE7 | AM33XX_PIN_INPUT_PULLDOWN},
+	/* RESET */
+	{"mcasp0_fsr.gpio3_19",    OMAP_MUX_MODE7 | AM33XX_PIN_INPUT_PULLDOWN},
+	/* BUSY */
+	{"mcasp0_ahclkx.gpio3_21", OMAP_MUX_MODE7 | AM33XX_PIN_INPUT_PULLDOWN},
+#endif /* PL_Z5 */
+
+#if (defined(CONFIG_MODELF_PL_HARDWARE) || \
+     defined(CONFIG_MODELF_PL_HARDWARE_MODULE))
+	/* HD/C, not used but drive low */
+	{"gpmc_a1.gpio1_17",       OMAP_MUX_MODE7 | AM33XX_PIN_OUTPUT},
+	/* POK */
+	{"uart1_txd.gpio0_15",     OMAP_MUX_MODE7 | AM33XX_PIN_INPUT},
+	/* VCOM switch open / close */
+	{"uart1_rxd.gpio0_14",     OMAP_MUX_MODE7 | AM33XX_PIN_OUTPUT},
+#endif /* PL_HARDWARE */
+
+#if (defined(CONFIG_MODELF_PL_Z1_3) || defined(CONFIG_MODELF_PL_ROBIN))
+	/* MAX17135 HV_EN */
+	{"mcasp0_ahclkx.gpio3_21", OMAP_MUX_MODE7 | AM33XX_PIN_OUTPUT},
+#if 0
+	/* HRDY */
+	{"gpmc_wait0.gpio0_30",    OMAP_MUX_MODE7 | AM33XX_PIN_INPUT},
+#endif
+	/* HIRQ */
+	{"xdma_event_intr1.gpio0_20", OMAP_MUX_MODE7 | AM33XX_PIN_INPUT},
+#elif defined(CONFIG_MODELF_PL_Z5)
+	/* MAX17135 HV_EN */
+	{"lcd_ac_bias_en.gpio2_25", OMAP_MUX_MODE7 | AM33XX_PIN_OUTPUT},
+	/* i2c buffer enable / disable */
+	{"gpmc_ad4.gpio1_4",       OMAP_MUX_MODE7 | AM33XX_PIN_OUTPUT},
+	/* 3V3 enable / disable */
+	{"gpmc_ad1.gpio1_1",       OMAP_MUX_MODE7 | AM33XX_PIN_OUTPUT},
+	/* Solomon/Epson select */
+	{"lcd_pclk.gpio2_24",      OMAP_MUX_MODE7 | AM33XX_PIN_INPUT},
+	/* HIRQ */
+	{"mcasp0_ahclkx.gpio3_21", OMAP_MUX_MODE7 | AM33XX_PIN_INPUT},
+	/* SOL_EP_SELECT */
+	{"lcd_pclk.gpio2_24",      OMAP_MUX_MODE7 | AM33XX_PIN_INPUT},
+
+	/* GPIO1 - external trigger */
+	{"gpmc_ad0.gpio1_0",       OMAP_MUX_MODE7 | AM33XX_PIN_OUTPUT},
+	/* GPIO2 - external trigger */
+	{"lcd_vsync.gpio2_22",     OMAP_MUX_MODE7 | AM33XX_PIN_OUTPUT},
+	/* GPIO3 - external trigger */
+	{"lcd_hsync.gpio2_23",     OMAP_MUX_MODE7 | AM33XX_PIN_OUTPUT},
+	/* LED1 - */
+	{"gpmc_ad2.gpio1_2",       OMAP_MUX_MODE7 | AM33XX_PIN_OUTPUT},
+	/* LED2 - */
+	{"gpmc_ad6.gpio1_6",       OMAP_MUX_MODE7 | AM33XX_PIN_OUTPUT},
+	/* LED3 - */
+	{"gpmc_ad3.gpio1_3",       OMAP_MUX_MODE7 | AM33XX_PIN_OUTPUT},
+	/* LED4 - */
+	{"gpmc_ad7.gpio1_7",       OMAP_MUX_MODE7 | AM33XX_PIN_OUTPUT},
+#endif /* PL_Z5 */
+
+	{NULL, 0}
+};
 static void pldek_gpio_init(int evm_id, int profile)
 {
-	static const struct pinmux_config pldek_pin_mux[] = {
-		{"ecap0_in_pwm0_out.gpio0_7",
-		 OMAP_MUX_MODE7 | AM33XX_PIN_INPUT_PULLDOWN},
-		{"uart1_rxd.gpio0_14",
-		 OMAP_MUX_MODE7 | AM33XX_PIN_INPUT_PULLDOWN},
-		{"gpmc_ad1.gpio1_1",
-		 OMAP_MUX_MODE7 | AM33XX_PIN_INPUT_PULLDOWN},
-		{"gpmc_a1.gpio1_17",
-		 OMAP_MUX_MODE7 | AM33XX_PIN_INPUT_PULLDOWN},
-		{"gpmc_csn0.gpio1_29",
-		 OMAP_MUX_MODE7 | AM33XX_PIN_INPUT_PULLDOWN},
-		{"mcasp0_fsr.gpio3_19",
-		 OMAP_MUX_MODE7 | AM33XX_PIN_INPUT_PULLDOWN},
-		{"mcasp0_ahclkx.gpio3_21",
-		 OMAP_MUX_MODE7 | AM33XX_PIN_INPUT_PULLDOWN},
-		{NULL, 0}
-	};
-
 	setup_pin_mux(pldek_pin_mux);
 }
-
-#if defined(CONFIG_FB_MODELF) || defined(CONFIG_FB_MODELF_MODULE)
-static struct spi_board_info am335x_modelf_spi_info[] = {
-	{
-		.modalias      = "modelffb_spi",
-		.platform_data = NULL,
-		.irq           = -1,
-		.max_speed_hz  = 16000000,
-#if defined(CONFIG_MODELF_PL_Z1_3) || defined(CONFIG_MODELF_PL_ROBIN)
-		.bus_num       = 1,
-#elif defined(CONFIG_MODELF_PL_Z5)
-		.bus_num       = 2,
-#endif
-		.chip_select   = 0,
-		.mode = SPI_MODE_0,
-	},
-};
-#endif /* CONFIG_FB_MODELF */
 
 static int beaglebone_phy_fixup(struct phy_device *phydev)
 {
@@ -3873,11 +3872,15 @@ static struct evm_dev_cfg beaglebone_old_dev_cfg[] = {
 	{i2c2_init,	DEV_ON_BASEBOARD, PROFILE_NONE},
 	{mmc0_init,	DEV_ON_BASEBOARD, PROFILE_NONE},
 	{boneleds_init,	DEV_ON_BASEBOARD, PROFILE_ALL},
+	{pldek_gpio_init, DEV_ON_BASEBOARD, PROFILE_ALL},
+#ifdef CONFIG_SPI_SPIDEV_HOTPLUG
+	{spidev_hotplug_init, DEV_ON_BASEBOARD, PROFILE_ALL},
+#endif
 #if defined(CONFIG_FB_MODELF) || defined(CONFIG_FB_MODELF_MODULE)
 	{modelf_init,	DEV_ON_BASEBOARD, PROFILE_ALL},
 #endif
 #ifdef CONFIG_MODELF_PL_Z5
-	{plz5_keys_init,DEV_ON_BASEBOARD, PROFILE_ALL},
+	{plz5_keys_init, DEV_ON_BASEBOARD, PROFILE_ALL},
 #endif
 	{NULL, 0, 0},
 };
@@ -3890,13 +3893,16 @@ static struct evm_dev_cfg beaglebone_dev_cfg[] = {
 	{usb0_init,	DEV_ON_BASEBOARD, PROFILE_NONE},
 	{usb1_init,	DEV_ON_BASEBOARD, PROFILE_NONE},
 	{mmc0_init,	DEV_ON_BASEBOARD, PROFILE_NONE},
+	{pldek_gpio_init, DEV_ON_BASEBOARD, PROFILE_ALL},
+#ifdef CONFIG_SPI_SPIDEV_HOTPLUG
+	{spidev_hotplug_init, DEV_ON_BASEBOARD, PROFILE_ALL},
+#endif
 #if defined(CONFIG_FB_MODELF) || defined(CONFIG_FB_MODELF_MODULE)
 	{modelf_init,	DEV_ON_BASEBOARD, PROFILE_ALL},
 #endif
 #ifdef CONFIG_MODELF_PL_Z5
 	{plz5_keys_init,DEV_ON_BASEBOARD, PROFILE_ALL},
 #endif
-	{pldek_gpio_init, DEV_ON_BASEBOARD, PROFILE_ALL},
 	{NULL, 0, 0},
 };
 
@@ -4418,26 +4424,6 @@ static void __init am33xx_cpuidle_init(void)
 
 }
 
-#if defined(CONFIG_FB_MODELF) || defined(CONFIG_FB_MODELF_MODULE)
-static struct modelffb_platform_data am33xx_modelf_platform_data = {
-	.spi_info = am335x_modelf_spi_info,
-};
-
-static struct platform_device am33xx_modelf_device = {
-	.name			= "modelffb",
-	.id			= -1,
-	.dev = {
-		.platform_data = &am33xx_modelf_platform_data,
-	},
-};
-
-static void __init am33xx_modelffb_init(void)
-{
-	if (platform_device_register(&am33xx_modelf_device))
-		pr_warning("modelf registration failed\n");
-}
-#endif /* CONFIG_FB_MODELF */
-
 static void __init am335x_evm_init(void)
 {
 	am33xx_cpuidle_init();
@@ -4456,9 +4442,6 @@ static void __init am335x_evm_init(void)
 	am335x_evm_i2c_init();
 	omap_sdrc_init(NULL, NULL);
 	usb_musb_init(&musb_board_data);
-#if defined(CONFIG_FB_MODELF) || defined(CONFIG_FB_MODELF_MODULE)
-	am33xx_modelffb_init();
-#endif
 	omap_board_config = am335x_evm_config;
 	omap_board_config_size = ARRAY_SIZE(am335x_evm_config);
 	/* Create an alias for icss clock */
