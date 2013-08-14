@@ -2452,21 +2452,6 @@ config MODELF_DEFERRED_IO
 	  Choose this option to automatically generate display updates using
 	  the frame buffer deferred IO framework.
 
-choice
-	prompt "Connection"
-	depends on FB_MODELF
-	default MODELF_CONNECTION_ASYNC
-	help
-	  Choose the conection to the controller.
-
-config MODELF_CONNECTION_ASYNC
-	bool "Asynchronous bus"
-
-config MODELF_CONNECTION_SPI
-	bool "SPI bus"
-
-endchoice
-
 config MODELF_SPI_WITHOUT_HDC
 	bool "When using SPI, disable HDC"
 	depends on FB_MODELF

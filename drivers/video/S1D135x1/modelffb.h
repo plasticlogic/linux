@@ -33,7 +33,7 @@
 #define MODELF_MAX_INITCODE_SIZE 4096
 #define MODELF_MAX_WAVEFORM_SIZE (160 * 1024)
 
-#ifdef CONFIG_MODELF_CONNECTION_ASYNC
+#if 0
 /* not used for SPI interface */
 #define MODELF_HRDY_GPIO 30
 #endif

@@ -23,7 +23,6 @@
 #include <linux/vmalloc.h>
 #include <linux/ioport.h>
 #include <linux/platform_device.h>
-#include <linux/spi/spidev.h>
 #include <linux/delay.h>
 #include <linux/gpio.h>
 #include <linux/workqueue.h>
@@ -31,11 +30,11 @@
 #include <linux/spi/spi.h>
 #include <linux/timer.h>
 #include <linux/pmeter.h>
+#include <linux/modelffb.h>
 #ifndef CONFIG_MODELF_DEFERRED_IO
 #include <linux/mm.h>
 #endif
 
-#include <plat/gpmc.h>
 #include <mach/board-am335xevm.h>
 #include <mach/irqs.h>
 
@@ -86,12 +85,6 @@ static DEFINE_MUTEX(temperature_lock);
 
 #endif
 
-#ifdef CONFIG_MODELF_CONNECTION_ASYNC
-#define MODELF_CONNECTION "asynchronous bus"
-#elif CONFIG_MODELF_CONNECTION_SPI
-#define MODELF_CONNECTION "SPI bus"
-#endif
-
 #define NON_DMA_MAX_BYTES (160 - 2)
 
 static struct modelffb_par *parinfo;
@@ -126,111 +119,39 @@ static inline void modelffb_unlock(void)
 	up(&parinfo->access_sem);
 }
 
-/* =========== asynchronous bus specific functions =========== */
-#ifdef CONFIG_MODELF_CONNECTION_ASYNC
-static int __devinit __modelffb_request_asyncbus(void)
-{
-	int retval = 0;
-	unsigned long modelfaddr;
-
-	retval = gpmc_cs_request(MODELF_CS, MODELF_IO_SIZE, &modelfaddr);
-	if (retval != 0) {
-		printk(KERN_ERR "MODELFFB: request gpmc failed\n");
-		retval = -EIO;
-		goto end;
-	}
-
-	parinfo->command_addr = (uint32_t)ioremap(modelfaddr, MODELF_IO_SIZE);
-	if (!parinfo->command_addr) {
-		printk(KERN_ERR "MODELFFB: map I/O address failed\n");
-		retval = -EIO;
-		goto end;
-	}
-	parinfo->data_addr = parinfo->command_addr + MODELF_DATA_ADDR_OFFSET;
-
-#ifdef CONFIG_MODELF_DEBUG
-	printk(KERN_INFO "MODELFFB: command address = 0x%08x(0x%08x)\n",
-		parinfo->command_addr, (uint32_t)modelfaddr);
-	printk(KERN_INFO "MODELFFB:    data address = 0x%08x(0x%08x)\n",
-		parinfo->data_addr, (uint32_t)modelfaddr + MODELF_DATA_ADDR_OFFSET);
-#endif
-
-end:
-	return retval;
-}
-
-static void __devexit __modelffb_release_asyncbus(void)
-{
-	iounmap((void*)parinfo->command_addr);
-	gpmc_cs_free(MODELF_CS);
-}
-
-static int __devinit __modelffb_request_bus(void)
-{
-	int retval = 0;
-
-	retval = __modelffb_request_asyncbus();
-	if (retval != 0) {
-		printk(KERN_ERR "MODELFFB: setup async bus faild\n");
-	}
-
-	return retval;
-}
-
-static void __devexit __modelffb_release_bus(void)
-{
-	__modelffb_release_asyncbus();
-}
-
-static inline void __modelffb_write_command_async(uint16_t command)
-{
-	*(uint16_t*)parinfo->command_addr = command;
-}
-
-static inline void __modelffb_write_data_async(uint16_t data)
-{
-	*(uint16_t*)parinfo->data_addr = data;
-}
-
-static inline void __modelffb_write_n_data_async(const uint16_t *data,
-						 size_t n)
-{
-	int i;
-
-	i = 0;
-	while ((i + 1) * MODELF_DATA_SIZE < n) {
-		memcpy((void*)parinfo->data_addr,
-		       data + i * MODELF_DATA_SIZE / 2,
-		       MODELF_DATA_SIZE);
-		i++;
-	}
-
-	memcpy((void*)parinfo->data_addr,
-		(uint16_t*)data + i * MODELF_DATA_SIZE / 2,
-		((n - i * MODELF_DATA_SIZE) / 4) * 4);
-
-	if (n % 4 == 2) /* out of 32-bit alignment */
-		*(uint16_t*)parinfo->data_addr = *((uint16_t*)data + n / 2 - 1);
-}
-
-static inline uint16_t __modelffb_read_data_async(void)
-{
-	return *(uint16_t*)parinfo->data_addr;
-}
-#endif /* CONFIG_MODELF_CONNECTION_ASYNC */
-
-/* =========== SPI bus specific functions =========== */
-#ifdef CONFIG_MODELF_CONNECTION_SPI
+/* ----------------------------------------------------------------------------
+ * SPI interface
+ *
+ * NOTE! Do not use __xx functions without semaphore.
+ * Disordered command/data may cause problem.
+ */
 
 #define SWAP_BYTE_16(x) ((x >> 8) | (x << 8))
 
-static int __devinit __modelffb_request_bus(void)
+static int __devinit __modelffb_request_bus(struct platform_device *pdev)
 {
+	struct modelffb_platform_data *pdata = pdev->dev.platform_data;
+	struct spi_master *master;
+
+	master = spi_busnum_to_master(pdata->spi_info->bus_num);
+	if (!master) {
+		printk(KERN_ERR "Failed to get master SPI bus %d\n",
+		       pdata->spi_info->bus_num);
+		return -ENODEV;
+	}
+
+	parinfo->spi = spi_new_device(master, pdata->spi_info);
+	if (!parinfo->spi) {
+		printk(KERN_ERR "Failed to create new SPI device\n");
+		return -ENODEV;
+	}
+
 	return 0;
 }
 
 static void __devexit __modelffb_release_bus(void)
 {
+	spi_unregister_device(parinfo->spi);
 }
 
 static inline void my_spi_write(struct spi_device *spi, const void *buffer,
@@ -273,8 +194,8 @@ static inline void my_spi_read(struct spi_device *spi, void *buffer,
                 printk(KERN_ERR "MODELFFB: SPI read error: %d\n", error);
 }
 
-static inline void __modelffb_write_n16_spi(struct spi_device *spi,
-					    const uint16_t *data, size_t n)
+static inline void __modelffb_write_n16(struct spi_device *spi,
+					const uint16_t *data, size_t n)
 {
 	struct spi_message m;
 	struct spi_transfer t[5];
@@ -300,8 +221,8 @@ static inline void __modelffb_write_n16_spi(struct spi_device *spi,
                 printk(KERN_ERR "MODELFFB: SPI write error: %d\n", error);
 }
 
-static inline uint16_t __modelffb_read_reg_spi(struct spi_device *spi,
-					       uint16_t address)
+static inline uint16_t __modelffb_read_reg(struct spi_device *spi,
+					   uint16_t address)
 {
 	struct spi_message m;
 	struct spi_transfer t[3];
@@ -332,7 +253,7 @@ static inline uint16_t __modelffb_read_reg_spi(struct spi_device *spi,
 	return readval;
 }
 
-static inline void __modelffb_write_command_spi(uint16_t command)
+static inline void __modelffb_write_command(uint16_t command)
 {
 #ifdef CONFIG_MODELF_SWAP_SPI_BYTE
 	command = SWAP_BYTE_16(command);
@@ -348,7 +269,7 @@ static inline void __modelffb_write_command_spi(uint16_t command)
 #endif
 }
 
-static inline void __modelffb_write_data_spi(uint16_t data)
+static inline void __modelffb_write_data(uint16_t data)
 {
 #ifdef CONFIG_MODELF_SWAP_SPI_BYTE
 	uint16_t buffer = SWAP_BYTE_16(data);
@@ -358,7 +279,7 @@ static inline void __modelffb_write_data_spi(uint16_t data)
 #endif
 }
 
-static inline void __modelffb_write_n_data_spi(const uint16_t *data, size_t n)
+static inline void __modelffb_write_n_data(const uint16_t *data, size_t n)
 {
 	int i;
 #ifdef CONFIG_MODELF_SWAP_SPI_BYTE
@@ -392,7 +313,7 @@ static inline void __modelffb_write_n_data_spi(const uint16_t *data, size_t n)
 #endif
 }
 
-static uint16_t __modelffb_read_data_spi(void)
+static uint16_t __modelffb_read_data(void)
 {
 #ifdef CONFIG_MODELF_SWAP_SPI_BYTE
 	uint16_t readval;
@@ -406,54 +327,19 @@ static uint16_t __modelffb_read_data_spi(void)
 	return readval;
 #endif
 }
-#endif /* CONFIG_MODELF_CONNECTION_SPI */
 
-/* =========== access functions ===========
- * NOTE! Do not use __xx functions without semaphore.
- * Disordered command/data may cause problem.
+/* ----------------------------------------------------------------------------
+ * access functions
  */
 
-static inline void __modelffb_write_data(uint16_t data)
-{
-#ifdef CONFIG_MODELF_CONNECTION_ASYNC
-	__modelffb_write_data_async(data);
-#elif CONFIG_MODELF_CONNECTION_SPI
-	__modelffb_write_data_spi(data);
-#endif
-}
-
-static inline void __modelffb_write_n_data(const uint16_t *data, size_t n)
-{
-#ifdef CONFIG_MODELF_CONNECTION_ASYNC
-	__modelffb_write_n_data_async(data, n);
-#elif CONFIG_MODELF_CONNECTION_SPI
-	__modelffb_write_n_data_spi(data, n);
-#endif
-}
-
-static inline uint16_t __modelffb_read_data(void)
-{
-#ifdef CONFIG_MODELF_CONNECTION_ASYNC
-	return __modelffb_read_data_async();
-#elif CONFIG_MODELF_CONNECTION_SPI
-	return __modelffb_read_data_spi();
-#endif
-}
-
-#ifdef CONFIG_MODELF_CONNECTION_SPI
 static inline uint16_t __modelffb_read_dummy_data(void)
 {
-	return __modelffb_read_data_spi();
+	return __modelffb_read_data();
 }
-#endif
 
 static inline void __modelffb_immediate_command(uint16_t command)
 {
-#ifdef CONFIG_MODELF_CONNECTION_ASYNC
-	__modelffb_write_command_async(command);
-#elif CONFIG_MODELF_CONNECTION_SPI
-	__modelffb_write_command_spi(command);
-#endif
+	__modelffb_write_command(command);
 }
 
 static inline void __modelffb_command_end(void)
@@ -474,12 +360,7 @@ static inline uint16_t __modelffb_reg_read(uint16_t address)
 	uint16_t readval;
 
 	__modelffb_immediate_command(MODELF_COM_READ_REG);
-#ifdef CONFIG_MODELF_CONNECTION_SPI
-	readval = __modelffb_read_reg_spi(parinfo->spi, address);
-#else
-	__modelffb_write_data(address);
-	readval = __modelffb_read_data();
-#endif
+	readval = __modelffb_read_reg(parinfo->spi, address);
 	__modelffb_command_end();
 
 	return readval;
@@ -487,7 +368,7 @@ static inline uint16_t __modelffb_reg_read(uint16_t address)
 
 static inline int __modelffb_check_HRDY_ready(void)
 {
-#ifdef CONFIG_MODELF_CONNECTION_SPI
+#if 1
 	if ((__modelffb_reg_read(MODELF_REG_SYSTEM_STATUS)
 	     & MODELF_BF_INT_HRDY_STATUS))
 		return 1;
@@ -531,9 +412,6 @@ static inline int __modelffb_wait_for_HRDY_ready(int ms_timeout)
 	return -EBUSY;
 
 success:
-#ifdef CONFIG_MODELF_CONNECTION_ASYNC
-	__modelffb_reg_read(MODELF_REG_SYSTEM_STATUS);
-#endif
 	return 0;
 }
 
@@ -564,9 +442,6 @@ static int __modelffb_delay_for_HRDY_ready(int ms_timeout)
 	return -EBUSY;
 
 success:
-#ifdef CONFIG_MODELF_CONNECTION_ASYNC
-	__modelffb_reg_read(MODELF_REG_SYSTEM_STATUS);
-#endif
 	return 0;
 }
 
@@ -585,69 +460,39 @@ static inline void __modelffb_command_p1(uint16_t command, uint16_t param1)
 static inline void __modelffb_command_p2(uint16_t command, uint16_t param1,
 					 uint16_t param2)
 {
-#if CONFIG_MODELF_CONNECTION_SPI
 	const uint16_t data[2] = { param1, param2 };
 
 	__modelffb_command(command);
-	__modelffb_write_n16_spi(parinfo->spi, data, 2);
-#else
-	__modelffb_command(command);
-	__modelffb_write_data(param1);
-	__modelffb_write_data(param2);
-#endif
+	__modelffb_write_n16(parinfo->spi, data, 2);
 }
 
 static inline void __modelffb_command_p3(uint16_t command, uint16_t param1,
 					 uint16_t param2, uint16_t param3)
 {
-#if CONFIG_MODELF_CONNECTION_SPI
 	const uint16_t data[3] = { param1, param2, param3 };
 
 	__modelffb_command(command);
-	__modelffb_write_n16_spi(parinfo->spi, data, 3);
-#else
-	__modelffb_command(command);
-	__modelffb_write_data(param1);
-	__modelffb_write_data(param2);
-	__modelffb_write_data(param3);
-#endif
+	__modelffb_write_n16(parinfo->spi, data, 3);
 }
 
 static inline void __modelffb_command_p4(uint16_t command, uint16_t param1,
 					 uint16_t param2,uint16_t param3,
 					 uint16_t param4)
 {
-#if CONFIG_MODELF_CONNECTION_SPI
 	const uint16_t data[4] = { param1, param2, param3, param4 };
 
 	__modelffb_command(command);
-	__modelffb_write_n16_spi(parinfo->spi, data, 4);
-#else
-	__modelffb_command(command);
-	__modelffb_write_data(param1);
-	__modelffb_write_data(param2);
-	__modelffb_write_data(param3);
-	__modelffb_write_data(param4);
-#endif
+	__modelffb_write_n16(parinfo->spi, data, 4);
 }
 
 static inline void __modelffb_command_p5(uint16_t command, uint16_t param1,
 					 uint16_t param2, uint16_t param3,
 					 uint16_t param4, uint16_t param5)
 {
-#if CONFIG_MODELF_CONNECTION_SPI
 	const uint16_t data[5] = { param1, param2, param3, param4, param5 };
 
 	__modelffb_command(command);
-	__modelffb_write_n16_spi(parinfo->spi, data, 5);
-#else
-	__modelffb_command(command);
-	__modelffb_write_data(param1);
-	__modelffb_write_data(param2);
-	__modelffb_write_data(param3);
-	__modelffb_write_data(param4);
-	__modelffb_write_data(param5);
-#endif
+	__modelffb_write_n16(parinfo->spi, data, 5);
 }
 
 static inline void __modelffb_simple_command(uint16_t command)
@@ -741,31 +586,6 @@ static int __modelffb_data_transfer(uint16_t *data, size_t n)
 	return retval;
 }
 
-#ifdef CONFIG_MODELF_CONNECTION_ASYNC
-static int __modelffb_data_transfer_wait(uint16_t *data, size_t n)
-{
-	int retval;
-	int i;
-
-	__modelffb_command_p1(MODELF_COM_WRITE_REG, MODELF_DATA_PORT);
-	for (i = 0; i < ((n + 3) / 4) * 4; i += 2) {
-		*(uint16_t*)parinfo->data_addr = *((uint16_t*)data + i / 2);
-		/* Wait 5us for FIFO empty */
-		/* The 64 clocks is 4us and 5us is used for safety margin */
-		udelay(5);		
-	}
-	__modelffb_command_end();
-	__modelffb_immediate_simple_command(MODELF_COM_END_OF_RAW_ACCESS);
-
-	retval = __modelffb_delay_for_HRDY_ready(MODELF_TIMEOUT_MS);
-	if (retval != 0) {
-		printk(KERN_ERR "MODELFFB: failed to send data\n");
-	}
-
-	return retval;
-}
-#endif
-
 /* =========== Synchronous update support =========== */
 
 static inline void modelffb_sync_set_status(enum modelffb_sync_status status)
@@ -853,9 +673,8 @@ static inline void modelffb_dump_memory(uint32_t modelf_addr, size_t size)
 		(size / 2) & 0xffff, ((size / 2) >> 16) & 0xffff);
 
 	__modelffb_command_p1(MODELF_COM_READ_REG, MODELF_DATA_PORT);
-#ifdef CONFIG_MODELF_CONNECTION_SPI
 	__modelffb_read_dummy_data();
-#endif
+
 	for (i = 0; i < size / 2; i++) {
 		if (i % 8 == 0)
 			printk("\n%08x: ", modelf_addr + i * 2);
@@ -945,16 +764,8 @@ static int __modelffb_send_waveform(void)
 		(parinfo->waveform_size / 2) & 0xffff,
 		((parinfo->waveform_size / 2) >> 16) & 0xffff);
 
-#ifdef CONFIG_MODELF_CONNECTION_ASYNC
-	if (parinfo->send_waveform_wait == MODELF_SEND_WAVEFORM_WAIT) {
-		__modelffb_data_transfer_wait((uint16_t*)parinfo->waveform, parinfo->waveform_size);
-	}
-	else {
-		__modelffb_data_transfer((uint16_t*)parinfo->waveform, parinfo->waveform_size);
-	}
-#elif CONFIG_MODELF_CONNECTION_SPI
-	__modelffb_data_transfer((uint16_t*)parinfo->waveform, parinfo->waveform_size);
-#endif
+	__modelffb_data_transfer((uint16_t*)parinfo->waveform,
+				 parinfo->waveform_size);
 
 	retval = __modelffb_delay_for_HRDY_ready(MODELF_TIMEOUT_MS);
 	if (retval != 0) {
@@ -2180,24 +1991,13 @@ static struct fb_var_screeninfo modelffb_var __devinitdata = {
 	.transp.msb_right	= 0,
 };
 
-#ifdef CONFIG_MODELF_CONNECTION_ASYNC
 static int __devinit modelffb_framebuffer_alloc(struct platform_device *pdev)
 {
-	int retval;
 	struct fb_info *info;
+	int retval;
 
 	info = framebuffer_alloc(sizeof(struct modelffb_par), &pdev->dev);
 	platform_set_drvdata(pdev, info);
-#elif CONFIG_MODELF_CONNECTION_SPI
-static int __devinit modelffb_framebuffer_alloc(struct spi_device *spi)
-{
-	int retval;
-	struct fb_info *info;
-
-	info = framebuffer_alloc(sizeof(struct modelffb_par), &spi->dev);
-	spi->bits_per_word = 16;
-	spi_set_drvdata(spi, info);
-#endif
 
 	if (!info) {
 		printk(KERN_ERR "MODELFFB: failed to alloc modelffb fb_info\n");
@@ -2211,13 +2011,9 @@ static int __devinit modelffb_framebuffer_alloc(struct spi_device *spi)
 		retval = -ENOMEM;
 		goto framebuffer_release;
 	}
-#ifdef CONFIG_MODELF_CONNECTION_ASYNC
+
 	parinfo->pdev = pdev;
 	parinfo->dev = &pdev->dev;
-#elif CONFIG_MODELF_CONNECTION_SPI
-	parinfo->spi = spi;
-	parinfo->dev = &spi->dev;
-#endif
 
 	info->pseudo_palette = kmalloc(sizeof(u32) * 256, GFP_KERNEL);
 	if (!info->pseudo_palette) {
@@ -3525,6 +3321,43 @@ static void modelffb_remove_file(void)
 #endif
 }
 
+static int __devinit modelffb_spi_probe(struct spi_device *spi)
+{
+	return 0;
+}
+
+static int __devexit modelffb_spi_remove(struct spi_device *spi)
+{
+	return 0;
+}
+
+static void modelffb_spi_shutdown(struct spi_device *spi)
+{
+}
+
+static int modelffb_spi_suspend(struct spi_device *spi, pm_message_t msg)
+{
+	return 0;
+}
+
+static int modelffb_spi_resume(struct spi_device *spi)
+{
+	return 0;
+}
+
+static struct spi_driver modelffb_spi_driver = {
+	.probe		= modelffb_spi_probe,
+	.remove 	= __devexit_p(modelffb_spi_remove),
+	.shutdown	= modelffb_spi_shutdown,
+	.suspend	= modelffb_spi_suspend,
+	.resume		= modelffb_spi_resume,
+	.driver = {
+		.name	= "modelffb_spi",
+		.bus	= &spi_bus_type,
+		.owner	= THIS_MODULE,
+	},
+};
+
 /* =========== registration & unregistration =========== */
 static int __devinit modelffb_alloc_memory(void)
 {
@@ -3560,11 +3393,7 @@ static void __devexit modelffb_free_memory(void)
 	vfree((void*)parinfo->init_code);
 }
 
-#ifdef CONFIG_MODELF_CONNECTION_ASYNC
 static int __devinit modelffb_probe(struct platform_device *pdev)
-#elif CONFIG_MODELF_CONNECTION_SPI
-static int __devinit modelffb_probe(struct spi_device *spi)
-#endif
 {
 	int retval = 0;
 
@@ -3572,7 +3401,6 @@ static int __devinit modelffb_probe(struct spi_device *spi)
 	printk(KERN_INFO "MODELFFB: check rev: %d\n", CHECKREV);
 #endif
 
-#ifdef CONFIG_MODELF_CONNECTION_SPI
 #ifdef CONFIG_MODELF_SPI_WITHOUT_HDC
 	retval = gpio_request(MODELF_SPIHCS_GPIO, "MODELF_HCS");
 	if (retval) {
@@ -3590,7 +3418,8 @@ static int __devinit modelffb_probe(struct spi_device *spi)
 	gpio_direction_output(MODELF_SPIHDC_GPIO, 1);
 	gpio_set_value(MODELF_SPIHDC_GPIO, 1);
 #endif
-#else
+
+#if 0
 	if (gpio_request(MODELF_HRDY_GPIO, "MODELF_HRDY") < 0) {
 		printk(KERN_ERR "MODELFFB: MODELF_HRDY (GPIO %d) is busy\n",
 		       MODELF_HRDY_GPIO);
@@ -3600,31 +3429,26 @@ static int __devinit modelffb_probe(struct spi_device *spi)
 	gpio_direction_input(MODELF_HRDY_GPIO);
 #endif
 
-#ifdef CONFIG_MODELF_CONNECTION_ASYNC
 	retval = modelffb_framebuffer_alloc(pdev);
-#elif CONFIG_MODELF_CONNECTION_SPI
-	retval = modelffb_framebuffer_alloc(spi);
-
-#endif
-	if (retval != 0) {
+	if (retval) {
 		printk(KERN_ERR "MODELFFB: failed to alloc frame buffer\n");
 		goto free_gpio;
 	}
 
 	retval = modelffb_alloc_memory();
-	if (retval != 0) {
-		printk(KERN_ERR "MODELFFB: failed to alloc modelffb_par members\n");
+	if (retval) {
+		printk(KERN_ERR "MODELFFB: failed to alloc modelffb_par\n");
 		goto framebuffer_release;
 	}
 	__modelffb_bit_swap_table_init();
 
-	retval = __modelffb_request_bus();
-	if (retval != 0) {
+	retval = __modelffb_request_bus(pdev);
+	if (retval) {
 		goto free_memory;
 	}
 
 	retval = modelffb_create_file();
-	if (retval != 0) {
+	if (retval) {
 		goto release_bus;
 	}
 
@@ -3651,37 +3475,37 @@ static int __devinit modelffb_probe(struct spi_device *spi)
 	init_timer(&parinfo->sleep_timer);
 	parinfo->sleep_timer.function = __modelffb_sleep_timer_handler;
 	init_timer(&parinfo->temperature_timer);
-	parinfo->temperature_timer.function = __modelffb_temperature_timer_handler;
+	parinfo->temperature_timer.function =
+		__modelffb_temperature_timer_handler;
 	init_waitqueue_head(&parinfo->sync_update_wait);
 	parinfo->sync_status = MODELFFB_SYNC_IDLE;
 
-	printk(KERN_INFO "MODELFFB: deferred I/O "
+	retval = spi_register_driver(&modelffb_spi_driver);
+	if (retval) {
+		printk(KERN_ERR "Failed to register SPI driver\n");
+		goto free_gpio;
+	}
+
+	printk(KERN_INFO "MODELFFB: Ready, deferred I/O "
 #ifdef CONFIG_MODELF_DEFERRED_IO
 	       "enabled"
 #else
 	       "disabled"
 #endif
-	       "\n");
-
-	printk(KERN_INFO "MODELFFB: modelF on %s has been probed.\n",
-	       MODELF_CONNECTION);
+	       ".\n");
 
 	return 0;
 
 free_gpio:
-#ifdef CONFIG_MODELF_CONNECTION_SPI
 #ifdef CONFIG_MODELF_SPI_WITHOUT_HDC
 	gpio_free(MODELF_SPIHCS_GPIO);
 #else
 	gpio_free(MODELF_SPIHDC_GPIO);
 #endif
-#else
+#if 0
 	gpio_free(MODELF_HRDY_GPIO);
 #endif
-#ifdef CONFIG_MODELF_CONNECTION_ASYNC
-remove_file:
 	modelffb_remove_file();
-#endif
 release_bus:
 	__modelffb_release_bus();
 free_memory:
@@ -3713,11 +3537,7 @@ static void __devexit do_clear_on_exit(void)
 	modelffb_sleep();
 }
 
-#ifdef CONFIG_MODELF_CONNECTION_ASYNC
 static int __devexit modelffb_remove(struct platform_device *pdev)
-#elif CONFIG_MODELF_CONNECTION_SPI
-static int __devexit modelffb_remove(struct spi_device *spi)
-#endif
 {
 	del_timer_sync(&parinfo->sleep_timer);
 	del_timer_sync(&parinfo->temperature_timer);
@@ -3734,18 +3554,18 @@ static int __devexit modelffb_remove(struct spi_device *spi)
 		modelffb_free_vram();
 	}
 
-#ifdef CONFIG_MODELF_CONNECTION_SPI
 #ifdef CONFIG_MODELF_SPI_WITHOUT_HDC
 	gpio_free(MODELF_SPIHCS_GPIO);
 #else
 	gpio_free(MODELF_SPIHDC_GPIO);
 #endif
-#endif
 	flush_workqueue(parinfo->workqueue);
 	destroy_workqueue(parinfo->workqueue);
-#ifdef CONFIG_MODELF_CONNECTION_ASYNC
+#if 0
 	gpio_free(MODELF_HRDY_GPIO);
 #endif
+	spi_unregister_driver(&modelffb_spi_driver);
+
 	modelffb_remove_file();
 	__modelffb_release_bus();
 	modelffb_free_memory();
@@ -3755,23 +3575,12 @@ static int __devexit modelffb_remove(struct spi_device *spi)
 	return 0;
 }
 
-#ifdef CONFIG_MODELF_CONNECTION_ASYNC
 static void modelffb_shutdown(struct platform_device *pdev)
 {
 	modelffb_remove(pdev);
 }
-#elif CONFIG_MODELF_CONNECTION_SPI
-static void modelffb_shutdown(struct spi_device *spi)
-{
-	modelffb_remove(spi);
-}
-#endif
 
-#ifdef CONFIG_MODELF_CONNECTION_ASYNC
 static int modelffb_suspend(struct platform_device *pdev, pm_message_t msg)
-#elif CONFIG_MODELF_CONNECTION_SPI
-static int modelffb_suspend(struct spi_device *spi, pm_message_t msg)
-#endif
 {
 	del_timer_sync(&parinfo->sleep_timer);
 	modelffb_commit_sleep();
@@ -3779,18 +3588,13 @@ static int modelffb_suspend(struct spi_device *spi, pm_message_t msg)
 	return 0;
 }
 
-#ifdef CONFIG_MODELF_CONNECTION_ASYNC
 static int modelffb_resume(struct platform_device *pdev)
-#elif CONFIG_MODELF_CONNECTION_SPI
-static int modelffb_resume(struct spi_device *spi)
-#endif
 {
 	modelffb_commit_run();
 
 	return 0;
 }
 
-#ifdef CONFIG_MODELF_CONNECTION_ASYNC
 static struct platform_driver modelffb_driver = {
 	.probe		= modelffb_probe,
 	.remove 	= __devexit_p(modelffb_remove),
@@ -3803,39 +3607,15 @@ static struct platform_driver modelffb_driver = {
 		.owner	= THIS_MODULE,
 	},
 };
-#elif CONFIG_MODELF_CONNECTION_SPI
-static struct spi_driver modelffb_driver = {
-	.probe		= modelffb_probe,
-	.remove 	= __devexit_p(modelffb_remove),
-	.shutdown	= modelffb_shutdown,
-	.suspend	= modelffb_suspend,
-	.resume		= modelffb_resume,
-	.driver = {
-		.name	= "modelffb_spi",
-		.bus	= &spi_bus_type,
-		.owner	= THIS_MODULE,
-	},
-};
-#endif
 
 static int __init __modelffb_init(void)
 {
-	int retval = 0;
-#ifdef CONFIG_MODELF_CONNECTION_ASYNC
-	retval = platform_driver_register(&modelffb_driver);
-#elif CONFIG_MODELF_CONNECTION_SPI
-	retval = spi_register_driver(&modelffb_driver);
-#endif
-	return retval;
+	return platform_driver_register(&modelffb_driver);
 }
 
 static void __exit __modelffb_exit(void)
 {
-#ifdef CONFIG_MODELF_CONNECTION_ASYNC
 	platform_driver_unregister(&modelffb_driver);
-#elif CONFIG_MODELF_CONNECTION_SPI
-	spi_unregister_driver(&modelffb_driver);
-#endif
 }
 
 module_init(__modelffb_init);
