@@ -794,10 +794,12 @@ int pl_hardware_hvpmic_init(struct mxc_epdc_pl_hardware *p,
 	static const u8 timings_table
 		[MXC_EPDC_PL_HARDWARE_SEQ_N][HVPMIC_NB_TIMINGS] = {
 		[MXC_EPDC_PL_HARDWARE_SEQ_0] = {
-                       8, 2, 11, 3, 0, 0, 0, 0
+		 /* on: GN  SN  SP  GP    off: GP  SP  SN  GN */
+			24,  7,  2, 12,         7, 14, 12,  2
 		},
 		[MXC_EPDC_PL_HARDWARE_SEQ_1] = {
-                       3, 2, 11, 8, 0, 0, 0, 0
+		 /* on: GN  SN  SP  GP    off: GP  SP  SN  GN */
+			12,  7,  2, 23,         2, 14, 12,  7
 		},
 	};
 	const u8 *timings;
