@@ -106,6 +106,7 @@ struct modelffb_par {
 	struct platform_device *pdev;
 	struct spi_device *spi;
 	struct device *dev;
+	struct modelffb_platform_data *pdata;
 	int seconds_to_sleep;
 	int seconds_to_measure_temperature;
 	struct timer_list sleep_timer;

@@ -128,19 +128,18 @@ static inline void modelffb_unlock(void)
 
 #define SWAP_BYTE_16(x) ((x >> 8) | (x << 8))
 
-static int __devinit __modelffb_request_bus(struct platform_device *pdev)
+static int __devinit __modelffb_request_bus(void)
 {
-	struct modelffb_platform_data *pdata = pdev->dev.platform_data;
 	struct spi_master *master;
 
-	master = spi_busnum_to_master(pdata->spi_info->bus_num);
+	master = spi_busnum_to_master(parinfo->pdata->spi_info->bus_num);
 	if (!master) {
 		printk(KERN_ERR "Failed to get master SPI bus %d\n",
-		       pdata->spi_info->bus_num);
+		       parinfo->pdata->spi_info->bus_num);
 		return -ENODEV;
 	}
 
-	parinfo->spi = spi_new_device(master, pdata->spi_info);
+	parinfo->spi = spi_new_device(master, parinfo->pdata->spi_info);
 	if (!parinfo->spi) {
 		printk(KERN_ERR "Failed to create new SPI device\n");
 		return -ENODEV;
@@ -2014,6 +2013,7 @@ static int __devinit modelffb_framebuffer_alloc(struct platform_device *pdev)
 
 	parinfo->pdev = pdev;
 	parinfo->dev = &pdev->dev;
+	parinfo->pdata = pdev->dev.platform_data;
 
 	info->pseudo_palette = kmalloc(sizeof(u32) * 256, GFP_KERNEL);
 	if (!info->pseudo_palette) {
@@ -3442,7 +3442,7 @@ static int __devinit modelffb_probe(struct platform_device *pdev)
 	}
 	__modelffb_bit_swap_table_init();
 
-	retval = __modelffb_request_bus(pdev);
+	retval = __modelffb_request_bus();
 	if (retval) {
 		goto free_memory;
 	}
