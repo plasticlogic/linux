@@ -2422,6 +2422,15 @@ static struct spi_board_info am335x_modelf_spi_info[] = {
 
 static struct modelffb_platform_data am33xx_modelf_platform_data = {
 	.spi_info = am335x_modelf_spi_info,
+	.gpio_hrdy = 0,
+	.gpio_hdc = 0,
+#if defined(CONFIG_MODELF_PL_Z1_3)
+	.gpio_cs = GPIO_TO_PIN(0, 5),
+	.hirq = OMAP_GPIO_IRQ(GPIO_TO_PIN(0, 20)),
+#elif defined(CONFIG_MODELF_PL_Z5)
+	.gpio_cs = GPIO_TO_PIN(3, 17),
+	.hirq = OMAP_GPIO_IRQ(GPIO_TO_PIN(3, 21)),
+#endif
 };
 
 static struct platform_device am33xx_modelf_device = {
