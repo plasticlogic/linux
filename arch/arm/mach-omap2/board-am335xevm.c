@@ -150,7 +150,7 @@ static const struct display_panel disp_panel = {
 };
 
 
-#if defined(CONFIG_CHARGER_GPIO)
+#if 0 /* not used defined(CONFIG_CHARGER_GPIO) */
 
 #include <linux/power_supply.h>
 #include <linux/power/gpio-charger.h>
@@ -570,12 +570,13 @@ static struct pinmux_config haptics_pin_mux[] = {
 	{NULL, 0},
 };
 
+#if 0 /* not used */
 /* Module pin mux for battery cape */
 static struct pinmux_config batterycape_pin_mux[] = {
 	{"gpmc_a0.gpio1_16",  OMAP_MUX_MODE7 | AM33XX_PIN_INPUT},
 	{NULL, 0},
 };
-
+#endif
 	
 /* Module pin mux for LCDC */
 static struct pinmux_config lcdc_pin_mux[] = {
@@ -812,6 +813,7 @@ static struct pinmux_config rmii1_pin_mux[] = {
 	{NULL, 0},
 };
 
+#if 0 /* not used */
 static struct pinmux_config i2c1_pin_mux[] = {
 	{"spi0_d1.i2c1_sda",    OMAP_MUX_MODE2 | AM33XX_SLEWCTRL_SLOW |
 					AM33XX_PULL_ENBL | AM33XX_INPUT_EN},
@@ -819,6 +821,7 @@ static struct pinmux_config i2c1_pin_mux[] = {
 					AM33XX_PULL_ENBL | AM33XX_INPUT_EN},
 	{NULL, 0},
 };
+#endif
 
 /* Pin mux for GPMC bus */
 static struct pinmux_config gpmc_pin_mux[] = {
@@ -959,11 +962,13 @@ static struct pinmux_config uart1dcan1_pin_mux[] = {
 	{NULL, 0},
 };
 
+#if 0 /* not used */
 static struct pinmux_config uart1_pin_mux[] = {
 	{"uart1_txd.uart1_txd", OMAP_MUX_MODE0 | AM33XX_PULL_ENBL},
 	{"uart1_rxd.uart1_rxd", OMAP_MUX_MODE0 | AM33XX_PIN_INPUT_PULLUP},
 	{NULL, 0},
 };
+#endif
 
 /* Module pin mux for uart2 */
 static struct pinmux_config uart2_pin_mux[] = {
@@ -2492,6 +2497,7 @@ static void evm_nand_init(int evm_id, int profile)
 	omap_init_elm();
 }
 
+#if 0 /* not used */
 static struct regulator_consumer_supply bone_audio_supplies[] = {
         /* tlv320aic3x analog supplies */
         REGULATOR_SUPPLY("AVDD", "3-001b"),
@@ -2500,6 +2506,7 @@ static struct regulator_consumer_supply bone_audio_supplies[] = {
         REGULATOR_SUPPLY("IOVDD", "3-001b"),
         REGULATOR_SUPPLY("DVDD", "3-001b"),
 };
+#endif
 
 /* TPS65217 voltage regulator support */
 
@@ -3242,15 +3249,15 @@ static void beaglebone_cape_setup(struct memory_accessor *mem_acc, void *context
 		beaglebone_tsadcpins_free = 0;
 		
 		if (!strncmp("00A0", cape_config.version, 4)) {
-			pr_info("BeagleBone cape: Registering gpio-keys for LCD3 rev A or earlier cape\n");
 			int err;
+			pr_info("BeagleBone cape: Registering gpio-keys for LCD3 rev A or earlier cape\n");
 			setup_pin_mux(lcd3_keys_pin_mux);
 			err = platform_device_register(&beaglebone_lcd3_keys);
 			if (err)
 				pr_err("failed to register gpio keys for LCD3 rev A or earlier cape\n");
 		} else {
-			pr_info("BeagleBone cape: Registering gpio-keys for LCD rev A1 or later cape\n");
 			int err;
+			pr_info("BeagleBone cape: Registering gpio-keys for LCD rev A1 or later cape\n");
 			setup_pin_mux(lcd3a1_keys_pin_mux);
 			err = platform_device_register(&lcd3a1_keys);
 			if (err)
