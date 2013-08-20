@@ -272,13 +272,6 @@ struct pl_hardware_vcom {
 #define GPIO_3V3_ENABLE		GPIO_TO_PIN(1,  1)
 #define GPIO_VPP_SOLOMON	GPIO_TO_PIN(1, 29)
 #define GPIO_SOL_EP_SELECT	GPIO_TO_PIN(2, 24)
-#define GPIO_GPIO1		GPIO_TO_PIN(1,  0)
-#define GPIO_GPIO2		GPIO_TO_PIN(2, 22)
-#define GPIO_GPIO3		GPIO_TO_PIN(2, 23)
-#define GPIO_LED1		GPIO_TO_PIN(1,  2)
-#define GPIO_LED2		GPIO_TO_PIN(1,  6)
-#define GPIO_LED3		GPIO_TO_PIN(1,  3)
-#define GPIO_LED4		GPIO_TO_PIN(1,  7)
 #endif
 
 /* Opaque public instance structure */
@@ -353,12 +346,11 @@ static int pl_hardware_i2c_rdwr(struct i2c_adapter *i2c, __u8 addr,
 static int pl_hardware_do_set_temperature(struct pl_hardware *plhw,
 					 int temperature);
 
-static int pl_hardware_module_a_init(struct pl_hardware *p);
-
-/* Module A */
-static void pl_hardware_free_module_a(struct pl_hardware *p);
+/* GPIO control */
+static int pl_hardware_gpio_init(struct pl_hardware *p);
+static void pl_hardware_free_gpio(struct pl_hardware *p);
 #ifndef CONFIG_MODELF_PL_ROBIN
-static int pl_hardware_module_a_wait_pok(struct pl_hardware *p);
+static int pl_hardware_gpio_wait_pok(struct pl_hardware *p);
 static int pl_hardware_gpio_switch(struct pl_hardware *p, int gpio, bool on);
 #endif
 
@@ -421,7 +413,7 @@ int pl_hardware_init(struct pl_hardware *p,
 #endif
 	if (stat) {
 		printk("PLHW: No CPLD found, assume Module A\n");
-		stat = pl_hardware_module_a_init(p);
+		stat = pl_hardware_gpio_init(p);
 		if (stat) {
 			printk("PLHW: Failed to initialise Module A\n");
 			goto err_free_all;
@@ -482,7 +474,7 @@ void pl_hardware_free(struct pl_hardware *p)
 
 	if (p->init_done) {
 		i2c_put_adapter(p->i2c);
-		pl_hardware_free_module_a(p);
+		pl_hardware_free_gpio(p);
 #ifdef CONFIG_MODELF_PL_Z5
 		pl_hardware_z50_free(p);
 #endif
@@ -553,7 +545,7 @@ int pl_hardware_enable(struct pl_hardware *p)
 		STEP(pl_hardware_gpio_switch(p, GPIO_VCOM_SW_CLOSE, false),
 		     "COM open");
 		STEP(pl_hardware_gpio_switch(p, GPIO_PMIC_EN, true), "HV ON");
-		STEP(pl_hardware_module_a_wait_pok(p), "wait for POK");
+		STEP(pl_hardware_gpio_wait_pok(p), "wait for POK");
 #endif
 		STEP(pl_hardware_dac_set_power(p, true), "DAC power on");
 		STEP(pl_hardware_vcomcal_set_vcom(p), "VCOM calibration");
@@ -1258,7 +1250,7 @@ int pl_hardware_is_module_a(const struct pl_hardware *plhw)
 }
 EXPORT_SYMBOL(pl_hardware_is_module_a);
 
-static int pl_hardware_module_a_init(struct pl_hardware *p)
+static int pl_hardware_gpio_init(struct pl_hardware *p)
 {
 #ifdef CONFIG_MODELF_PL_ROBIN
 	p->is_module_a = true;
@@ -1302,7 +1294,7 @@ error_ret:
 #endif
 }
 
-static void pl_hardware_free_module_a(struct pl_hardware *p)
+static void pl_hardware_free_gpio(struct pl_hardware *p)
 {
 	if (p->is_module_a) {
 #ifndef CONFIG_MODELF_PL_ROBIN
@@ -1314,7 +1306,7 @@ static void pl_hardware_free_module_a(struct pl_hardware *p)
 }
 
 #ifndef CONFIG_MODELF_PL_ROBIN
-static int pl_hardware_module_a_wait_pok(struct pl_hardware *p)
+static int pl_hardware_gpio_wait_pok(struct pl_hardware *p)
 {
 	static const unsigned POLL_DELAY_MS = 5;
 	unsigned timeout = 100;
@@ -1357,13 +1349,6 @@ static const struct gpio z50_io_init[] = {
 	{ GPIO_I2C_ENABLE,   GPIOF_OUT_INIT_HIGH, "GPIO_I2C_ENABLE" },
 	{ GPIO_3V3_ENABLE,   GPIOF_OUT_INIT_HIGH, "GPIO_3V3_ENABLE" },
 	{ GPIO_VPP_SOLOMON,  GPIOF_OUT_INIT_LOW,  "GPIO_VPP_SOLOMON"},
-	{ GPIO_GPIO1, GPIOF_OUT_INIT_LOW,  "GPIO_GPIO1" },
-	{ GPIO_GPIO2, GPIOF_OUT_INIT_HIGH, "GPIO_GPIO2" },
-	{ GPIO_GPIO3, GPIOF_OUT_INIT_LOW,  "GPIO_GPIO3" },
-	{ GPIO_LED1,  GPIOF_OUT_INIT_LOW,  "GPIO_LED1"  },
-	{ GPIO_LED2,  GPIOF_OUT_INIT_HIGH, "GPIO_LED2"  },
-	{ GPIO_LED3,  GPIOF_OUT_INIT_LOW,  "GPIO_LED3"  },
-	{ GPIO_LED4,  GPIOF_OUT_INIT_HIGH, "GPIO_LED4"  },
 };
 
 static int pl_hardware_z50_init(struct pl_hardware *p)
@@ -1406,6 +1391,6 @@ static int pl_hardware_z50_free(struct pl_hardware *p)
 
 #endif /* CONFIG_MODELF_PL_Z5 */
 
-MODULE_AUTHOR("Guillaume Tucker <guillaume.tucker@plasticlogic.com");
+MODULE_AUTHOR("Guillaume Tucker <guillaume.tucker@plasticlogic.com>");
 MODULE_DESCRIPTION("Plastic Logic E-Paper hardware control");
 MODULE_LICENSE("GPL");
