@@ -3352,20 +3352,35 @@ static struct spi_driver modelffb_spi_driver = {
 };
 
 /* =========== registration & unregistration =========== */
+
+static int __devinit modelffb_setup_gpio(int gpio, const char *name)
+{
+	int stat;
+
+	stat = gpio_request(gpio, name);
+	if (stat) {
+		printk(KERN_ERR "MODELFFB: failed to request GPIO %s %d\n",
+		       name, gpio);
+		return stat;
+	}
+
+	return 0;
+}
+
 static int __devinit modelffb_alloc_memory(void)
 {
-	int retval = 0;
+	int retval;
 
 	parinfo->init_code = (uint32_t)vmalloc(MODELF_MAX_INITCODE_SIZE);
 	if (!parinfo->init_code) {
 		retval = -ENOMEM;
-		goto end;
+		goto exit_now;
 	}
 
 	parinfo->waveform = (uint32_t)vmalloc(MODELF_MAX_WAVEFORM_SIZE);
 	if (!parinfo->waveform) {
 		retval = -ENOMEM;
-		goto free_init_code;
+		goto exit_free_init_code;
 	}
 
 	parinfo->waveform_index = parinfo->waveform;
@@ -3374,9 +3389,9 @@ static int __devinit modelffb_alloc_memory(void)
 
 	return 0;
 
-free_init_code:
+exit_free_init_code:
 	vfree((void*)parinfo->init_code);
-end:
+exit_now:
 	return retval;
 }
 
@@ -3396,33 +3411,25 @@ static int __devinit modelffb_probe(struct platform_device *pdev)
 #endif
 
 	if (pdata->gpio_hdc) {
-		retval = gpio_request(pdata->gpio_hdc, "MODELF_HDC");
-		if (retval) {
-			printk(KERN_ERR "MODELFFB: gpio not allocated\n");
-			goto err;
-		}
+		retval = modelffb_setup_gpio(pdata->gpio_hdc, "MODELF_HDC");
+		if (retval)
+			goto exit_now;
 		gpio_direction_output(pdata->gpio_hdc, 1);
 		printk(KERN_INFO "MODELFFB: using HDC on pin %d\n",
 		       pdata->gpio_hdc);
 	} else {
-		retval = gpio_request(pdata->gpio_cs, "MODELF_CS");
-		if (retval) {
-			printk(KERN_ERR "MODELFFB: gpio not allocated\n");
-			goto err;
-		}
+		retval = modelffb_setup_gpio(pdata->gpio_cs, "MODELF_CS");
+		if (retval)
+			goto exit_now;
 		gpio_direction_output(pdata->gpio_cs, 1);
 		printk(KERN_INFO "MODELFFB: using SPI CS on pin %d\n",
 		       pdata->gpio_cs);
 	}
 
 	if (pdata->gpio_hrdy) {
-		retval = gpio_request(pdata->gpio_hrdy, "MODELF_HRDY");
-		if (retval) {
-			printk(KERN_ERR
-			       "MODELFFB: MODELF_HRDY (GPIO %d) is busy\n",
-			       pdata->gpio_hrdy);
-			goto err;
-		}
+		retval = modelffb_setup_gpio(pdata->gpio_hrdy, "MODELF_HRDY");
+		if (retval)
+			goto exit_free_gpio_hdc_cs;
 		gpio_direction_input(pdata->gpio_hrdy);
 		printk(KERN_INFO "MODELFFB: using HRDY on pin %d\n",
 		       pdata->gpio_hrdy);
@@ -3431,30 +3438,31 @@ static int __devinit modelffb_probe(struct platform_device *pdev)
 	retval = modelffb_framebuffer_alloc(pdev);
 	if (retval) {
 		printk(KERN_ERR "MODELFFB: failed to alloc frame buffer\n");
-		goto free_gpio;
+		goto exit_free_gpio_hrdy;
 	}
 
 	retval = modelffb_alloc_memory();
 	if (retval) {
 		printk(KERN_ERR "MODELFFB: failed to alloc modelffb_par\n");
-		goto framebuffer_release;
+		goto exit_release_framebuffer;
 	}
 	__modelffb_bit_swap_table_init();
 
 	retval = __modelffb_request_bus();
 	if (retval) {
-		goto free_memory;
+		goto exit_free_memory;
 	}
 
 	retval = modelffb_create_file();
 	if (retval) {
-		goto release_bus;
+		goto exit_release_bus;
 	}
 
 	parinfo->workqueue = create_singlethread_workqueue("modelf_workqueue");
 	if (!parinfo->workqueue) {
 		printk(KERN_ERR "MODELFFB: create workqueue failed\n");
-		goto free_gpio;
+		retval = -ENOMEM;
+		goto exit_free_sysfs;
 	}
 
 	parinfo->status = 0;
@@ -3482,7 +3490,7 @@ static int __devinit modelffb_probe(struct platform_device *pdev)
 	retval = spi_register_driver(&modelffb_spi_driver);
 	if (retval) {
 		printk(KERN_ERR "Failed to register SPI driver\n");
-		goto free_gpio;
+		goto exit_destroy_workqueue;
 	}
 
 	printk(KERN_INFO "MODELFFB: Ready, deferred I/O "
@@ -3495,23 +3503,26 @@ static int __devinit modelffb_probe(struct platform_device *pdev)
 
 	return 0;
 
-free_gpio:
+exit_destroy_workqueue:
+	destroy_workqueue(parinfo->workqueue);
+exit_free_sysfs:
+	modelffb_remove_file();
+exit_release_bus:
+	__modelffb_release_bus();
+exit_free_memory:
+	modelffb_free_memory();
+exit_release_framebuffer:
+	modelffb_framebuffer_release();
+exit_free_gpio_hrdy:
+	if (pdata->gpio_hrdy)
+		gpio_free(pdata->gpio_hrdy);
+exit_free_gpio_hdc_cs:
 	if (pdata->gpio_hdc)
 		gpio_free(pdata->gpio_hdc);
 	else
 		gpio_free(pdata->gpio_cs);
+exit_now:
 
-	if (pdata->gpio_hrdy)
-		gpio_free(pdata->gpio_hrdy);
-
-	modelffb_remove_file();
-release_bus:
-	__modelffb_release_bus();
-free_memory:
-	modelffb_free_memory();
-framebuffer_release:
-	modelffb_framebuffer_release();
-err:
 	return retval;
 }
 
