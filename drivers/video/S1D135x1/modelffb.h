@@ -33,21 +33,6 @@
 #define MODELF_MAX_INITCODE_SIZE 4096
 #define MODELF_MAX_WAVEFORM_SIZE (160 * 1024)
 
-#if 0
-/* not used for SPI interface */
-#define MODELF_HRDY_GPIO 30
-#endif
-
-#define GPIO_TO_PIN(bank, gpio) (32 * (bank) + (gpio))
-#ifdef CONFIG_MODELF_PL_Z5
-#define MODELF_HIRQ_GPIO GPIO_TO_PIN(3, 21)
-#define MODELF_SPIHCS_GPIO GPIO_TO_PIN(3, 17)
-#else
-#define MODELF_HIRQ_GPIO GPIO_TO_PIN(0, 20)
-#define MODELF_SPIHCS_GPIO 5
-#endif
-#define MODELF_SPIHDC_GPIO 13
-#define MODELF_HIRQ (OMAP_GPIO_IRQ(MODELF_HIRQ_GPIO))
 #define MODELF_DEFERRED_IO_DELAY_DENOMINATOR 30
 #define MODELF_TIMEOUT_MS 5000
 #define MODELF_MTP_TIMEOUT_MS 500
@@ -106,7 +91,7 @@ struct modelffb_par {
 	struct platform_device *pdev;
 	struct spi_device *spi;
 	struct device *dev;
-	struct modelffb_platform_data *pdata;
+	const struct modelffb_platform_data *pdata;
 	int seconds_to_sleep;
 	int seconds_to_measure_temperature;
 	struct timer_list sleep_timer;

@@ -258,14 +258,14 @@ static inline void __modelffb_write_command(uint16_t command)
 	command = SWAP_BYTE_16(command);
 #endif
 
-#ifdef CONFIG_MODELF_SPI_WITHOUT_HDC
-	gpio_set_value(MODELF_SPIHCS_GPIO, 0);
-	my_spi_write(parinfo->spi, &command, 2);
-#else
-	gpio_set_value(MODELF_SPIHDC_GPIO, 0);
-	my_spi_write(parinfo->spi, &command, 2);
-	gpio_set_value(MODELF_SPIHDC_GPIO, 1);
-#endif
+	if (parinfo->pdata->gpio_hdc) {
+		gpio_set_value(parinfo->pdata->gpio_hdc, 0);
+		my_spi_write(parinfo->spi, &command, 2);
+		gpio_set_value(parinfo->pdata->gpio_hdc, 1);
+	} else {
+		gpio_set_value(parinfo->pdata->gpio_cs, 0);
+		my_spi_write(parinfo->spi, &command, 2);
+	}
 }
 
 static inline void __modelffb_write_data(uint16_t data)
@@ -343,9 +343,8 @@ static inline void __modelffb_immediate_command(uint16_t command)
 
 static inline void __modelffb_command_end(void)
 {
-#ifdef CONFIG_MODELF_SPI_WITHOUT_HDC
-	gpio_set_value(MODELF_SPIHCS_GPIO, 1);
-#endif
+	if (!parinfo->pdata->gpio_hdc)
+		gpio_set_value(parinfo->pdata->gpio_cs, 1);
 }
 
 static inline void __modelffb_immediate_simple_command(uint16_t command)
@@ -367,15 +366,11 @@ static inline uint16_t __modelffb_reg_read(uint16_t address)
 
 static inline int __modelffb_check_HRDY_ready(void)
 {
-#if 1
-	if ((__modelffb_reg_read(MODELF_REG_SYSTEM_STATUS)
-	     & MODELF_BF_INT_HRDY_STATUS))
-		return 1;
-#else
-	if (gpio_get_value(MODELF_HRDY_GPIO) == 1)
-		return 1;
-#endif
-	return 0;
+	if (parinfo->pdata->gpio_hrdy)
+		return gpio_get_value(parinfo->pdata->gpio_hrdy);
+
+	return (__modelffb_reg_read(MODELF_REG_SYSTEM_STATUS)
+		& MODELF_BF_INT_HRDY_STATUS);
 }
 
 static inline int __modelffb_wait_for_HRDY_ready(int ms_timeout)
@@ -384,7 +379,8 @@ static inline int __modelffb_wait_for_HRDY_ready(int ms_timeout)
 	int i;
 
 	/* sync GPMC access and gpio peep timing */
-	if ((__modelffb_reg_read(MODELF_REG_SYSTEM_STATUS) & MODELF_BF_INT_HRDY_STATUS) != 0)
+	if (__modelffb_reg_read(MODELF_REG_SYSTEM_STATUS) &
+	    MODELF_BF_INT_HRDY_STATUS)
 		goto success;
 
 	/* poll gpio afterward */
@@ -419,8 +415,8 @@ static int __modelffb_delay_for_HRDY_ready(int ms_timeout)
 	uint32_t start_jiffy = jiffies;
 
 	/* sync GPMC access and gpio peep timing */
-	if ((__modelffb_reg_read(MODELF_REG_SYSTEM_STATUS)
-	     & MODELF_BF_INT_HRDY_STATUS))
+	if (__modelffb_reg_read(MODELF_REG_SYSTEM_STATUS) &
+	    MODELF_BF_INT_HRDY_STATUS)
 		goto success;
 
 	/* poll gpio afterward */
@@ -2583,18 +2579,15 @@ static void modelffb_irq_work_function(struct work_struct *ws)
 		__modelffb_sleep();
 
 	modelffb_unlock();
-
 	__modelffb_set_sleep_timer();
-
-
-	enable_irq(MODELF_HIRQ);
+	enable_irq(parinfo->pdata->hirq);
 }
 
 static DECLARE_WORK(modelffb_irq_work, modelffb_irq_work_function);
 
 static irqreturn_t __modelffb_irq_handler(int irq, void *dev_id)
 {
-	disable_irq_nosync(MODELF_HIRQ);
+	disable_irq_nosync(parinfo->pdata->hirq);
 	queue_work(parinfo->workqueue, &modelffb_irq_work);
 
 	return IRQ_HANDLED;
@@ -2715,7 +2708,7 @@ static int modelffb_modelf_init(void)
 		}
 	}
 
-	stat = request_irq(MODELF_HIRQ, __modelffb_irq_handler,
+	stat = request_irq(parinfo->pdata->hirq, __modelffb_irq_handler,
 			   (IRQF_DISABLED | IRQF_TRIGGER_HIGH), "modelf",
 			   parinfo->dev);
 	if (stat) {
@@ -3395,39 +3388,45 @@ static void __devexit modelffb_free_memory(void)
 
 static int __devinit modelffb_probe(struct platform_device *pdev)
 {
+	const struct modelffb_platform_data *pdata = pdev->dev.platform_data;
 	int retval = 0;
 
 #ifdef CONFIG_MODELF_DEBUG
 	printk(KERN_INFO "MODELFFB: check rev: %d\n", CHECKREV);
 #endif
 
-#ifdef CONFIG_MODELF_SPI_WITHOUT_HDC
-	retval = gpio_request(MODELF_SPIHCS_GPIO, "MODELF_HCS");
-	if (retval) {
-		printk(KERN_ERR "MODELFFB: gpio not allocated\n");
-		goto err;
+	if (pdata->gpio_hdc) {
+		retval = gpio_request(pdata->gpio_hdc, "MODELF_HDC");
+		if (retval) {
+			printk(KERN_ERR "MODELFFB: gpio not allocated\n");
+			goto err;
+		}
+		gpio_direction_output(pdata->gpio_hdc, 1);
+		printk(KERN_INFO "MODELFFB: using HDC on pin %d\n",
+		       pdata->gpio_hdc);
+	} else {
+		retval = gpio_request(pdata->gpio_cs, "MODELF_CS");
+		if (retval) {
+			printk(KERN_ERR "MODELFFB: gpio not allocated\n");
+			goto err;
+		}
+		gpio_direction_output(pdata->gpio_cs, 1);
+		printk(KERN_INFO "MODELFFB: using SPI CS on pin %d\n",
+		       pdata->gpio_cs);
 	}
-	gpio_direction_output(MODELF_SPIHCS_GPIO, 1);
-	gpio_set_value(MODELF_SPIHCS_GPIO, 1);
-#else
-	retval = gpio_request(MODELF_SPIHDC_GPIO, "MODELF_HDC");
-	if (retval) {
-		printk(KERN_ERR "MODELFFB: gpio not allocated\n");
-		goto err;
-	}
-	gpio_direction_output(MODELF_SPIHDC_GPIO, 1);
-	gpio_set_value(MODELF_SPIHDC_GPIO, 1);
-#endif
 
-#if 0
-	if (gpio_request(MODELF_HRDY_GPIO, "MODELF_HRDY") < 0) {
-		printk(KERN_ERR "MODELFFB: MODELF_HRDY (GPIO %d) is busy\n",
-		       MODELF_HRDY_GPIO);
-		retval = -EBUSY;
-		goto err;
+	if (pdata->gpio_hrdy) {
+		retval = gpio_request(pdata->gpio_hrdy, "MODELF_HRDY");
+		if (retval) {
+			printk(KERN_ERR
+			       "MODELFFB: MODELF_HRDY (GPIO %d) is busy\n",
+			       pdata->gpio_hrdy);
+			goto err;
+		}
+		gpio_direction_input(pdata->gpio_hrdy);
+		printk(KERN_INFO "MODELFFB: using HRDY on pin %d\n",
+		       pdata->gpio_hrdy);
 	}
-	gpio_direction_input(MODELF_HRDY_GPIO);
-#endif
 
 	retval = modelffb_framebuffer_alloc(pdev);
 	if (retval) {
@@ -3497,14 +3496,14 @@ static int __devinit modelffb_probe(struct platform_device *pdev)
 	return 0;
 
 free_gpio:
-#ifdef CONFIG_MODELF_SPI_WITHOUT_HDC
-	gpio_free(MODELF_SPIHCS_GPIO);
-#else
-	gpio_free(MODELF_SPIHDC_GPIO);
-#endif
-#if 0
-	gpio_free(MODELF_HRDY_GPIO);
-#endif
+	if (pdata->gpio_hdc)
+		gpio_free(pdata->gpio_hdc);
+	else
+		gpio_free(pdata->gpio_cs);
+
+	if (pdata->gpio_hrdy)
+		gpio_free(pdata->gpio_hrdy);
+
 	modelffb_remove_file();
 release_bus:
 	__modelffb_release_bus();
@@ -3544,8 +3543,8 @@ static int __devexit modelffb_remove(struct platform_device *pdev)
 
 	if ((parinfo->status & MODELF_STATUS_INIT_DONE)
 	    == MODELF_STATUS_INIT_DONE) {
-		disable_irq_nosync(MODELF_HIRQ);
-		free_irq(MODELF_HIRQ, parinfo->dev);
+		disable_irq_nosync(parinfo->pdata->hirq);
+		free_irq(parinfo->pdata->hirq, parinfo->dev);
 
 		if (parinfo->opt_clear_on_exit)
 			do_clear_on_exit();
@@ -3554,16 +3553,17 @@ static int __devexit modelffb_remove(struct platform_device *pdev)
 		modelffb_free_vram();
 	}
 
-#ifdef CONFIG_MODELF_SPI_WITHOUT_HDC
-	gpio_free(MODELF_SPIHCS_GPIO);
-#else
-	gpio_free(MODELF_SPIHDC_GPIO);
-#endif
+	if (parinfo->pdata->gpio_hdc)
+		gpio_free(parinfo->pdata->gpio_hdc);
+	else
+		gpio_free(parinfo->pdata->gpio_cs);
+
 	flush_workqueue(parinfo->workqueue);
 	destroy_workqueue(parinfo->workqueue);
-#if 0
-	gpio_free(MODELF_HRDY_GPIO);
-#endif
+
+	if (parinfo->pdata->gpio_hrdy)
+		gpio_free(parinfo->pdata->gpio_hrdy);
+
 	spi_unregister_driver(&modelffb_spi_driver);
 
 	modelffb_remove_file();

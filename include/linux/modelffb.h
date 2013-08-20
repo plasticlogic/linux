@@ -28,6 +28,10 @@ struct pinmux_config;
 
 struct modelffb_platform_data {
 	struct spi_board_info *spi_info;
+	int gpio_hrdy; /* host ready, not compulsory with SPI */
+	int gpio_hdc; /* data / command switch, leave to 0 if not used */
+	int gpio_cs;  /* SPI chip select, used if gpio_hdc is left to 0 */
+	unsigned int hirq; /* GPIO-based host IRQ */
 };
 
 #endif /* INCLUDE_LINUX_MODELFFB_H */

@@ -2452,12 +2452,6 @@ config MODELF_DEFERRED_IO
 	  Choose this option to automatically generate display updates using
 	  the frame buffer deferred IO framework.
 
-config MODELF_SPI_WITHOUT_HDC
-	bool "When using SPI, disable HDC"
-	depends on FB_MODELF
-	help
-	  Choose this option to not use the HDC signal with SPI bus.
-
 config MODELF_SWAP_SPI_BYTE
 	bool "When using SPI, swap byte order"
 	depends on FB_MODELF
