@@ -37,7 +37,7 @@
 
 /* I2C addresses */
 #define CPLD_I2C_ADDRESS 0x70
-#define HVPMIC_I2C_ADDRESS 0x48
+#define MAX17135_I2C_ADDRESS 0x48
 
 /* CPLD parameters */
 #define CPLD_MIN_VERSION 0x01
@@ -68,16 +68,16 @@
 #define VCOM_VGSWING 57089 /* Note: on other systems it's 70000 */
 #define VCOM_CORR_I 110
 
-/* HVPMIC MAX17135 timings */
-#define HVPMIC_NB_TIMINGS 8
-#define HVPMIC_TIMING_UP_VGNEG 8
-#define HVPMIC_TIMING_UP_VSNEG 2
-#define HVPMIC_TIMING_UP_VSPOS 11
-#define HVPMIC_TIMING_UP_VGPOS 3
-#define HVPMIC_TIMING_DOWN_VGPOS 0
-#define HVPMIC_TIMING_DOWN_VSPOS 0
-#define HVPMIC_TIMING_DOWN_VSNEG 0
-#define HVPMIC_TIMING_DOWN_VGNEG 0
+/* MAX17135 HVPMIC timings */
+#define MAX17135_NB_TIMINGS 8
+#define MAX17135_TIMING_UP_VGNEG 8
+#define MAX17135_TIMING_UP_VSNEG 2
+#define MAX17135_TIMING_UP_VSPOS 11
+#define MAX17135_TIMING_UP_VGPOS 3
+#define MAX17135_TIMING_DOWN_VGPOS 0
+#define MAX17135_TIMING_DOWN_VSPOS 0
+#define MAX17135_TIMING_DOWN_VSNEG 0
+#define MAX17135_TIMING_DOWN_VGNEG 0
 
 #if USE_CPLD
 /* CPLD definitions */
@@ -119,30 +119,30 @@ union pl_hardware_cpld {
 };
 #endif /* USE_CPLD */
 
-/* HVPMIC definitions */
+/* MAX17135 definitions */
 
-enum pl_hardware_hvpmic_register {
-	HVPMIC_REG_EXT_TEMP   = 0x00,
-	HVPMIC_REG_CONF       = 0x01,
-	HVPMIC_REG_INT_TEMP   = 0x04,
-	HVPMIC_REG_TEMP_STAT  = 0x05,
-	HVPMIC_REG_PROD_REV   = 0x06,
-	HVPMIC_REG_PROD_ID    = 0x07,
-	HVPMIC_REG_DVR        = 0x08,
-	HVPMIC_REG_ENABLE     = 0x09,
-	HVPMIC_REG_FAULT      = 0x0A,
-	HVPMIC_REG_PROG       = 0x0C,
-	HVPMIC_REG_TIMING_1   = 0x10,
-	HVPMIC_REG_TIMING_2   = 0x11,
-	HVPMIC_REG_TIMING_3   = 0x12,
-	HVPMIC_REG_TIMING_4   = 0x13,
-	HVPMIC_REG_TIMING_5   = 0x14,
-	HVPMIC_REG_TIMING_6   = 0x15,
-	HVPMIC_REG_TIMING_7   = 0x16,
-	HVPMIC_REG_TIMING_8   = 0x17,
+enum pl_hardware_max17135_register {
+	MAX17135_REG_EXT_TEMP   = 0x00,
+	MAX17135_REG_CONF       = 0x01,
+	MAX17135_REG_INT_TEMP   = 0x04,
+	MAX17135_REG_TEMP_STAT  = 0x05,
+	MAX17135_REG_PROD_REV   = 0x06,
+	MAX17135_REG_PROD_ID    = 0x07,
+	MAX17135_REG_DVR        = 0x08,
+	MAX17135_REG_ENABLE     = 0x09,
+	MAX17135_REG_FAULT      = 0x0A,
+	MAX17135_REG_PROG       = 0x0C,
+	MAX17135_REG_TIMING_1   = 0x10,
+	MAX17135_REG_TIMING_2   = 0x11,
+	MAX17135_REG_TIMING_3   = 0x12,
+	MAX17135_REG_TIMING_4   = 0x13,
+	MAX17135_REG_TIMING_5   = 0x14,
+	MAX17135_REG_TIMING_6   = 0x15,
+	MAX17135_REG_TIMING_7   = 0x16,
+	MAX17135_REG_TIMING_8   = 0x17,
 };
 
-union hvpmic_fault {
+union max17135_fault {
 	struct {
 		char fbpg:1;
 		char hvinp:1;
@@ -156,10 +156,10 @@ union hvpmic_fault {
 	char byte;
 };
 
-struct pl_hardware_hvpmic {
+struct pl_hardware_max17135 {
 	__u8 prod_id;
 	__u8 prod_rev;
-	__u8 timings[HVPMIC_NB_TIMINGS];
+	__u8 timings[MAX17135_NB_TIMINGS];
 };
 
 /* DAC definitions */
@@ -297,7 +297,7 @@ struct pl_hardware {
 #if USE_CPLD
 	union pl_hardware_cpld cpld;
 #endif
-	struct pl_hardware_hvpmic hvpmic;
+	struct pl_hardware_max17135 max17135;
 	struct pl_hardware_dac dac;
 	struct pl_hardware_adc adc;
 	struct pl_hardware_vcom vcom;
@@ -315,10 +315,10 @@ static int pl_hardware_cpld_read_data(struct pl_hardware *p);
 static int pl_hardware_cpld_write_data(struct pl_hardware *p);
 #endif
 
-/* HVPMIC */
-static int pl_hardware_hvpmic_init(struct pl_hardware *p);
-static int pl_hardware_hvpmic_load_timings(struct pl_hardware *p);
-static int pl_hardware_hvpmic_wait_pok(struct pl_hardware *p);
+/* MAX17135 HVPMIC */
+static int pl_hardware_max17135_init(struct pl_hardware *p);
+static int pl_hardware_max17135_load_timings(struct pl_hardware *p);
+static int pl_hardware_max17135_wait_pok(struct pl_hardware *p);
 
 /* DAC */
 static int pl_hardware_dac_init(struct pl_hardware *p);
@@ -434,9 +434,9 @@ int pl_hardware_init(struct pl_hardware *p,
 		}
 	}
 
-	stat = pl_hardware_hvpmic_init(p);
+	stat = pl_hardware_max17135_init(p);
 	if (stat) {
-		printk("PLHW: Failed to initialise HVPMIC\n");
+		printk("PLHW: Failed to initialise MAX17135 HVPMIC\n");
 		goto err_free_all;
 	}
 
@@ -541,7 +541,7 @@ int pl_hardware_enable(struct pl_hardware *p)
 		     "Clamp BPCOM to 0V");
 		STEP(pl_hardware_cpld_switch(p, CPLD_HVEN, true), "HV ON");
 #endif
-		STEP(pl_hardware_hvpmic_wait_pok(p), "wait for POK");
+		STEP(pl_hardware_max17135_wait_pok(p), "wait for POK");
 #if USE_CPLD
 		STEP(pl_hardware_cpld_switch(p, CPLD_COM_SW_CLOSE, false),
 		     "COM open");
@@ -692,58 +692,58 @@ static int pl_hardware_cpld_write_data(struct pl_hardware *p)
 }
 #endif /* USE_CPLD */
 
-/* HVPMIC */
+/* MAX17135 HVPMIC */
 
-int pl_hardware_hvpmic_init(struct pl_hardware *p)
+int pl_hardware_max17135_init(struct pl_hardware *p)
 {
-	u8 timings[HVPMIC_NB_TIMINGS];
+	u8 timings[MAX17135_NB_TIMINGS];
 	int stat;
 
-	timings[0] = HVPMIC_TIMING_UP_VGNEG;
-	timings[1] = HVPMIC_TIMING_UP_VSNEG;
-	timings[2] = HVPMIC_TIMING_UP_VSPOS;
-	timings[3] = HVPMIC_TIMING_UP_VGPOS;
-	timings[4] = HVPMIC_TIMING_DOWN_VGPOS;
-	timings[5] = HVPMIC_TIMING_DOWN_VSPOS;
-	timings[6] = HVPMIC_TIMING_DOWN_VSNEG;
-	timings[7] = HVPMIC_TIMING_DOWN_VGNEG;
+	timings[0] = MAX17135_TIMING_UP_VGNEG;
+	timings[1] = MAX17135_TIMING_UP_VSNEG;
+	timings[2] = MAX17135_TIMING_UP_VSPOS;
+	timings[3] = MAX17135_TIMING_UP_VGPOS;
+	timings[4] = MAX17135_TIMING_DOWN_VGPOS;
+	timings[5] = MAX17135_TIMING_DOWN_VSPOS;
+	timings[6] = MAX17135_TIMING_DOWN_VSNEG;
+	timings[7] = MAX17135_TIMING_DOWN_VGNEG;
 
-	stat = pl_hardware_read_i2c_reg(p->i2c, HVPMIC_I2C_ADDRESS,
-					HVPMIC_REG_PROD_REV,
-					&p->hvpmic.prod_rev, 1);
+	stat = pl_hardware_read_i2c_reg(p->i2c, MAX17135_I2C_ADDRESS,
+					MAX17135_REG_PROD_REV,
+					&p->max17135.prod_rev, 1);
 	if (stat)
 		return stat;
 
-	stat = pl_hardware_read_i2c_reg(p->i2c, HVPMIC_I2C_ADDRESS,
-					HVPMIC_REG_PROD_ID,
-					&p->hvpmic.prod_id, 1);
+	stat = pl_hardware_read_i2c_reg(p->i2c, MAX17135_I2C_ADDRESS,
+					MAX17135_REG_PROD_ID,
+					&p->max17135.prod_id, 1);
 	if (stat)
 		return stat;
 
-	memcpy(p->hvpmic.timings, timings, HVPMIC_NB_TIMINGS);
+	memcpy(p->max17135.timings, timings, MAX17135_NB_TIMINGS);
 
-	printk("PLHW: HVPMIC rev 0x%02X, id 0x%02X\n",
-	       p->hvpmic.prod_rev, p->hvpmic.prod_id);
+	printk("PLHW: MAX17135 rev 0x%02X, id 0x%02X\n",
+	       p->max17135.prod_rev, p->max17135.prod_id);
 	printk("PLHW: timings on: %d, %d, %d, %d, "
 	       "timings off: %d, %d, %d, %d\n",
 	       timings[0], timings[1], timings[2], timings[3],
 	       timings[4], timings[5], timings[6], timings[7]);
 
-	return pl_hardware_hvpmic_load_timings(p);
+	return pl_hardware_max17135_load_timings(p);
 }
 
-static int pl_hardware_hvpmic_load_timings(struct pl_hardware *p)
+static int pl_hardware_max17135_load_timings(struct pl_hardware *p)
 {
 	__u8 reg;
 	int i;
 
-	for (i = 0, reg = HVPMIC_REG_TIMING_1;
-	     i < HVPMIC_NB_TIMINGS;
+	for (i = 0, reg = MAX17135_REG_TIMING_1;
+	     i < MAX17135_NB_TIMINGS;
 	     ++i, ++reg) {
 		int stat;
 
-		stat = pl_hardware_write_i2c_reg8(p->i2c, HVPMIC_I2C_ADDRESS,
-						  reg, p->hvpmic.timings[i]);
+		stat = pl_hardware_write_i2c_reg8(p->i2c, MAX17135_I2C_ADDRESS,
+						  reg, p->max17135.timings[i]);
 		if (stat)
 			return stat;
 	}
@@ -751,7 +751,7 @@ static int pl_hardware_hvpmic_load_timings(struct pl_hardware *p)
 	return 0;
 }
 
-static int pl_hardware_hvpmic_wait_pok(struct pl_hardware *p)
+static int pl_hardware_max17135_wait_pok(struct pl_hardware *p)
 {
 	static const unsigned POLL_DELAY_MS = 5;
 	unsigned timeout = 100;
@@ -759,15 +759,15 @@ static int pl_hardware_hvpmic_wait_pok(struct pl_hardware *p)
 	int stat = 0;
 
 	while (!pok) {
-		union hvpmic_fault fault;
+		union max17135_fault fault;
 
 		mdelay(POLL_DELAY_MS);
 
 		stat = pl_hardware_read_i2c_reg(
-			p->i2c, HVPMIC_I2C_ADDRESS,
-			HVPMIC_REG_FAULT, &fault.byte, 1);
+			p->i2c, MAX17135_I2C_ADDRESS,
+			MAX17135_REG_FAULT, &fault.byte, 1);
 		if (stat) {
-			printk("PLHW: failed to read HVPMIC POK\n");
+			printk("PLHW: failed to read MAX17135 POK\n");
 			break;
 		}
 
