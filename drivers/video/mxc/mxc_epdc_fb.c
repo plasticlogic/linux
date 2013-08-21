@@ -3620,8 +3620,11 @@ int __devinit mxc_epdc_fb_plhw_init(struct mxc_epdc_fb_data *fb_data)
 	int gpio_ret = 0, i;
 	bool pl_7lvl;
 	
+	pl_7lvl = (!strcmp(mxc_epdc_fb_panel_type_modparam, "Type4") ||
+		   !strcmp(mxc_epdc_fb_panel_type_modparam, "Type10"));
+
 	/* 'Workaround' to pre-init Type11 gate driver chips by bitbashing */
-	if (!strcmp(mxc_epdc_fb_panel_type_modparam, "Type11"))
+	if (!pl_7lvl)
 	{
 		/* Set GDCLK and GDSP to GPIO */
 		mxc_iomux_v3_setup_multiple_pads(epdc_pads_gpio, ARRAY_SIZE(epdc_pads_gpio));
@@ -3657,9 +3660,6 @@ int __devinit mxc_epdc_fb_plhw_init(struct mxc_epdc_fb_data *fb_data)
 	} else {
 		fb_data->plhw_conf.psu_n = mxc_epdc_fb_vcom_n_modparam;
 	}
-
-	pl_7lvl = (!strcmp(mxc_epdc_fb_panel_type_modparam, "Type4") ||
-		   !strcmp(mxc_epdc_fb_panel_type_modparam, "Type10"));
 
 #if 1 /* temporary hack for dual 7-level displays */
 	fb_data->plhw_conf.source_2bpp_conversion =
