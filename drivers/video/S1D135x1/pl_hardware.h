@@ -15,10 +15,16 @@
 /* Opaque instance structure */
 struct pl_hardware;
 
+enum pl_hardware_hvpmic_id {
+	PLHW_HVPMIC_MAX17135,
+	PLHW_HVPMIC_TPS65185,
+};
+
 struct pl_hardware_config {
 	int i2c_bus_number;
 	__u8 dac_i2c_address;
 	__u8 adc_i2c_address;
+	enum pl_hardware_hvpmic_id hvpmic_id;
 };
 
 extern struct pl_hardware *pl_hardware_alloc(void);

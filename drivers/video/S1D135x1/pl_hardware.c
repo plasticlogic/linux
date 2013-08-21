@@ -37,7 +37,8 @@
 
 /* I2C addresses */
 #define CPLD_I2C_ADDRESS 0x70
-#define MAX17135_I2C_ADDRESS 0x48
+#define MAX17135_I2C_ADDRESS 0x48 /* Maxim MAX17135 HVPMIC */
+#define TPS65185_I2C_ADDRESS 0x68 /* TI TPS65185 HVPMIC */
 
 /* CPLD parameters */
 #define CPLD_MIN_VERSION 0x01
@@ -160,6 +161,42 @@ struct pl_hardware_max17135 {
 	__u8 prod_id;
 	__u8 prod_rev;
 	__u8 timings[MAX17135_NB_TIMINGS];
+};
+
+/* TI TPS65185 HVPMIC definitions */
+
+enum tps65185_register {
+	TPS65185_REG_TMST_VALUE = 0x00,
+	TPS65185_REG_ENABLE     = 0x01,
+	TPS65185_REG_VADJ       = 0x02,
+	TPS65185_REG_VCOM1      = 0x03,
+	TPS65185_REG_VCOM2      = 0x04,
+	TPS65185_REG_INT_EN1    = 0x05,
+	TPS65185_REG_INT_EN2    = 0x06,
+	TPS65185_REG_INT1       = 0x07,
+	TPS65185_REG_INT2       = 0x08,
+	TPS65185_REG_UPSEQ0     = 0x09,
+	TPS65185_REG_UPSEQ1     = 0x0A,
+	TPS65185_REG_DWNSEQ0    = 0x0B,
+	TPS65185_REG_DWNSEQ1    = 0x0C,
+	TPS65185_REG_TMST1      = 0x0D,
+	TPS65185_REG_TMST2      = 0x0E,
+	TPS65185_REG_PG_STAT    = 0x0F,
+	TPS65185_REG_REV_ID     = 0x10,
+	TPS65185_REG_MAX
+};
+
+union tps65185_version {
+	struct {
+		char version:4;
+		char minor:2;
+		char major:2;
+	};
+	u8 byte;
+};
+
+struct pl_hardware_tps65185 {
+	union tps65185_version ver;
 };
 
 /* DAC definitions */
@@ -298,6 +335,7 @@ struct pl_hardware {
 	union pl_hardware_cpld cpld;
 #endif
 	struct pl_hardware_max17135 max17135;
+	struct pl_hardware_tps65185 tps65185;
 	struct pl_hardware_dac dac;
 	struct pl_hardware_adc adc;
 	struct pl_hardware_vcom vcom;
@@ -318,16 +356,23 @@ static int pl_hardware_cpld_write_data(struct pl_hardware *p);
 /* MAX17135 HVPMIC */
 static int pl_hardware_max17135_init(struct pl_hardware *p);
 static int pl_hardware_max17135_load_timings(struct pl_hardware *p);
+#if USE_CPLD
 static int pl_hardware_max17135_wait_pok(struct pl_hardware *p);
+#endif
+
+/* TPS65185 HVPMIC */
+static int pl_hardware_tps65185_init(struct pl_hardware *p);
 
 /* DAC */
 static int pl_hardware_dac_init(struct pl_hardware *p);
 static int pl_hardware_dac_set_power(struct pl_hardware *p,
 				     bool on);
+#if !defined(CONFIG_MODELF_PL_ROBIN) && !defined(CONFIG_MODELF_PL_Z6_Z7)
 static int pl_hardware_dac_write(struct pl_hardware *p, __u8 value);
+#endif
 
 /* ADC */
-#ifndef CONFIG_MODELF_PL_ROBIN
+#if !defined(CONFIG_MODELF_PL_ROBIN) && !defined(CONFIG_MODELF_PL_Z6_Z7)
 static int pl_hardware_adc_init(struct pl_hardware *p, unsigned init_channel);
 static void pl_hardware_adc_set_nb_channels(struct pl_hardware_adc *adc);
 static int pl_hardware_adc_select_channel(struct pl_hardware *p,
@@ -342,7 +387,7 @@ static int pl_hardware_adc_read_mv(struct pl_hardware *p,
 /* VCOM calibration */
 static int pl_hardware_vcomcal_init(struct pl_hardware *p);
 static int pl_hardware_vcomcal_set_vcom(struct pl_hardware *p);
-#ifndef CONFIG_MODELF_PL_ROBIN
+#if !defined(CONFIG_MODELF_PL_ROBIN) && !defined(CONFIG_MODELF_PL_Z6_Z7)
 static int pl_hardware_vcomcal_measure_dac(struct pl_hardware *p);
 static int pl_hardware_vcomcal_get_dac_value(struct pl_hardware *p,
 					     int vcom_mv);
@@ -362,16 +407,10 @@ static int pl_hardware_do_set_temperature(struct pl_hardware *plhw,
 
 /* GPIO control */
 static int pl_hardware_gpio_init(struct pl_hardware *p);
-static void pl_hardware_free_gpio(struct pl_hardware *p);
+static void pl_hardware_gpio_free(struct pl_hardware *p);
 #ifndef CONFIG_MODELF_PL_ROBIN
 static int pl_hardware_gpio_wait_pok(struct pl_hardware *p);
 static int pl_hardware_gpio_switch(struct pl_hardware *p, int gpio, bool on);
-#endif
-
-#if defined(CONFIG_MODELF_PL_Z5)
-/* Hummingbird Z5 hardware */
-static int pl_hardware_z50_init(struct pl_hardware *p);
-static int pl_hardware_z50_free(struct pl_hardware *p);
 #endif
 
 /* ----------------------------------------------------------------------------
@@ -394,6 +433,10 @@ EXPORT_SYMBOL(pl_hardware_alloc);
 int pl_hardware_init(struct pl_hardware *p,
 			      const struct pl_hardware_config *config)
 {
+	static int (*hvpmic_init[])(struct pl_hardware *) = {
+		[PLHW_HVPMIC_MAX17135] = &pl_hardware_max17135_init,
+		[PLHW_HVPMIC_TPS65185] = &pl_hardware_tps65185_init,
+	};
 	int stat;
 
 	if (p->init_done)
@@ -412,14 +455,6 @@ int pl_hardware_init(struct pl_hardware *p,
 
 	p->is_module_a = false;
 
-#ifdef CONFIG_MODELF_PL_Z5
-	stat = pl_hardware_z50_init(p);
-	if (stat) {
-		printk("PLHW: Failed to intialise HBZ5 hardware\n");
-		goto err_free_i2c;
-	}
-#endif
-
 #if USE_CPLD
 	stat = pl_hardware_cpld_init(p);
 #else /* ToDo: also handle CPLD free when other init steps fail... */
@@ -430,23 +465,25 @@ int pl_hardware_init(struct pl_hardware *p,
 		stat = pl_hardware_gpio_init(p);
 		if (stat) {
 			printk("PLHW: Failed to initialise Module A\n");
+			goto err_free_i2c;
+		}
+	}
+
+	stat = hvpmic_init[config->hvpmic_id](p);
+	if (stat) {
+		printk("PLHW: Failed to initialise HVPMIC\n");
+		goto err_free_all;
+	}
+
+	if (config->hvpmic_id == PLHW_HVPMIC_MAX17135) {
+		stat = pl_hardware_dac_init(p);
+		if (stat) {
+			printk("PLHW: Failed to intialise VCOM DAC\n");
 			goto err_free_all;
 		}
 	}
 
-	stat = pl_hardware_max17135_init(p);
-	if (stat) {
-		printk("PLHW: Failed to initialise MAX17135 HVPMIC\n");
-		goto err_free_all;
-	}
-
-	stat = pl_hardware_dac_init(p);
-	if (stat) {
-		printk("PLHW: Failed to intialise VCOM DAC\n");
-		goto err_free_all;
-	}
-
-#ifndef CONFIG_MODELF_PL_ROBIN
+#if !defined(CONFIG_MODELF_PL_ROBIN) && !defined(CONFIG_MODELF_PL_Z6_Z7)
 	stat = pl_hardware_adc_init(p, VCOM_FB_ADC_CHANNEL);
 	if (stat) {
 		printk("PLHW: Failed to initialise ADC\n");
@@ -471,10 +508,8 @@ int pl_hardware_init(struct pl_hardware *p,
 	return 0;
 
 err_free_all:
-#ifdef CONFIG_MODELF_PL_Z5
-	pl_hardware_z50_free(p);
+	pl_hardware_gpio_free(p);
 err_free_i2c:
-#endif
 	i2c_put_adapter(p->i2c);
 err_exit:
 
@@ -488,9 +523,9 @@ void pl_hardware_free(struct pl_hardware *p)
 
 	if (p->init_done) {
 		i2c_put_adapter(p->i2c);
-		pl_hardware_free_gpio(p);
-#ifdef CONFIG_MODELF_PL_Z5
-		pl_hardware_z50_free(p);
+		pl_hardware_gpio_free(p);
+#ifdef CONFIG_MODELF_PL_Z6_Z7 /* it takes time to turn the power off */
+		mdelay(150);
 #endif
 	}
 
@@ -509,7 +544,7 @@ int pl_hardware_set_vcom(struct pl_hardware *p, int vcom_mv)
 
 	p->vcom.ref_mv = vcom_mv;
 
-#ifndef CONFIG_MODELF_PL_ROBIN
+#if !defined(CONFIG_MODELF_PL_ROBIN) && !defined(CONFIG_MODELF_PL_Z6_Z7)
 	pl_hardware_vcomcal_scale_vcom(p);
 #endif
 
@@ -540,9 +575,7 @@ int pl_hardware_enable(struct pl_hardware *p)
 		STEP(pl_hardware_cpld_switch(p, CPLD_BPCOM_CLAMP, true),
 		     "Clamp BPCOM to 0V");
 		STEP(pl_hardware_cpld_switch(p, CPLD_HVEN, true), "HV ON");
-#endif
 		STEP(pl_hardware_max17135_wait_pok(p), "wait for POK");
-#if USE_CPLD
 		STEP(pl_hardware_cpld_switch(p, CPLD_COM_SW_CLOSE, false),
 		     "COM open");
 		STEP(pl_hardware_cpld_switch(p, CPLD_COM_SW_EN, true),
@@ -561,7 +594,9 @@ int pl_hardware_enable(struct pl_hardware *p)
 		STEP(pl_hardware_gpio_switch(p, GPIO_PMIC_EN, true), "HV ON");
 		STEP(pl_hardware_gpio_wait_pok(p), "wait for POK");
 #endif
-		STEP(pl_hardware_dac_set_power(p, true), "DAC power on");
+		if (p->config->hvpmic_id == PLHW_HVPMIC_MAX17135)
+			STEP(pl_hardware_dac_set_power(p, true),
+			     "DAC power on");
 		STEP(pl_hardware_vcomcal_set_vcom(p), "VCOM calibration");
 #ifndef CONFIG_MODELF_PL_ROBIN
 		STEP(pl_hardware_gpio_switch(p, GPIO_VCOM_SW_CLOSE, true),
@@ -601,7 +636,9 @@ int pl_hardware_disable(struct pl_hardware *p)
 		STEP(pl_hardware_gpio_switch(p, GPIO_VCOM_SW_CLOSE, false),
 		     "COM open");
 #endif
-		STEP(pl_hardware_dac_set_power(p, false), "DAC power off");
+		if (p->config->hvpmic_id == PLHW_HVPMIC_MAX17135)
+			STEP(pl_hardware_dac_set_power(p, false),
+			     "DAC power off");
 #ifndef CONFIG_MODELF_PL_ROBIN
 		STEP(pl_hardware_gpio_switch(p, GPIO_PMIC_EN, false),
 		     "HV OFF");
@@ -751,6 +788,7 @@ static int pl_hardware_max17135_load_timings(struct pl_hardware *p)
 	return 0;
 }
 
+#if USE_CPLD
 static int pl_hardware_max17135_wait_pok(struct pl_hardware *p)
 {
 	static const unsigned POLL_DELAY_MS = 5;
@@ -788,6 +826,58 @@ static int pl_hardware_max17135_wait_pok(struct pl_hardware *p)
 
 	return stat;
 }
+#endif
+
+/* TPS65185 HVPMIC */
+
+static int pl_hardware_tps65185_init(struct pl_hardware *p)
+{
+	struct reg_data {
+		u8 reg;
+		u8 data;
+	};
+	static const struct reg_data init_data[] = {
+		{ TPS65185_REG_ENABLE,     0x00 },
+		{ TPS65185_REG_VADJ,       0x03 },
+		{ TPS65185_REG_VCOM1,      0x00 },
+		{ TPS65185_REG_VCOM2,      0x00 },
+		{ TPS65185_REG_INT_EN1,    0x00 },
+		{ TPS65185_REG_INT_EN2,    0x00 },
+		{ TPS65185_REG_UPSEQ0,     0x78 },
+		{ TPS65185_REG_UPSEQ1,     0x00 },
+		{ TPS65185_REG_DWNSEQ0,    0x00 },
+		{ TPS65185_REG_DWNSEQ1,    0x00 },
+		{ TPS65185_REG_TMST1,      0x00 },
+		{ TPS65185_REG_TMST2,      0x78 }
+	};
+	struct pl_hardware_tps65185 *pdata = &p->tps65185;
+	int stat;
+	int i;
+
+	mdelay(10);
+
+	stat = pl_hardware_read_i2c_reg(p->i2c, TPS65185_I2C_ADDRESS,
+					TPS65185_REG_REV_ID,
+					&pdata->ver.byte, 1);
+	if (stat)
+		return stat;
+
+	printk("PLHW: TPS65185 version: %d.%d.%d\n",
+	       pdata->ver.major, pdata->ver.minor, pdata->ver.version);
+
+	for (i = 0; i < ARRAY_SIZE(init_data); i++) {
+		stat = pl_hardware_write_i2c_reg8(p->i2c, TPS65185_I2C_ADDRESS,
+						  init_data[i].reg,
+						  init_data[i].data);
+		if (stat) {
+			printk("PLHW: Failed to write to TPS65185 reg %02X\n",
+			       init_data[i].reg);
+			return stat;
+		}
+	}
+
+	return 0;
+}
 
 /* DAC */
 
@@ -813,6 +903,7 @@ static int pl_hardware_dac_set_power(struct pl_hardware *p, bool on)
 				    payload.bytes, sizeof payload);
 }
 
+#if !defined(CONFIG_MODELF_PL_ROBIN) && !defined(CONFIG_MODELF_PL_Z6_Z7)
 static int pl_hardware_dac_write(struct pl_hardware *p, __u8 value)
 {
 	union dac5820_write_payload payload;
@@ -825,10 +916,11 @@ static int pl_hardware_dac_write(struct pl_hardware *p, __u8 value)
 	return pl_hardware_i2c_rdwr(p->i2c, p->dac.i2c_address, 0,
 				    payload.bytes, sizeof payload);
 }
+#endif
 
 /* ADC */
 
-#ifndef CONFIG_MODELF_PL_ROBIN
+#if !defined(CONFIG_MODELF_PL_ROBIN) && !defined(CONFIG_MODELF_PL_Z6_Z7)
 static int pl_hardware_adc_init(struct pl_hardware *p, unsigned init_channel)
 {
 	struct adc11607_setup * const setup = &p->adc.cmd.setup;
@@ -973,7 +1065,24 @@ static int pl_hardware_vcomcal_init(struct pl_hardware *p)
 	return 0;
 }
 
-#ifdef CONFIG_MODELF_PL_ROBIN
+#if defined(CONFIG_MODELF_PL_Z6_Z7)
+static int pl_hardware_vcomcal_set_vcom(struct pl_hardware *p)
+{
+	static const int VCOM_DIV_MV = 33; /* 33mV per DAC step */
+	const int dac_value = p->vcom.ref_mv / VCOM_DIV_MV;
+	const u8 reg1 = dac_value & 0xFF;
+	const u8 reg2 = (dac_value >> 8) & 0x01;
+	int stat;
+
+	stat = pl_hardware_write_i2c_reg8(p->i2c, TPS65185_I2C_ADDRESS,
+					  TPS65185_REG_VCOM1, reg1);
+	if (stat)
+		return stat;
+
+	return pl_hardware_write_i2c_reg8(p->i2c, TPS65185_I2C_ADDRESS,
+					  TPS65185_REG_VCOM2, reg2);
+}
+#elif defined(CONFIG_MODELF_PL_ROBIN)
 static int pl_hardware_vcomcal_set_vcom(struct pl_hardware *p)
 {
 	static const int VCOM_COEF_INT = 20;
@@ -1264,59 +1373,73 @@ int pl_hardware_is_module_a(const struct pl_hardware *plhw)
 }
 EXPORT_SYMBOL(pl_hardware_is_module_a);
 
+#ifdef CONFIG_MODELF_PL_ROBIN
 static int pl_hardware_gpio_init(struct pl_hardware *p)
 {
-#ifdef CONFIG_MODELF_PL_ROBIN
 	p->is_module_a = true;
 
 	return 0;
-#else
-	int retval;
-
-	p->is_module_a = true;
-
-	if (gpio_request(GPIO_POK, "POK") < 0) {
-		printk(KERN_ERR "POK (GPIO %d) is busy.\n", GPIO_POK);
-		retval = -EBUSY;
-		goto error_ret;
-	}
-	gpio_direction_input(GPIO_POK);
-
-	if (gpio_request(GPIO_PMIC_EN, "PMIC_EN") < 0) {
-		printk(KERN_ERR "PMIC_EN (GPIO %d) is busy.\n", GPIO_PMIC_EN);
-		retval = -EBUSY;
-		goto free_pok;
-	}
-	gpio_direction_output(GPIO_PMIC_EN, 0);
-
-	if (gpio_request(GPIO_VCOM_SW_CLOSE, "VCOM_SW_CLOSE") < 0) {
-		printk(KERN_ERR "VCOM_SW_CLOSE (GPIO %d) is busy.\n",
-		       GPIO_VCOM_SW_CLOSE);
-		retval = -EBUSY;
-		goto free_pmic_en;
-	}
-	gpio_direction_output(GPIO_VCOM_SW_CLOSE, 0);
-
-	return 0;
-
-free_pmic_en:
-	gpio_free(GPIO_PMIC_EN);
-free_pok:
-	gpio_free(GPIO_POK);
-error_ret:
-	return retval;
-#endif
 }
-
-static void pl_hardware_free_gpio(struct pl_hardware *p)
-{
-	if (p->is_module_a) {
-#ifndef CONFIG_MODELF_PL_ROBIN
-		gpio_free(GPIO_VCOM_SW_CLOSE);
-		gpio_free(GPIO_PMIC_EN);
-		gpio_free(GPIO_POK);
+#else
+static const struct gpio pl_hardware_gpio_init_data[] = {
+	{ GPIO_POK,           GPIOF_IN,            "GPIO_POK"              },
+	{ GPIO_PMIC_EN,       GPIOF_OUT_INIT_LOW,  "GPIO_PMIC_EN"          },
+	{ GPIO_VCOM_SW_CLOSE, GPIOF_OUT_INIT_LOW,  "GPIO_VCOM_SW_CLOSE"    },
+#if defined(CONFIG_MODELF_PL_Z5)
+	{ GPIO_I2C_ENABLE,    GPIOF_OUT_INIT_HIGH, "GPIO_I2C_ENABLE"       },
+	{ GPIO_3V3_ENABLE,    GPIOF_OUT_INIT_HIGH, "GPIO_3V3_ENABLE"       },
+	{ GPIO_VPP_SOLOMON,   GPIOF_OUT_INIT_LOW,  "GPIO_VPP_SOLOMON"      },
+	{ GPIO_SOL_EP_SELECT, GPIOF_IN,            "GPIO_SOL_EP_SELECT"    },
+#elif defined(CONFIG_MODELF_PL_Z6_Z7)
+	{ GPIO_3V3_ENABLE,    GPIOF_OUT_INIT_HIGH, "GPIO_3V3_ENABLE"       },
+	{ GPIO_RESET,         GPIOF_OUT_INIT_HIGH, "GPIO_RESET"            },
+	{ GPIO_RESERVE1,      GPIOF_OUT_INIT_HIGH, "GPIO_RESERVE1"         },
+	{ GPIO_RESERVE2,      GPIOF_OUT_INIT_HIGH, "GPIO_RESERVE2"         },
 #endif
+};
+
+static int pl_hardware_gpio_init(struct pl_hardware *p)
+{
+	int stat;
+	int i;
+
+	p->is_module_a = true;
+
+	for (i = 0; i < ARRAY_SIZE(pl_hardware_gpio_init_data); i++) {
+		const struct gpio *gpio = &pl_hardware_gpio_init_data[i];
+
+		printk(KERN_INFO "PLHW: Requesting: %s (GPIO %d).\n",
+		       gpio->label, gpio->gpio);
+
+		stat = gpio_request_one(gpio->gpio, gpio->flags, gpio->label);
+		if (stat) {
+			printk(KERN_ERR "PLHW: %s (GPIO %d) is busy.\n",
+			       gpio->label, gpio->gpio);
+			goto error_ret;
+		}
 	}
+
+	return 0;
+
+error_ret:
+	while (i--) {
+		const struct gpio *gpio = &pl_hardware_gpio_init_data[i];
+
+		printk(KERN_INFO "PLHW: Backing out: %s (GPIO %d).\n",
+		       gpio->label, gpio->gpio);
+		gpio_free(gpio->gpio);
+	}
+
+	return stat;
+}
+#endif
+
+static void pl_hardware_gpio_free(struct pl_hardware *p)
+{
+	int i;
+
+	for (i = 0; i < ARRAY_SIZE(pl_hardware_gpio_init_data); i++)
+		gpio_free(pl_hardware_gpio_init_data[i].gpio);
 }
 
 #ifndef CONFIG_MODELF_PL_ROBIN
@@ -1354,56 +1477,7 @@ static int pl_hardware_gpio_switch(struct pl_hardware *p, int gpio, bool on)
 
 	return 0;
 }
-#endif
-
-#ifdef CONFIG_MODELF_PL_Z5
-
-static const struct gpio z50_io_init[] = {
-	{ GPIO_SOL_EP_SELECT,GPIOF_IN,            "SOL_EP_SELECT"   },
-	{ GPIO_I2C_ENABLE,   GPIOF_OUT_INIT_HIGH, "GPIO_I2C_ENABLE" },
-	{ GPIO_3V3_ENABLE,   GPIOF_OUT_INIT_HIGH, "GPIO_3V3_ENABLE" },
-	{ GPIO_VPP_SOLOMON,  GPIOF_OUT_INIT_LOW,  "GPIO_VPP_SOLOMON"},
-};
-
-static int pl_hardware_z50_init(struct pl_hardware *p)
-{
-	int retval;
-	int i;
-	const struct gpio *io = z50_io_init;
-
-	for (i = 0; i < ARRAY_SIZE(z50_io_init); i++, io++) {
-
-		printk(KERN_INFO "PLHW: Requesting: %s (GPIO %d).\n",
-		       io->label, io->gpio);
-
-		if (gpio_request_one(io->gpio, io->flags, io->label) < 0) {
-			printk(KERN_ERR "PLHW: %s (GPIO %d) is busy.\n",
-			       io->label, io->gpio);
-			retval = -EBUSY;
-			goto error_ret;
-		}
-	}
-
-	return 0;
-
-error_ret:
-	while (i--) {
-		printk(KERN_INFO "PLHW: Backing out: %s (GPIO %d).\n",
-		       io->label, io->gpio);
-		gpio_free((--io)->gpio);
-	}
-
-	return retval;
-}
-
-static int pl_hardware_z50_free(struct pl_hardware *p)
-{
-	gpio_free_array(z50_io_init, ARRAY_SIZE(z50_io_init));
-
-	return 0;
-}
-
-#endif /* CONFIG_MODELF_PL_Z5 */
+#endif /* !CONFIG_MODELF_PL_ROBIN */
 
 MODULE_AUTHOR("Guillaume Tucker <guillaume.tucker@plasticlogic.com>");
 MODULE_DESCRIPTION("Plastic Logic E-Paper hardware control");
