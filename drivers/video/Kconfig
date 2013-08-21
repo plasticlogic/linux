@@ -2492,6 +2492,13 @@ config MODELF_PL_Z5
 	help
 	  Choose this option to enable PL Hummingbird Z5.0 expansion board.
 
+config MODELF_PL_Z6_Z7
+	bool "Hummingbird Z6.x or Z7.x"
+	help
+	  Choose this option to enable PL Hummingbird Z6.x or Z7.x expansion
+	  boards.  They both present the same hardware interface but are
+	  compatible with different display types.
+
 config MODELF_PL_ROBIN
 	bool "Robin v1.0"
 	help

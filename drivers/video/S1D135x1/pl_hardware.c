@@ -260,6 +260,7 @@ struct pl_hardware_vcom {
 
 /* Module A GPIO pins */
 #define GPIO_TO_PIN(bank, gpio) (32 * (bank) + (gpio))
+
 #if defined(CONFIG_MODELF_PL_Z1_3)
 #define GPIO_POK		GPIO_TO_PIN(0, 15)
 #define GPIO_PMIC_EN		GPIO_TO_PIN(3, 21)
@@ -272,6 +273,19 @@ struct pl_hardware_vcom {
 #define GPIO_3V3_ENABLE		GPIO_TO_PIN(1,  1)
 #define GPIO_VPP_SOLOMON	GPIO_TO_PIN(1, 29)
 #define GPIO_SOL_EP_SELECT	GPIO_TO_PIN(2, 24)
+#elif defined(CONFIG_MODELF_PL_Z6_Z7)
+#define GPIO_POK		GPIO_TO_PIN(0, 15)
+#define GPIO_PMIC_EN		GPIO_TO_PIN(1, 14)
+#define GPIO_VCOM_SW_CLOSE	GPIO_TO_PIN(0, 14)
+#define GPIO_PMIC_FLT		GPIO_TO_PIN(0, 27)
+#define GPIO_RESET		GPIO_TO_PIN(0, 26)
+#define GPIO_RESERVE1		GPIO_TO_PIN(0, 22)
+#define GPIO_RESERVE2		GPIO_TO_PIN(1, 13)
+#define GPIO_3V3_ENABLE		GPIO_TO_PIN(1, 15)
+#define GPIO_SEL1		GPIO_TO_PIN(1, 12)
+#define GPIO_SEL2		GPIO_TO_PIN(0, 23)
+#define GPIO_SEL3		GPIO_TO_PIN(0, 31)
+#define GPIO_SEL4		GPIO_TO_PIN(0, 30)
 #endif
 
 /* Opaque public instance structure */
