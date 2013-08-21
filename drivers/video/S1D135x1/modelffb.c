@@ -79,6 +79,11 @@ struct pl_hardware_config pl_config = {
 #endif
 	.dac_i2c_address = 0x39,
 	.adc_i2c_address = 0x34,
+#ifdef CONFIG_MODELF_PL_Z6_Z7
+	.hvpmic_id = PLHW_HVPMIC_TPS65185,
+#else
+	.hvpmic_id = PLHW_HVPMIC_MAX17135,
+#endif
 };
 
 static DEFINE_MUTEX(temperature_lock);
