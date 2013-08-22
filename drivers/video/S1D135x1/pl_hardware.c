@@ -367,7 +367,7 @@ static int pl_hardware_tps65185_init(struct pl_hardware *p);
 static int pl_hardware_dac_init(struct pl_hardware *p);
 static int pl_hardware_dac_set_power(struct pl_hardware *p,
 				     bool on);
-#if !defined(CONFIG_MODELF_PL_ROBIN) && !defined(CONFIG_MODELF_PL_Z6_Z7)
+#if !defined(CONFIG_MODELF_PL_Z6_Z7)
 static int pl_hardware_dac_write(struct pl_hardware *p, __u8 value);
 #endif
 
@@ -903,7 +903,7 @@ static int pl_hardware_dac_set_power(struct pl_hardware *p, bool on)
 				    payload.bytes, sizeof payload);
 }
 
-#if !defined(CONFIG_MODELF_PL_ROBIN) && !defined(CONFIG_MODELF_PL_Z6_Z7)
+#if !defined(CONFIG_MODELF_PL_Z6_Z7)
 static int pl_hardware_dac_write(struct pl_hardware *p, __u8 value)
 {
 	union dac5820_write_payload payload;
@@ -1436,10 +1436,12 @@ error_ret:
 
 static void pl_hardware_gpio_free(struct pl_hardware *p)
 {
+#ifndef CONFIG_MODELF_PL_ROBIN
 	int i;
 
 	for (i = 0; i < ARRAY_SIZE(pl_hardware_gpio_init_data); i++)
 		gpio_free(pl_hardware_gpio_init_data[i].gpio);
+#endif
 }
 
 #ifndef CONFIG_MODELF_PL_ROBIN
