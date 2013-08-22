@@ -2487,7 +2487,7 @@ static struct modelffb_platform_data am33xx_modelf_platform_data = {
 	.spi_info = am335x_modelf_spi_info,
 	.gpio_hrdy = 0,
 	.gpio_hdc = 0,
-#if defined(CONFIG_MODELF_PL_Z1_3)
+#if defined(CONFIG_MODELF_PL_Z1_3) || defined(CONFIG_MODELF_PL_ROBIN)
 	.gpio_cs = GPIO_TO_PIN(0, 5),
 	.hirq = OMAP_GPIO_IRQ(GPIO_TO_PIN(0, 20)),
 #elif defined(CONFIG_MODELF_PL_Z5)
@@ -3736,7 +3736,12 @@ static const struct pinmux_config pldek_pin_mux[] = {
 	/* MAX17135 HV_EN */
 	{"mcasp0_ahclkx.gpio3_21", OMAP_MUX_MODE7 | AM33XX_PIN_OUTPUT},
 #elif defined(CONFIG_MODELF_PL_ROBIN)
-	/* ... */
+	/* SPI CS driven as GPIO */
+	{"spi0_cs0.gpio0_5",       OMAP_MUX_MODE7 | AM33XX_PIN_OUTPUT},
+	/* HIRQ */
+	{"xdma_event_intr1.gpio0_20", OMAP_MUX_MODE7 | AM33XX_PIN_INPUT},
+	/* SC18Is06x SPI CS driven as GPIO */
+	{"uart1_rxd.gpio0_14",     OMAP_MUX_MODE7 | AM33XX_PIN_OUTPUT},
 #elif defined(CONFIG_MODELF_PL_Z5)
 	/* SPI CS driven as GPIO */
 	{"mcasp0_ahclkr.gpio3_17", OMAP_MUX_MODE7 | AM33XX_PIN_OUTPUT },
