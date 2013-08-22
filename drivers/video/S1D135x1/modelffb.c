@@ -71,7 +71,7 @@ static const char *modelffb_sync_status_table[MODELFFB_SYNC_N] = {
 #include "temperature-set.h"
 
 /* ToDo: define in board file */
-struct pl_hardware_config pl_config = {
+struct pl_hardware_config modelffb_pl_config = {
 #ifdef CONFIG_MODELF_PL_ROBIN
 	.i2c_bus_number = 4,
 #else
@@ -133,28 +133,42 @@ static inline void modelffb_unlock(void)
 
 #define SWAP_BYTE_16(x) ((x >> 8) | (x << 8))
 
-static int __devinit __modelffb_request_bus(void)
+static int __devinit modelffb_request_bus(void)
 {
 	struct spi_master *master;
 
 	master = spi_busnum_to_master(parinfo->pdata->spi_info->bus_num);
 	if (!master) {
-		printk(KERN_ERR "Failed to get master SPI bus %d\n",
+		printk(KERN_ERR "MODELFFB: Failed to get master SPI bus %d\n",
 		       parinfo->pdata->spi_info->bus_num);
 		return -ENODEV;
 	}
 
 	parinfo->spi = spi_new_device(master, parinfo->pdata->spi_info);
 	if (!parinfo->spi) {
-		printk(KERN_ERR "Failed to create new SPI device\n");
+		printk(KERN_ERR "MODELFFB: Failed to create new SPI device\n");
 		return -ENODEV;
 	}
+
+#ifdef CONFIG_I2C_SC18IS60X_SHARED_SPI
+	mutex_lock(&sc18is60x_spi_lock);
+	sc18is60x_shared_spi = parinfo->spi;
+	mutex_unlock(&sc18is60x_spi_lock);
+#endif
+
+	printk(KERN_ERR "MODELFFB: SPI bus OK\n");
 
 	return 0;
 }
 
-static void __devexit __modelffb_release_bus(void)
+static void __devexit modelffb_release_bus(void)
 {
+#ifdef CONFIG_I2C_SC18IS60X_SHARED_SPI
+	mutex_lock(&sc18is60x_spi_lock);
+	sc18is60x_shared_spi = NULL;
+	mutex_unlock(&sc18is60x_spi_lock);
+#endif
+
 	spi_unregister_device(parinfo->spi);
 }
 
@@ -2033,52 +2047,10 @@ static int __devinit modelffb_framebuffer_alloc(struct platform_device *pdev)
 	memset(parinfo->lut_in_use, 0, MODELF_MAX_LUT_NUM);
 	memset(parinfo->lut_queue, 0, MODELF_MAX_LUT_QUEUE_NUM);
 
-#ifdef CONFIG_I2C_SC18IS60X_SHARED_SPI
-	mutex_lock(&sc18is60x_spi_lock);
-	sc18is60x_shared_spi = parinfo->spi;
-	mutex_unlock(&sc18is60x_spi_lock);
-#endif
-
-        /* get pmic regulators */
-#if (defined(CONFIG_MODELF_PL_HARDWARE) \
-     || defined(CONFIG_MODELF_PL_HARDWARE_MODULE))
-        parinfo->pl_hardware = pl_hardware_alloc();
-        if (!parinfo->pl_hardware) {
-                retval = -ENOMEM;
-                goto out_regulator;
-        }
-
-        retval = pl_hardware_init(parinfo->pl_hardware,
-                                        &pl_config);
-        if (retval) {
-                dev_err(parinfo->dev,
-                        "failed to initialize Plastic Logic hardware\n");
-		retval = -ENODEV;
-		goto out_regulator;
-        }
-
-        retval = pl_hardware_set_vcom(parinfo->pl_hardware, 9742);
-        if (retval) {
-                dev_err(parinfo->dev, "failed to set VCOM voltage\n");
-                goto out_regulator;
-        }
-#endif
-
 	parinfo->opt_clear_on_exit = false;
 	parinfo->opt_clear_on_init = true;
 
 	return 0;
-
-#if (defined(CONFIG_MODELF_PL_HARDWARE) \
-     || defined(CONFIG_MODELF_PL_HARDWARE_MODULE))
-out_regulator:
-        pl_hardware_free(parinfo->pl_hardware);
-#endif
-#ifdef CONFIG_I2C_SC18IS60X_SHARED_SPI
-	mutex_lock(&sc18is60x_spi_lock);
-	sc18is60x_shared_spi = NULL;
-	mutex_unlock(&sc18is60x_spi_lock);
-#endif
 
 framebuffer_release:
 	framebuffer_release(info);
@@ -2097,12 +2069,50 @@ static void __devexit modelffb_framebuffer_release(void)
 #endif
 
 	kfree(info->pseudo_palette);
+	framebuffer_release(info);
+}
+
+static int __devinit modelffb_regulator_init(void)
+{
 #if (defined(CONFIG_MODELF_PL_HARDWARE) \
      || defined(CONFIG_MODELF_PL_HARDWARE_MODULE))
-        pl_hardware_free(parinfo->pl_hardware);
-#endif
+	int stat;
 
-	framebuffer_release(info);
+        parinfo->pl_hardware = pl_hardware_alloc();
+        if (!parinfo->pl_hardware) {
+                stat = -ENOMEM;
+		goto exit_now;
+        }
+
+        stat = pl_hardware_init(parinfo->pl_hardware, &modelffb_pl_config);
+        if (stat) {
+                dev_err(parinfo->dev,
+                        "failed to initialize Plastic Logic hardware\n");
+		goto exit_free_plhw;
+        }
+
+        stat = pl_hardware_set_vcom(parinfo->pl_hardware, 9742);
+        if (stat) {
+                dev_err(parinfo->dev, "failed to set VCOM voltage\n");
+                goto exit_free_plhw;
+        }
+	return 0;
+
+exit_free_plhw:
+        pl_hardware_free(parinfo->pl_hardware);
+exit_now:
+	return stat;
+#else
+	return 0;
+#endif
+}
+
+static void __devexit modelffb_regulator_exit(void)
+{
+#if (defined(CONFIG_MODELF_PL_HARDWARE) \
+     || defined(CONFIG_MODELF_PL_HARDWARE_MODULE))
+	pl_hardware_free(parinfo->pl_hardware);
+#endif
 }
 
 static int modelffb_alloc_vram(void)
@@ -3415,17 +3425,41 @@ static int __devinit modelffb_probe(struct platform_device *pdev)
 	printk(KERN_INFO "MODELFFB: check rev: %d\n", CHECKREV);
 #endif
 
+	retval = modelffb_framebuffer_alloc(pdev);
+	if (retval) {
+		printk(KERN_ERR "MODELFFB: failed to alloc frame buffer\n");
+		goto exit_now;
+	}
+
+	retval = modelffb_alloc_memory();
+	if (retval) {
+		printk(KERN_ERR "MODELFFB: failed to alloc modelffb_par\n");
+		goto exit_release_framebuffer;
+	}
+	__modelffb_bit_swap_table_init();
+
+	retval = modelffb_create_file();
+	if (retval)
+		goto exit_free_memory;
+
+	parinfo->workqueue = create_singlethread_workqueue("modelf_workqueue");
+	if (!parinfo->workqueue) {
+		printk(KERN_ERR "MODELFFB: create workqueue failed\n");
+		retval = -ENOMEM;
+		goto exit_free_sysfs;
+	}
+
 	if (pdata->gpio_hdc) {
 		retval = modelffb_setup_gpio(pdata->gpio_hdc, "MODELF_HDC");
 		if (retval)
-			goto exit_now;
+			goto exit_destroy_workqueue;
 		gpio_direction_output(pdata->gpio_hdc, 1);
 		printk(KERN_INFO "MODELFFB: using HDC on pin %d\n",
 		       pdata->gpio_hdc);
 	} else {
 		retval = modelffb_setup_gpio(pdata->gpio_cs, "MODELF_CS");
 		if (retval)
-			goto exit_now;
+			goto exit_destroy_workqueue;
 		gpio_direction_output(pdata->gpio_cs, 1);
 		printk(KERN_INFO "MODELFFB: using SPI CS on pin %d\n",
 		       pdata->gpio_cs);
@@ -3440,35 +3474,19 @@ static int __devinit modelffb_probe(struct platform_device *pdev)
 		       pdata->gpio_hrdy);
 	}
 
-	retval = modelffb_framebuffer_alloc(pdev);
+	retval = spi_register_driver(&modelffb_spi_driver);
 	if (retval) {
-		printk(KERN_ERR "MODELFFB: failed to alloc frame buffer\n");
+		printk(KERN_ERR "Failed to register SPI driver\n");
 		goto exit_free_gpio_hrdy;
 	}
 
-	retval = modelffb_alloc_memory();
-	if (retval) {
-		printk(KERN_ERR "MODELFFB: failed to alloc modelffb_par\n");
-		goto exit_release_framebuffer;
-	}
-	__modelffb_bit_swap_table_init();
+	retval = modelffb_request_bus();
+	if (retval)
+		goto exit_unregister_spi_driver;
 
-	retval = __modelffb_request_bus();
-	if (retval) {
-		goto exit_free_memory;
-	}
-
-	retval = modelffb_create_file();
-	if (retval) {
+	retval = modelffb_regulator_init();
+	if (retval)
 		goto exit_release_bus;
-	}
-
-	parinfo->workqueue = create_singlethread_workqueue("modelf_workqueue");
-	if (!parinfo->workqueue) {
-		printk(KERN_ERR "MODELFFB: create workqueue failed\n");
-		retval = -ENOMEM;
-		goto exit_free_sysfs;
-	}
 
 	parinfo->status = 0;
 	parinfo->waveform_mode = MODELF_WAVEFORM_HIGH_QUALITY;
@@ -3492,12 +3510,6 @@ static int __devinit modelffb_probe(struct platform_device *pdev)
 	init_waitqueue_head(&parinfo->sync_update_wait);
 	parinfo->sync_status = MODELFFB_SYNC_IDLE;
 
-	retval = spi_register_driver(&modelffb_spi_driver);
-	if (retval) {
-		printk(KERN_ERR "Failed to register SPI driver\n");
-		goto exit_destroy_workqueue;
-	}
-
 	printk(KERN_INFO "MODELFFB: Ready, deferred I/O "
 #ifdef CONFIG_MODELF_DEFERRED_IO
 	       "enabled"
@@ -3508,16 +3520,11 @@ static int __devinit modelffb_probe(struct platform_device *pdev)
 
 	return 0;
 
-exit_destroy_workqueue:
-	destroy_workqueue(parinfo->workqueue);
-exit_free_sysfs:
-	modelffb_remove_file();
+	modelffb_regulator_exit();
 exit_release_bus:
-	__modelffb_release_bus();
-exit_free_memory:
-	modelffb_free_memory();
-exit_release_framebuffer:
-	modelffb_framebuffer_release();
+	modelffb_release_bus();
+exit_unregister_spi_driver:
+	spi_unregister_driver(&modelffb_spi_driver);
 exit_free_gpio_hrdy:
 	if (pdata->gpio_hrdy)
 		gpio_free(pdata->gpio_hrdy);
@@ -3526,6 +3533,14 @@ exit_free_gpio_hdc_cs:
 		gpio_free(pdata->gpio_hdc);
 	else
 		gpio_free(pdata->gpio_cs);
+exit_destroy_workqueue:
+	destroy_workqueue(parinfo->workqueue);
+exit_free_sysfs:
+	modelffb_remove_file();
+exit_free_memory:
+	modelffb_free_memory();
+exit_release_framebuffer:
+	modelffb_framebuffer_release();
 exit_now:
 
 	return retval;
@@ -3557,8 +3572,7 @@ static int __devexit modelffb_remove(struct platform_device *pdev)
 	del_timer_sync(&parinfo->sleep_timer);
 	del_timer_sync(&parinfo->temperature_timer);
 
-	if ((parinfo->status & MODELF_STATUS_INIT_DONE)
-	    == MODELF_STATUS_INIT_DONE) {
+	if (parinfo->status & MODELF_STATUS_INIT_DONE) {
 		disable_irq_nosync(parinfo->pdata->hirq);
 		free_irq(parinfo->pdata->hirq, parinfo->dev);
 
@@ -3569,6 +3583,13 @@ static int __devexit modelffb_remove(struct platform_device *pdev)
 		modelffb_free_vram();
 	}
 
+	modelffb_regulator_exit();
+	modelffb_release_bus();
+	spi_unregister_driver(&modelffb_spi_driver);
+
+	if (parinfo->pdata->gpio_hrdy)
+		gpio_free(parinfo->pdata->gpio_hrdy);
+
 	if (parinfo->pdata->gpio_hdc)
 		gpio_free(parinfo->pdata->gpio_hdc);
 	else
@@ -3576,18 +3597,12 @@ static int __devexit modelffb_remove(struct platform_device *pdev)
 
 	flush_workqueue(parinfo->workqueue);
 	destroy_workqueue(parinfo->workqueue);
-
-	if (parinfo->pdata->gpio_hrdy)
-		gpio_free(parinfo->pdata->gpio_hrdy);
-
-	spi_unregister_driver(&modelffb_spi_driver);
-
 	modelffb_remove_file();
-	__modelffb_release_bus();
 	modelffb_free_memory();
 	modelffb_framebuffer_release();
 
 	printk(KERN_INFO "MODELFFB: modelF has been removed.\n");
+
 	return 0;
 }
 
