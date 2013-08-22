@@ -2078,28 +2078,23 @@ static int __devinit modelffb_regulator_init(void)
      || defined(CONFIG_MODELF_PL_HARDWARE_MODULE))
 	int stat;
 
-        parinfo->pl_hardware = pl_hardware_alloc();
-        if (!parinfo->pl_hardware) {
-                stat = -ENOMEM;
+	parinfo->pl_hardware = pl_hardware_alloc();
+	if (!parinfo->pl_hardware) {
+		stat = -ENOMEM;
 		goto exit_now;
-        }
+	}
 
-        stat = pl_hardware_init(parinfo->pl_hardware, &modelffb_pl_config);
-        if (stat) {
-                dev_err(parinfo->dev,
-                        "failed to initialize Plastic Logic hardware\n");
+	stat = pl_hardware_init(parinfo->pl_hardware, &modelffb_pl_config);
+	if (stat) {
+		dev_err(parinfo->dev,
+			"failed to initialize Plastic Logic hardware\n");
 		goto exit_free_plhw;
-        }
+	}
 
-        stat = pl_hardware_set_vcom(parinfo->pl_hardware, 9742);
-        if (stat) {
-                dev_err(parinfo->dev, "failed to set VCOM voltage\n");
-                goto exit_free_plhw;
-        }
 	return 0;
 
 exit_free_plhw:
-        pl_hardware_free(parinfo->pl_hardware);
+	pl_hardware_free(parinfo->pl_hardware);
 exit_now:
 	return stat;
 #else
