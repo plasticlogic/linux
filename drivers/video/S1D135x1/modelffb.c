@@ -104,7 +104,7 @@ extern struct spi_device *sc18is60x_shared_spi;
 static inline int modelffb_lock(void)
 {
 	if (down_interruptible(&parinfo->access_sem)) {
-		printk(KERN_ERR "MODELFFB: down semaphore interrupted\n");
+		dev_err(parinfo->dev, "Down semaphore interrupted\n");
 		return -EBUSY;
 	}
 
@@ -139,14 +139,14 @@ static int __devinit modelffb_request_bus(void)
 
 	master = spi_busnum_to_master(parinfo->pdata->spi_info->bus_num);
 	if (!master) {
-		printk(KERN_ERR "MODELFFB: Failed to get master SPI bus %d\n",
-		       parinfo->pdata->spi_info->bus_num);
+		dev_err(parinfo->dev, "Failed to get master SPI bus %d\n",
+			parinfo->pdata->spi_info->bus_num);
 		return -ENODEV;
 	}
 
 	parinfo->spi = spi_new_device(master, parinfo->pdata->spi_info);
 	if (!parinfo->spi) {
-		printk(KERN_ERR "MODELFFB: Failed to create new SPI device\n");
+		dev_err(parinfo->dev, "Failed to create new SPI device\n");
 		return -ENODEV;
 	}
 
@@ -155,8 +155,6 @@ static int __devinit modelffb_request_bus(void)
 	sc18is60x_shared_spi = parinfo->spi;
 	mutex_unlock(&sc18is60x_spi_lock);
 #endif
-
-	printk(KERN_ERR "MODELFFB: SPI bus OK\n");
 
 	return 0;
 }
@@ -177,19 +175,19 @@ static inline void my_spi_write(struct spi_device *spi, const void *buffer,
 {
 	int error;
 	struct spi_message m;
-        struct spi_transfer t[1];
+	struct spi_transfer t[1];
 
-        spi_message_init(&m);
-        memset(t, 0, sizeof(t));
+	spi_message_init(&m);
+	memset(t, 0, sizeof(t));
 
-        t[0].tx_buf = buffer;
-        t[0].len = bytes;
-        t[0].bits_per_word = 16;
-        spi_message_add_tail(&t[0], &m);
+	t[0].tx_buf = buffer;
+	t[0].len = bytes;
+	t[0].bits_per_word = 16;
+	spi_message_add_tail(&t[0], &m);
 
-        error = spi_sync(spi, &m);
-        if (error < 0)
-                printk(KERN_ERR "MODELFFB: SPI write error: %d\n", error);
+	error = spi_sync(spi, &m);
+	if (error < 0)
+		dev_err(parinfo->dev, "SPI write error: %d\n", error);
 }
 
 static inline void my_spi_read(struct spi_device *spi, void *buffer,
@@ -197,19 +195,19 @@ static inline void my_spi_read(struct spi_device *spi, void *buffer,
 {
 	int error;
 	struct spi_message m;
-        struct spi_transfer t[1];
+	struct spi_transfer t[1];
 
-        spi_message_init(&m);
-        memset(t, 0, sizeof(t));
+	spi_message_init(&m);
+	memset(t, 0, sizeof(t));
 
-        t[0].rx_buf = buffer;
-        t[0].len = bytes;
-        t[0].bits_per_word = 16;
-        spi_message_add_tail(&t[0], &m);
+	t[0].rx_buf = buffer;
+	t[0].len = bytes;
+	t[0].bits_per_word = 16;
+	spi_message_add_tail(&t[0], &m);
 
-        error = spi_sync(spi, &m);
-        if (error < 0)
-                printk(KERN_ERR "MODELFFB: SPI read error: %d\n", error);
+	error = spi_sync(spi, &m);
+	if (error < 0)
+		dev_err(parinfo->dev, "SPI read error: %d\n", error);
 }
 
 static inline void __modelffb_write_n16(struct spi_device *spi,
@@ -234,9 +232,9 @@ static inline void __modelffb_write_n16(struct spi_device *spi,
 		spi_message_add_tail(it, &m);
 	}
 
-        error = spi_sync(spi, &m);
-        if (error < 0)
-                printk(KERN_ERR "MODELFFB: SPI write error: %d\n", error);
+	error = spi_sync(spi, &m);
+	if (error < 0)
+		dev_err(parinfo->dev, "SPI write error: %d\n", error);
 }
 
 static inline uint16_t __modelffb_read_reg(struct spi_device *spi,
@@ -263,8 +261,8 @@ static inline uint16_t __modelffb_read_reg(struct spi_device *spi,
 	spi_message_add_tail(&t[2], &m);
 
 	error = spi_sync(spi, &m);
-        if (error < 0) {
-                printk(KERN_ERR "MODELFFB: SPI reg read error: %d\n", error);
+	if (error < 0) {
+		dev_err(parinfo->dev, "SPI reg read error: %d\n", error);
 		return error;
 	}
 
@@ -297,20 +295,21 @@ static inline void __modelffb_write_data(uint16_t data)
 #endif
 }
 
-static inline void __modelffb_write_n_data(const uint16_t *data, size_t n)
+static inline int __modelffb_write_n_data(const uint16_t *data, size_t n)
 {
 	int i;
 #ifdef CONFIG_MODELF_SWAP_SPI_BYTE
 	uint16_t *buffer = kmalloc(n + 2, GFP_KERNEL);
 
 	if (!buffer) {
-		printk(KERN_ERR "MODELFFB: kmalloc swap buffer failed\n");
-		return;
+		dev_err(parinfo->dev, "kmalloc swap buffer failed\n");
+		return -ENOMEM;
 	}
 
 /* Data size over NON_DMA_MAX_BYTES will automativally be sent via DMA.
  * It is necessary to allocate coherent memory for using SPI with DMA.
- * But this area is out of sight from deferred I/O because of page fault mechanism.
+ * But this area is out of sight from deferred I/O because of page fault
+ * mechanism.
  * Pooling sent data to coherent area might be one solution.
  */
 	for (i = 0; i < n / 2 + 1; i++) { /* + 1 for out of 16-bit alignment */
@@ -319,16 +318,20 @@ static inline void __modelffb_write_n_data(const uint16_t *data, size_t n)
 
 	for (i = 0; i < n / 2 + 1; i += NON_DMA_MAX_BYTES / 2) {
 		my_spi_write(parinfo->spi, buffer + i,
-			n - i * 2 < NON_DMA_MAX_BYTES ? n % NON_DMA_MAX_BYTES : NON_DMA_MAX_BYTES);
+			     n - (i * 2) < NON_DMA_MAX_BYTES ?
+			     (n % NON_DMA_MAX_BYTES) : NON_DMA_MAX_BYTES);
 	}
 
 	kfree(buffer);
 #else
 	for (i = 0; i < n / 2 + 1; i += NON_DMA_MAX_BYTES / 2) {
 		my_spi_write(parinfo->spi, data + i,
-			n - i * 2 < NON_DMA_MAX_BYTES ? n % NON_DMA_MAX_BYTES : NON_DMA_MAX_BYTES);
+			     n - (i * 2) < NON_DMA_MAX_BYTES ?
+			     (n % NON_DMA_MAX_BYTES) : NON_DMA_MAX_BYTES);
 	}
 #endif
+
+	return 0;
 }
 
 static uint16_t __modelffb_read_data(void)
@@ -417,13 +420,14 @@ static inline int __modelffb_wait_for_HRDY_ready(int ms_timeout)
 		}
 		msleep(1);
 	}
-	printk(KERN_ERR
-	       "MODELFFB: HRDY timeout, "
-	       "MODELF_REG_SYSTEM_STATUS = 0x%04x, "
-	       "MODELF_REG_POWER_SAVE_MODE = 0x%04X\n",
+
+	dev_err(parinfo->dev, "HRDY timeout, "
+		"MODELF_REG_SYSTEM_STATUS = 0x%04x, "
+		"MODELF_REG_POWER_SAVE_MODE = 0x%04X\n",
 		__modelffb_reg_read(MODELF_REG_SYSTEM_STATUS),
-		__modelffb_reg_read(MODELF_REG_POWER_SAVE_MODE)); 
-	return -EBUSY;
+		__modelffb_reg_read(MODELF_REG_POWER_SAVE_MODE));
+
+	return -ETIMEDOUT;
 
 success:
 	return 0;
@@ -447,13 +451,14 @@ static int __modelffb_delay_for_HRDY_ready(int ms_timeout)
 		}
 		udelay(1);
 	}
-	printk(KERN_ERR
-	       "MODELFFB: HRDY timeout, "
-	       "MODELF_REG_SYSTEM_STATUS = 0x%04x, "
-	       "MODELF_REG_POWER_SAVE_MODE = 0x%04X\n",
+
+	dev_err(parinfo->dev, "HRDY timeout, "
+		"MODELF_REG_SYSTEM_STATUS = 0x%04x, "
+		"MODELF_REG_POWER_SAVE_MODE = 0x%04X\n",
 		__modelffb_reg_read(MODELF_REG_SYSTEM_STATUS),
 		__modelffb_reg_read(MODELF_REG_POWER_SAVE_MODE)); 
-	return -EBUSY;
+
+	return -ETIMEDOUT;
 
 success:
 	return 0;
@@ -514,41 +519,45 @@ static inline void __modelffb_simple_command(uint16_t command)
 	__modelffb_command(command);
 	__modelffb_command_end();
 }
-static inline void __modelffb_simple_command_p1(uint16_t command, uint16_t param1)
+static inline void __modelffb_simple_command_p1(
+	uint16_t command, uint16_t param1)
 {
 	__modelffb_command_p1(command, param1);
 	__modelffb_command_end();
 }
 
-static inline void __modelffb_simple_command_p2(uint16_t command, uint16_t param1, uint16_t param2)
+static inline void __modelffb_simple_command_p2(
+	uint16_t command, uint16_t param1, uint16_t param2)
 {
 	__modelffb_command_p2(command, param1, param2);
 	__modelffb_command_end();
 }
 
-static inline void __modelffb_simple_command_p3(uint16_t command, uint16_t param1, uint16_t param2,
-	uint16_t param3)
+static inline void __modelffb_simple_command_p3(
+	uint16_t command, uint16_t param1, uint16_t param2, uint16_t param3)
 {
 	__modelffb_command_p3(command, param1, param2, param3);
 	__modelffb_command_end();
 }
 
-static inline void __modelffb_simple_command_p4(uint16_t command, uint16_t param1, uint16_t param2,
-	uint16_t param3, uint16_t param4)
+static inline void __modelffb_simple_command_p4(
+	uint16_t command, uint16_t param1, uint16_t param2, uint16_t param3,
+	uint16_t param4)
 {
 	__modelffb_command_p4(command, param1, param2, param3, param4);
 	__modelffb_command_end();
 }
 
-static inline void __modelffb_simple_command_p5(uint16_t command, uint16_t param1, uint16_t param2,
+static inline void __modelffb_simple_command_p5(
+	uint16_t command, uint16_t param1, uint16_t param2,
 	uint16_t param3, uint16_t param4, uint16_t param5)
 {
 	__modelffb_command_p5(command, param1, param2, param3, param4, param5);
 	__modelffb_command_end();
 }
 
-static inline int __modelffb_wait_for_reg_value(uint16_t reg, uint16_t mask,
-	uint16_t value, int ms_timeout)
+static inline int __modelffb_wait_for_reg_value(
+	uint16_t reg, uint16_t mask, uint16_t value, int ms_timeout)
 {
 	uint32_t start_jiffy = jiffies;
 
@@ -560,9 +569,11 @@ static inline int __modelffb_wait_for_reg_value(uint16_t reg, uint16_t mask,
 		}
 		msleep(1);
 	}
-	printk(KERN_ERR "MODELFFB: read reg %04x timed out for 0x%04x\n",
-	       reg, value);
-	return -EBUSY;
+
+	dev_err(parinfo->dev, "Reading reg %04x timed out for 0x%04x\n",
+		reg, value);
+
+	return -ETIMEDOUT;
 
 success:
 	return 0;
@@ -593,9 +604,8 @@ static int __modelffb_data_transfer(uint16_t *data, size_t n)
 	__modelffb_immediate_simple_command(MODELF_COM_END_OF_RAW_ACCESS);
 
 	retval = __modelffb_delay_for_HRDY_ready(MODELF_TIMEOUT_MS);
-	if (retval != 0) {
-		printk(KERN_ERR "MODELFFB: failed to send data\n");
-	}
+	if (retval)
+		dev_err(parinfo->dev, "Failed to send data\n");
 
 	return retval;
 }
@@ -625,7 +635,7 @@ static inline void modelffb_sync_wait(const char *status_str)
 			break;
 
 	if (status == MODELFFB_SYNC_N) {
-		printk(KERN_ERR "Invalid sync status: %s\n", status_str);
+		dev_err(parinfo->dev, "Invalid sync status: %s\n", status_str);
 		return;
 	}
 
@@ -644,7 +654,7 @@ static inline void modelffb_sync_wait_power(const char *power_str)
 	} else if (!strcmp(power_str, "off")) {
 		power_state = false;
 	} else {
-		printk(KERN_ERR "Invalid power state: %s\n", power_str);
+		dev_err(parinfo->dev, "Invalid power state: %s\n", power_str);
 		return;
 	}
 
@@ -660,7 +670,8 @@ static inline void modelffb_sync_wait_power(const char *power_str)
 #ifdef CONFIG_MODELF_DEBUG
 static void __modelffb_print_reg(uint16_t reg)
 {
-	printk(KERN_INFO "MODELFFB: register 0x%04x = 0x%04x\n", reg, __modelffb_reg_read(reg));
+	dev_info(parinfo->dev, "register 0x%04x = 0x%04x\n",
+		 reg, __modelffb_reg_read(reg));
 }
 
 static void modelffb_print_reg(uint16_t reg)
@@ -676,8 +687,8 @@ static inline void modelffb_dump_memory(uint32_t modelf_addr, size_t size)
 {
 	int i;
 
-	printk(KERN_INFO "MODELFFB: dumping 0x%08x bytes memory from 0x%08x",
-		size, modelf_addr);
+	printk(KERN_INFO "dumping 0x%08x bytes memory from 0x%08x",
+	       size, modelf_addr);
 
 	if (modelffb_lock())
 		return;
@@ -691,12 +702,12 @@ static inline void modelffb_dump_memory(uint32_t modelf_addr, size_t size)
 
 	for (i = 0; i < size / 2; i++) {
 		if (i % 8 == 0)
-			printk("\n%08x: ", modelf_addr + i * 2);
-		printk("%04x", __modelffb_read_data());
+			printk(KERN_INFO "\n%08x: ", modelf_addr + i * 2);
+		printk(KERN_INFO "%04x", __modelffb_read_data());
 		if (i % 8 != 7)
 			printk(" ");
 	}
-	printk("\n");
+	printk(KERN_INFO "\n");
 	__modelffb_command_end();
 	__modelffb_simple_command(MODELF_COM_END_OF_RAW_ACCESS);
 	__modelffb_wait_for_HRDY_ready(MODELF_TIMEOUT_MS);
@@ -708,7 +719,7 @@ static inline void modelffb_dump_register(uint16_t modelf_addr, size_t size)
 {
 	int i;
 
-	printk(KERN_INFO "MODELFFB: dumping %d registers from 0x%04x",
+	printk(KERN_INFO "dumping %d registers from 0x%04x",
 	       size, modelf_addr);
 
 	if (modelffb_lock())
@@ -716,12 +727,13 @@ static inline void modelffb_dump_register(uint16_t modelf_addr, size_t size)
 
 	for (i = 0; i < size; i++) {
 		if (i % 8 == 0)
-			printk("\nreg 0x%04x: ", modelf_addr + i * 2);
-		printk("%04x", __modelffb_reg_read(modelf_addr + i * 2));
+			printk(KERN_INFO "\nreg 0x%04x: ", modelf_addr + i * 2);
+		printk(KERN_INFO "%04x",
+		       __modelffb_reg_read(modelf_addr + i * 2));
 		if (i % 8 != 7)
-			printk(" ");
+			printk(KERN_INFO " ");
 	}
-	printk("\n");
+	printk(KERN_INFO "\n");
 
 	modelffb_unlock();
 }
@@ -740,9 +752,11 @@ static inline uint16_t modelffb_read_register(uint16_t modelf_addr)
 	return ret_val;
 }
 
-static inline void modelffb_write_register(uint16_t modelf_addr, uint16_t modelf_data)
+static inline void modelffb_write_register(uint16_t modelf_addr,
+					   uint16_t modelf_data)
 {
-	printk(KERN_INFO "MODELFFB: write register 0x%04x = 0x%04x", modelf_addr, modelf_data);
+	dev_info(parinfo->dev, "write register 0x%04x = 0x%04x\n",
+		 modelf_addr, modelf_data);
 
 	if (modelffb_lock())
 		return;
@@ -755,13 +769,15 @@ static int __modelffb_send_init_code(void)
 	int readval;
 
 	__modelffb_command(MODELF_COM_INIT);
-	__modelffb_write_n_data((uint16_t*)parinfo->init_code, parinfo->init_code_size);
+	__modelffb_write_n_data((uint16_t*)parinfo->init_code,
+				parinfo->init_code_size);
 	__modelffb_command_end();
 	__modelffb_wait_for_HRDY_ready(MODELF_TIMEOUT_MS);
 
 	readval = __modelffb_reg_read(MODELF_REG_INIT_CODE_CHECKSUM);
-	if ((readval & MODELF_BF_INIT_CODE_CHECKSUM) == MODELF_INIT_CODE_CHECKSUM_ERROR) {
-		printk(KERN_ERR "MODELFFB: init code checksum error!\n");
+	if ((readval & MODELF_BF_INIT_CODE_CHECKSUM) ==
+	    MODELF_INIT_CODE_CHECKSUM_ERROR) {
+		dev_err(parinfo->dev, "Init code checksum error!\n");
 		return -EIO;
 	}
 
@@ -783,27 +799,28 @@ static int __modelffb_send_waveform(void)
 
 	retval = __modelffb_delay_for_HRDY_ready(MODELF_TIMEOUT_MS);
 	if (retval != 0) {
-		printk(KERN_ERR "MODELFFB: failed to send waveform!\n");
-		goto end;
+		dev_err(parinfo->dev, "Failed to send waveform\n");
+		return retval;
 	}
 
 	readval = __modelffb_reg_read(MODELF_REG_DSPE_INT_STATUS);
 
-	if ((readval & MODELF_INT_WF_INVALID_FORMAT) != 0) {
-		printk(KERN_ERR "MODELFFB: invalid waveform format!\n");
-		retval = -EIO;
-	}
-	if ((readval & MODELF_INT_WF_CHECKSUM_ERROR) != 0) {
-		printk(KERN_ERR "MODELFFB: waveform checksum error!\n");
-		retval = -EIO;
-	}
-	if ((readval & MODELF_INT_WF_OVERFLOW) != 0) {
-		printk(KERN_ERR "MODELFFB: waveform overflow!\n");
-		retval = -EIO;
+	if (readval & MODELF_INT_WF_INVALID_FORMAT) {
+		dev_err(parinfo->dev, "Invalid waveform format\n");
+		return -EIO;
 	}
 
-end:
-	return retval;
+	if (readval & MODELF_INT_WF_CHECKSUM_ERROR) {
+		dev_err(parinfo->dev, "Waveform checksum error\n");
+		return -EIO;
+	}
+
+	if (readval & MODELF_INT_WF_OVERFLOW) {
+		dev_err(parinfo->dev, "Waveform overflow\n");
+		return -EIO;
+	}
+
+	return 0;
 }
 
 #if USE_MTP
@@ -816,7 +833,8 @@ static int __modelffb_set_mtp_vcom_internal(int ms_timeout)
 	if (retval != 0)
 		goto err;
 
-	__modelffb_reg_write(MODELF_REG_MTP_ADRDATA, MODELF_MTP_VCOM_ADDR << 4);
+	__modelffb_reg_write(MODELF_REG_MTP_ADRDATA,
+			     MODELF_MTP_VCOM_ADDR << 4);
 	__modelffb_reg_write(MODELF_REG_MTP_CONTROL, MODELF_VCOM_READ_TRIGGER);
 
 	retval = __modelffb_wait_for_reg_value(MODELF_REG_MTP_STATUS,
@@ -824,7 +842,8 @@ static int __modelffb_set_mtp_vcom_internal(int ms_timeout)
 	if (retval != 0)
 		goto err;
 
-	__modelffb_reg_write(MODELF_REG_MTP_ADRDATA, (MODELF_MTP_VCOM_ADDR +1) << 4);
+	__modelffb_reg_write(MODELF_REG_MTP_ADRDATA,
+			     (MODELF_MTP_VCOM_ADDR + 1) << 4);
 	__modelffb_reg_write(MODELF_REG_MTP_CONTROL, MODELF_VCOM_READ_TRIGGER);
 
 	retval = __modelffb_wait_for_reg_value(MODELF_REG_MTP_STATUS,
@@ -832,7 +851,8 @@ static int __modelffb_set_mtp_vcom_internal(int ms_timeout)
 	if (retval != 0)
 		goto err;
 
-	__modelffb_reg_write(MODELF_REG_MTP_CONTROL, MODELF_MTP_READ_STOP_TRIGGER);
+	__modelffb_reg_write(MODELF_REG_MTP_CONTROL,
+			     MODELF_MTP_READ_STOP_TRIGGER);
 
 	retval = __modelffb_wait_for_reg_value(MODELF_REG_MTP_STATUS,
 		MODELF_MTP_READ_MODE_BUSY, 0, MODELF_MTP_TIMEOUT_MS);
@@ -840,12 +860,13 @@ static int __modelffb_set_mtp_vcom_internal(int ms_timeout)
 		goto err;
 
 #ifdef CONFIG_MODELF_DEBUG
-	printk(KERN_INFO "MODELFFB: mtp vcom value has set to internal register\n");
+	dev_info(parinfo->dev, "MTP vcom was set to internal register\n");
 #endif
 	return 0;
 
 err:
-	printk(KERN_INFO "MODELFFB: failed to read mtp vcom value\n");
+	dev_err(parinfo->dev, "Failed to read mtp vcom value\n");
+
 	return retval;
 }
 
@@ -860,7 +881,8 @@ static int __modelffb_set_mtp_vcom_alu(int ms_timeout)
 		goto err;
 
 	__modelffb_reg_write(MODELF_REG_MTP_ADRDATA, MODELF_MTP_VCOM_ADDR << 8);
-	__modelffb_reg_write(MODELF_REG_MTP_CONTROL, MODELF_MTP_READ_START_TRIGGER);
+	__modelffb_reg_write(MODELF_REG_MTP_CONTROL,
+			     MODELF_MTP_READ_START_TRIGGER);
 
 	retval = __modelffb_wait_for_reg_value(MODELF_REG_MTP_STATUS,
 		MODELF_MTP_READ_OPERATION_BUSY, 0, MODELF_MTP_TIMEOUT_MS);
@@ -869,8 +891,10 @@ static int __modelffb_set_mtp_vcom_alu(int ms_timeout)
 
 	mtp_vcom = __modelffb_reg_read(MODELF_REG_MTP_READ_DATA) << 4;
 
-	__modelffb_reg_write(MODELF_REG_MTP_ADRDATA, (MODELF_MTP_VCOM_ADDR +1) << 8);
-	__modelffb_reg_write(MODELF_REG_MTP_CONTROL, MODELF_MTP_READ_START_TRIGGER);
+	__modelffb_reg_write(MODELF_REG_MTP_ADRDATA,
+			     (MODELF_MTP_VCOM_ADDR + 1) << 8);
+	__modelffb_reg_write(MODELF_REG_MTP_CONTROL,
+			     MODELF_MTP_READ_START_TRIGGER);
 
 	retval = __modelffb_wait_for_reg_value(MODELF_REG_MTP_STATUS,
 		MODELF_MTP_READ_OPERATION_BUSY, 0, MODELF_MTP_TIMEOUT_MS);
@@ -879,7 +903,8 @@ static int __modelffb_set_mtp_vcom_alu(int ms_timeout)
 
 	mtp_vcom |= __modelffb_reg_read(MODELF_REG_MTP_READ_DATA);
 
-	__modelffb_reg_write(MODELF_REG_MTP_CONTROL, MODELF_MTP_READ_STOP_TRIGGER);
+	__modelffb_reg_write(MODELF_REG_MTP_CONTROL,
+			     MODELF_MTP_READ_STOP_TRIGGER);
 
 	retval = __modelffb_wait_for_reg_value(MODELF_REG_MTP_STATUS,
 		MODELF_MTP_READ_MODE_BUSY, 0, MODELF_MTP_TIMEOUT_MS);
@@ -889,13 +914,16 @@ static int __modelffb_set_mtp_vcom_alu(int ms_timeout)
 	__modelffb_reg_write(MODELF_REG_ALU_TEMPORARY_0, mtp_vcom);
 
 #ifdef CONFIG_MODELF_DEBUG
-	printk(KERN_INFO "MODELFFB: mtp vcom value 0x%02x has set to ALU Temporary Register 0\n",
-		mtp_vcom);
+	dev_info(parinfo->dev,
+		 "MTP vcom value 0x%02x set to ALU Temporary Register 0\n",
+		 mtp_vcom);
 #endif
+
 	return 0;
 
 err:
-	printk(KERN_INFO "MODELFFB: failed to read mtp vcom value\n");
+	dev_err(parinfo->dev, "Failed to read mtp vcom value\n");
+
 	return retval;
 }
 
@@ -914,7 +942,8 @@ static int __modelffb_set_mtp_vcom(int ms_timeout)
 	return 0;
 
 err:
-	printk(KERN_INFO "MODELFFB: failed to set mtp vcom value\n");
+	dev_err(parinfo->dev, "Failed to set mtp vcom value\n");
+
 	return retval;
 }
 #endif /* USE_MTP */
@@ -929,8 +958,8 @@ static void __devinit __modelffb_reset(void)
 	__modelffb_wait_for_HRDY_ready(MODELF_TIMEOUT_MS);
 }
 
-#define AM33XX_CONTROL_PADCONF_SPI0_D0_OFFSET                   0x0954
-#define AM33XX_CONTROL_PADCONF_SPI0_D1_OFFSET                   0x0958
+#define AM33XX_CONTROL_PADCONF_SPI0_D0_OFFSET		   0x0954
+#define AM33XX_CONTROL_PADCONF_SPI0_D1_OFFSET		   0x0958
 
 static int modelffb_chip_init(void)
 {
@@ -944,9 +973,9 @@ static int modelffb_chip_init(void)
 	__modelffb_reset();
 
 	readval = __modelffb_reg_read(MODELF_REG_PRODUCT_CODE);
-	printk(KERN_INFO "MODELFFB: product code = 0x%04x\n", readval);
+	dev_info(parinfo->dev, "Product code = 0x%04x\n", readval);
 	if (readval != MODELF_PRODUCT_CODE) {
-		printk(KERN_ERR "MODELFFB: invalid product code!!\n");
+		dev_err(parinfo->dev, "Invalid product code\n");
 		retval = -EIO;
 		goto up_sem;
 	}
@@ -956,34 +985,28 @@ static int modelffb_chip_init(void)
 	msleep(10);
 	retval = __modelffb_wait_for_HRDY_ready(MODELF_TIMEOUT_MS);
 	if (retval != 0) {
-		printk(KERN_ERR "MODELFFB: clock enable failed\n");
+		dev_err(parinfo->dev, "Clock enable failed\n");
 		goto up_sem;
 	}
 
-#ifdef CONFIG_MODELF_DEBUG
-	printk(KERN_ERR "MODELFFB: calling __modelffb_send_init_code()\n");
-#endif
 	retval = __modelffb_send_init_code();
 	if (retval != 0) {
-		printk(KERN_ERR "MODELFFB: failed to send init code\n");
+		dev_err(parinfo->dev, "Failed to send init code\n");
 		goto up_sem;
 	}
 
-#ifdef CONFIG_MODELF_DEBUG
-	printk(KERN_ERR "MODELFFB: calling __modelffb_simple_command(MODELF_COM_INIT_THEN_STANDBY)\n");
-#endif
 	__modelffb_simple_command(MODELF_COM_INIT_THEN_STANDBY);
 	msleep(100);
 	retval = __modelffb_wait_for_HRDY_ready(MODELF_TIMEOUT_MS);
 	if (retval != 0) {
-		printk(KERN_ERR "MODELFFB: init and standby failed\n");
+		dev_err(parinfo->dev, "Init and standby failed\n");
 		goto up_sem;
 	}
 
-	if (((__modelffb_reg_read(MODELF_REG_WAVEFORM_DEC_BYPASS)
-			& MODELF_WAVEFORM_DECORDER_SELECT) != 0) && 
-			((parinfo->status & MODELF_STATUS_KEYCODE_STORED) == 0)) {
-		printk(KERN_ERR "MODELFFB: keycode not stored\n");
+	if ((__modelffb_reg_read(MODELF_REG_WAVEFORM_DEC_BYPASS)
+	     & MODELF_WAVEFORM_DECORDER_SELECT) &&
+	    !(parinfo->status & MODELF_STATUS_KEYCODE_STORED)) {
+		dev_err(parinfo->dev, "Keycode not stored\n");
 		retval = -EIO;
 		goto up_sem;
 	}
@@ -992,15 +1015,16 @@ static int modelffb_chip_init(void)
 	__modelffb_reg_write(MODELF_REG_PROTECTION_KEY_2, parinfo->keycode2);
 	retval = __modelffb_wait_for_HRDY_ready(MODELF_TIMEOUT_MS);
 	if (retval != 0) {
-		printk(KERN_ERR "MODELFFB: write keycode failed\n");
+		dev_err(parinfo->dev, "Failed to write keycode\n");
 		goto up_sem;
 	}
 
 	readval = __modelffb_reg_read(MODELF_REG_UPDATE_BUFFER_CONF);
-	__modelffb_reg_write(MODELF_REG_UPDATE_BUFFER_CONF, readval & ~MODELF_LUT_AUTO_SELECT);
+	__modelffb_reg_write(MODELF_REG_UPDATE_BUFFER_CONF,
+			     (readval & ~MODELF_LUT_AUTO_SELECT));
 	retval = __modelffb_wait_for_HRDY_ready(MODELF_TIMEOUT_MS);
 	if (retval != 0) {
-		printk(KERN_ERR "MODELFFB: set update buffer config failed\n");
+		dev_err(parinfo->dev, "Set update buffer config failed\n");
 		goto up_sem;
 	}
 
@@ -1014,21 +1038,23 @@ static int modelffb_chip_init(void)
 	if (retval != 0)
 		goto up_sem;
 
-	__modelffb_reg_write(MODELF_REG_INTERRUPT_CONTROL, MODELF_INT_DISPLAY_ENGINE);
-	__modelffb_reg_write(MODELF_REG_DSPE_INT_ENABLE, MODELF_INT_DSPE_ONE_LUT_FREE);
+	__modelffb_reg_write(MODELF_REG_INTERRUPT_CONTROL,
+			     MODELF_INT_DISPLAY_ENGINE);
+	__modelffb_reg_write(MODELF_REG_DSPE_INT_ENABLE,
+			     MODELF_INT_DSPE_ONE_LUT_FREE);
 	retval = __modelffb_wait_for_HRDY_ready(MODELF_TIMEOUT_MS);
 	if (retval != 0) {
-		printk(KERN_ERR "MODELFFB: set interrupt control failed\n");
+		dev_err(parinfo->dev, "Set interrupt control failed\n");
 		goto up_sem;
 	}
 
 	__modelffb_immediate_reg_write(MODELF_REG_POWER_SAVE_MODE, 
-		(__modelffb_reg_read(MODELF_REG_POWER_SAVE_MODE) & ~MODELF_POWER_ACTIVE)
-		| MODELF_POWER_ACTIVE);
+		(__modelffb_reg_read(MODELF_REG_POWER_SAVE_MODE)
+		 & ~MODELF_POWER_ACTIVE) | MODELF_POWER_ACTIVE);
 	__modelffb_simple_command(MODELF_COM_RUN);
 	retval = __modelffb_wait_for_HRDY_ready(MODELF_TIMEOUT_MS);
 	if (retval != 0) {
-		printk(KERN_ERR "MODELFFB: set into run mode faild\n");
+		dev_err(parinfo->dev, "Failed to enter run mode\n");
 		goto up_sem;
 	}
 	parinfo->power_mode = MODELF_POWER_RUN;
@@ -1037,7 +1063,7 @@ static int modelffb_chip_init(void)
 	__modelffb_simple_command(MODELF_COM_WAIT_TRIGGER_DONE);
 	retval = __modelffb_wait_for_HRDY_ready(MODELF_TIMEOUT_MS);
 	if (retval != 0) {
-		printk(KERN_ERR "MODELFFB: clear gate driver failed\n");
+		dev_err(parinfo->dev, "Failed to clear gate driver\n");
 		goto up_sem;
 	}
 
@@ -1045,21 +1071,20 @@ static int modelffb_chip_init(void)
 	__modelffb_simple_command_p1(MODELF_COM_ROTATE, 0x0400);
 	retval = __modelffb_wait_for_HRDY_ready(MODELF_TIMEOUT_MS);
 	if (retval) {
-		printk(KERN_ERR "MODELFFB: rotate command failed\n");
+		dev_err(parinfo->dev, "Rotate command failed\n");
 		goto up_sem;
 	}
 #endif
 
 	modelffb_unlock();
-#ifdef CONFIG_MODELF_DEBUG
-	printk(KERN_INFO "MODELFFB: init done\n");
-#endif
+
 	return 0;
 
 up_sem:
 	modelffb_unlock();
 err:
-	printk(KERN_INFO "MODELFFB: chip_init failed\n");
+	dev_err(parinfo->dev, "Failed to initialise controller\n");
+
 	return retval;
 }
 
@@ -1156,16 +1181,19 @@ static int __modelffb_send_image(int x, int y, int width, int height)
 	case 1:
 		for (line = y; line < last_line; line++) {
 			__modelffb_pool_read_shaped_1bit_image(x, line, width);
-			__modelffb_command_p5(MODELF_COM_LOAD_IMAGE_AREA,
-				1, x & 0x1ff, line & 0x3ff, width & 0x1ff, 1 & 0x3ff);
+			__modelffb_command_p5(
+				MODELF_COM_LOAD_IMAGE_AREA, 1, (x & 0x1ff),
+				(line & 0x3ff), (width & 0x1ff), (1 & 0x3ff));
 			__modelffb_data_transfer(parinfo->image_pool,
 				((width + 15) / 16) * 2); /* 16-bit access */
 		}
 		break;
 	case 8:
 		for (line = y; line < last_line; line++) {
-			__modelffb_command_p5(MODELF_COM_LOAD_IMAGE_AREA, MODELF_BPP_8,
-				x & 0x1ff, line & 0x3ff, width & 0x1ff, 1 & 0x3ff);
+			__modelffb_command_p5(
+				MODELF_COM_LOAD_IMAGE_AREA, MODELF_BPP_8,
+				(x & 0x1ff), (line & 0x3ff), (width & 0x1ff),
+				(1 & 0x3ff));
 			__modelffb_data_transfer(
 				(uint16_t*)((uint32_t)info->screen_base +
 				(uint32_t)info->fix.line_length * line + x),
@@ -1195,10 +1223,10 @@ static int __modelffb_send_image(int x, int y, int width, int height)
 
 #if TIME_SEND_IMAGE
 	delta_jiffy = jiffies - start_jiffy;
-	printk(KERN_INFO
-	       "MODELFFB: image (%d, %d) %dx%d (%d pixels) sent in %dms\n",
-	       x, y, width, height, (width * height),
-	       (delta_jiffy * 1000 / HZ));
+	dev_info(parinfo->dev,
+		 "Image (%d, %d) %dx%d (%d pixels) sent in %dms\n",
+		 x, y, width, height, (width * height),
+		 (delta_jiffy * 1000 / HZ));
 #endif
 
 	return retval;
@@ -1237,7 +1265,8 @@ static void __modelffb_fill_frame_buffer(uint8_t color)
 		to_be_filled_color = color;
 	}
 
-	memset(info->screen_base, to_be_filled_color, (info->var.xres * info->var.yres * 2));
+	memset(info->screen_base, to_be_filled_color,
+	       (info->var.xres * info->var.yres * 2));
 	__modelffb_send_image(0, 0, info->var.xres, info->var.yres);
 }
 
@@ -1274,9 +1303,10 @@ static int modelffb_send_all_image(void)
 
 static int __modelffb_cleanup_full(int waveform_mode)
 {
-	int retval = 0;
+	int retval;
 
-	__modelffb_simple_command_p1(MODELF_COM_UPDATE_FULL, MODELF_WAVEFORM_MODE(waveform_mode));
+	__modelffb_simple_command_p1(MODELF_COM_UPDATE_FULL,
+				     MODELF_WAVEFORM_MODE(waveform_mode));
 	__modelffb_simple_command(MODELF_COM_WAIT_TRIGGER_DONE);
 	__modelffb_simple_command(MODELF_COM_WAIT_FRAME_END);
 	retval = __modelffb_wait_for_HRDY_ready(MODELF_TIMEOUT_MS);
@@ -1291,19 +1321,19 @@ static int __modelffb_cleanup_full(int waveform_mode)
 
 static int modelffb_cleanup_full(int waveform_mode)
 {
-	int retval = 0;
+	int retval;
 
 #ifdef CONFIG_MODELF_DEBUG
-	printk(KERN_INFO "MODELFFB: cleanup full in effect\n");
+	dev_info(parinfo->dev, "cleanup full in effect\n");
 #endif
 
 #if (defined(CONFIG_MODELF_PL_HARDWARE) \
      || defined(CONFIG_MODELF_PL_HARDWARE_MODULE))
-        retval = pl_hardware_enable(parinfo->pl_hardware);
-        if (retval) {
-                dev_err(parinfo->dev, "Failed to enable PL hardware\n");
-                goto err_exit;
-        }
+	retval = pl_hardware_enable(parinfo->pl_hardware);
+	if (retval) {
+		dev_err(parinfo->dev, "Failed to enable PL hardware\n");
+		goto err_exit;
+	}
 	wake_up_interruptible(&parinfo->sync_update_wait);
 #endif
 
@@ -1315,20 +1345,22 @@ static int modelffb_cleanup_full(int waveform_mode)
 
 	modelffb_unlock();
 
+	return 0;
+
 err_power_off:
 #if (defined(CONFIG_MODELF_PL_HARDWARE) \
      || defined(CONFIG_MODELF_PL_HARDWARE_MODULE))
-        pl_hardware_disable(parinfo->pl_hardware);
+	pl_hardware_disable(parinfo->pl_hardware);
 	wake_up_interruptible(&parinfo->sync_update_wait);
 err_exit:
 #endif
-	retval = 0; /* ToDo: really? */
+
 	return retval;
 }
 
 static int __modelffb_update_full(int waveform_mode)
 {
-	int retval = 0;
+	int retval;
 
 	__modelffb_simple_command_p1(MODELF_COM_PARTIAL_UPDATE_FULL,
 		MODELF_WAVEFORM_MODE(waveform_mode));
@@ -1346,20 +1378,19 @@ static int __modelffb_update_full(int waveform_mode)
 
 static int modelffb_update_full(int waveform_mode)
 {
-	int retval = 0;
+	int retval;
 
 #ifdef CONFIG_MODELF_DEBUG
-	printk(KERN_INFO "MODELFFB: update full in effect\n");
+	dev_info(parinfo->dev, "update full in effect\n");
 #endif
 
-        /* Enable power to the EPD panel */
 #if (defined(CONFIG_MODELF_PL_HARDWARE) \
      || defined(CONFIG_MODELF_PL_HARDWARE_MODULE))
-        retval = pl_hardware_enable(parinfo->pl_hardware);
-        if (retval) {
-                dev_err(parinfo->dev, "Failed to enable PL hardware\n");
-                goto err_exit;
-        }
+	retval = pl_hardware_enable(parinfo->pl_hardware);
+	if (retval) {
+		dev_err(parinfo->dev, "Failed to enable PL hardware\n");
+		goto err_exit;
+	}
 	wake_up_interruptible(&parinfo->sync_update_wait);
 #endif
 
@@ -1371,10 +1402,12 @@ static int modelffb_update_full(int waveform_mode)
 
 	modelffb_unlock();
 
+	return 0;
+
 err_power_off:
 #if (defined(CONFIG_MODELF_PL_HARDWARE) \
      || defined(CONFIG_MODELF_PL_HARDWARE_MODULE))
-        pl_hardware_disable(parinfo->pl_hardware);
+	pl_hardware_disable(parinfo->pl_hardware);
 	wake_up_interruptible(&parinfo->sync_update_wait);
 err_exit:
 #endif
@@ -1394,22 +1427,27 @@ static int __modelffb_find_free_lut(void)
 	return -ENOMEM;
 }
 
-static int __modelffb_rects_overwrap(int x1, int y1, int width1, int height1,
+static int __modelffb_rects_overlap(int x1, int y1, int width1, int height1,
 	int x2, int y2, int width2, int height2)
 {
-	return x2 < x1 + width1 && x2 + width2 > x1 && y2 < y1 + height1 && y2 + height2 > y1;
+	return ((x2 < (x1 + width1)) &&	((x2 + width2) > x1) &&
+		(y2 < (y1 + height1)) && ((y2 + height2) > y1));
 }
 
-static int __modelffb_rect_no_overwrap(int x, int y, int width, int height)
+static int __modelffb_rect_no_overlap(int x, int y, int width, int height)
 {
 	int i;
 
 	for (i = 0; i < MODELF_MAX_LUT_NUM; i++) {
-		if (parinfo->lut_in_use[i].busy == 1 &&
-				__modelffb_rects_overwrap(x, y, width, height,
-				parinfo->lut_in_use[i].x, parinfo->lut_in_use[i].y,
-				parinfo->lut_in_use[i].width, parinfo->lut_in_use[i].height)) {
-			return 0;
+		if (parinfo->lut_in_use[i].busy) {
+			if (__modelffb_rects_overlap(
+				    x, y, width, height,
+				    parinfo->lut_in_use[i].x,
+				    parinfo->lut_in_use[i].y,
+				    parinfo->lut_in_use[i].width,
+				    parinfo->lut_in_use[i].height)) {
+				return 0;
+			}
 		}
 	}
 
@@ -1420,18 +1458,21 @@ static int __modelffb_rect_no_overwrap(int x, int y, int width, int height)
 static void __modelffb_print_lut(void)
 {
 	int i;
-	printk("MODELFFB: LUT info\n");
+
+	printk(KERN_INFO "MODELFFB: LUT info\n");
+
 	for (i = 0; i < MODELF_MAX_LUT_NUM; i++) {
-		printk("  %d: ", i);
-		if (parinfo->lut_in_use[i].busy == 1) {
-			printk("(%d, %d) - (%d, %d)\n",
-			parinfo->lut_in_use[i].x,
-			parinfo->lut_in_use[i].y,
-			parinfo->lut_in_use[i].x + parinfo->lut_in_use[i].width - 1,
-			parinfo->lut_in_use[i].y + parinfo->lut_in_use[i].height - 1);
-		}
-		else {
-			printk("\n");
+		printk(KERN_INFO "  %d: ", i);
+		if (parinfo->lut_in_use[i].busy) {
+			printk(KERN_INFO "(%d, %d) - (%d, %d)\n",
+			       parinfo->lut_in_use[i].x,
+			       parinfo->lut_in_use[i].y,
+			       (parinfo->lut_in_use[i].x +
+				parinfo->lut_in_use[i].width - 1),
+			       (parinfo->lut_in_use[i].y +
+				parinfo->lut_in_use[i].height - 1));
+		} else {
+			printk(KERN_INFO "\n");
 		}
 	}
 }
@@ -1442,9 +1483,9 @@ static int __modelffb_request_lut(int x, int y, int width, int height)
 	int retval = 0;
 	int lut_id;
 
-	if (!__modelffb_rect_no_overwrap(x, y, width, height)) {
+	if (!__modelffb_rect_no_overlap(x, y, width, height)) {
 #ifdef CONFIG_MODELF_DEBUG
-		printk(KERN_INFO "MODELFFB: rectangle overwrapped\n");
+		dev_info(parinfo->dev, "Rectangle overlapped\n");
 #endif
 		retval = -EBUSY;
 		goto end;
@@ -1459,10 +1500,9 @@ static int __modelffb_request_lut(int x, int y, int width, int height)
 		parinfo->lut_in_use[lut_id].height = height;
 
 		retval = lut_id;
-	}
-	else {
+	} else {
 #ifdef CONFIG_MODELF_DEBUG
-		printk(KERN_INFO "MODELFFB: no free lut\n");
+		dev_info(parinfo->dev, "No free lut\n");
 #endif
 		retval = -EBUSY;
 	}
@@ -1552,7 +1592,8 @@ static int modelffb_enqueue_lut_queue(int oneshot_type, int waveform_mode,
 	if (retval)
 		return retval;
 
-	next = (parinfo->lut_queue_head + parinfo->lut_queue_count) % MODELF_MAX_LUT_QUEUE_NUM;
+	next = (parinfo->lut_queue_head + parinfo->lut_queue_count) %
+		MODELF_MAX_LUT_QUEUE_NUM;
 
 	if (!__modelffb_lut_queue_is_full()) {
 		parinfo->lut_queue[next].oneshot_type = oneshot_type;
@@ -1574,11 +1615,11 @@ static int modelffb_enqueue_lut_queue(int oneshot_type, int waveform_mode,
 
 static int __modelffb_dequeue_lut_queue(void)
 {
-	int retval;
-	parinfo->lut_queue_head = (parinfo->lut_queue_head + 1) % MODELF_MAX_LUT_QUEUE_NUM;
+	parinfo->lut_queue_head =
+		(parinfo->lut_queue_head + 1) % MODELF_MAX_LUT_QUEUE_NUM;
 	parinfo->lut_queue_count--;
-	retval = parinfo->lut_queue_head;
-	return retval;
+
+	return parinfo->lut_queue_head;
 }
 
 static struct modelffb_oneshot_info* __modelffb_peek_lut_queue(void)
@@ -1597,10 +1638,12 @@ static int __modelffb_reset_lut_queue(void)
 static void __modelffb_print_lut_queue(void)
 {
 	int i;
-	printk("MODELFFB: QUEUE info\n  head = %d, count = %d\n",
-		parinfo->lut_queue_head, parinfo->lut_queue_count);
+
+	dev_info(parinfo->dev, "QUEUE info\n  head = %d, count = %d\n",
+		 parinfo->lut_queue_head, parinfo->lut_queue_count);
+
 	for (i = 0; i < MODELF_MAX_LUT_QUEUE_NUM; i++) {
-		printk("  (%d, %d) - (%d, %d)\n",
+		dev_info(parinfo->dev, "  (%d, %d) - (%d, %d)\n",
 		parinfo->lut_queue[i].x,
 		parinfo->lut_queue[i].y,
 		parinfo->lut_queue[i].x + parinfo->lut_queue[i].width - 1,
@@ -1610,7 +1653,7 @@ static void __modelffb_print_lut_queue(void)
 #endif
 
 static void __modelffb_cleanup_area_lut(int x, int y, int width, int height,
-	int waveform_mode, int lut)
+					int waveform_mode, int lut)
 {
 	__modelffb_simple_command_p5(MODELF_COM_UPDATE_AREA,
 		MODELF_WAVEFORM_MODE(waveform_mode) | MODELF_UPDATE_LUT(lut),
@@ -1622,14 +1665,14 @@ static void __modelffb_cleanup_area_lut(int x, int y, int width, int height,
 }
 
 static void modelffb_cleanup_area_lut(int x, int y, int width, int height,
-	int waveform_mode, int lut)
+				      int waveform_mode, int lut)
 {
 #if (defined(CONFIG_MODELF_PL_HARDWARE) \
      || defined(CONFIG_MODELF_PL_HARDWARE_MODULE))
 	if (pl_hardware_enable(parinfo->pl_hardware)) {
-                dev_err(parinfo->dev, "Failed to enable PL hardware\n");
+		dev_err(parinfo->dev, "Failed to enable PL hardware\n");
 		return;
-        }
+	}
 	wake_up_interruptible(&parinfo->sync_update_wait);
 #endif
 
@@ -1640,13 +1683,13 @@ static void modelffb_cleanup_area_lut(int x, int y, int width, int height,
 
 	modelffb_unlock();
 
+	return;
+
 err_power_off:
 #if (defined(CONFIG_MODELF_PL_HARDWARE) \
      || defined(CONFIG_MODELF_PL_HARDWARE_MODULE))
-#if 0 /* this switched power off too early */
-        pl_hardware_disable(parinfo->pl_hardware);
+	pl_hardware_disable(parinfo->pl_hardware);
 	wake_up_interruptible(&parinfo->sync_update_wait);
-#endif
 #endif
 	return;
 }
@@ -1656,10 +1699,10 @@ static void modelffb_cleanup_area(int x, int y, int width, int height,
 {
 #if (defined(CONFIG_MODELF_PL_HARDWARE) \
      || defined(CONFIG_MODELF_PL_HARDWARE_MODULE))
-        if (pl_hardware_enable(parinfo->pl_hardware)) {
-                dev_err(parinfo->dev, "Failed to enable PL hardware\n");
+	if (pl_hardware_enable(parinfo->pl_hardware)) {
+		dev_err(parinfo->dev, "Failed to enable PL hardware\n");
 		return;
-        }
+	}
 	wake_up_interruptible(&parinfo->sync_update_wait);
 #endif
 
@@ -1682,7 +1725,7 @@ static void modelffb_cleanup_area(int x, int y, int width, int height,
 err_power_off:
 #if (defined(CONFIG_MODELF_PL_HARDWARE) \
      || defined(CONFIG_MODELF_PL_HARDWARE_MODULE))
-        pl_hardware_disable(parinfo->pl_hardware);
+	pl_hardware_disable(parinfo->pl_hardware);
 	wake_up_interruptible(&parinfo->sync_update_wait);
 #endif
 	return;
@@ -1691,9 +1734,10 @@ err_power_off:
 static void __modelffb_update_area(int x, int y, int width, int height,
 				 int waveform_mode, int lut)
 {
-	__modelffb_simple_command_p5(MODELF_COM_PARTIAL_UPDATE_AREA,
+	__modelffb_simple_command_p5(
+		MODELF_COM_PARTIAL_UPDATE_AREA,
 		MODELF_WAVEFORM_MODE(waveform_mode) | MODELF_UPDATE_LUT(lut),
-		x & 0x1ff, y & 0x3ff, width & 0x1ff, height & 0x3ff);
+		(x & 0x1ff), (y & 0x3ff), (width & 0x1ff), (height & 0x3ff));
 }
 
 static void modelffb_update_area(int x, int y, int width, int height,
@@ -1702,9 +1746,9 @@ static void modelffb_update_area(int x, int y, int width, int height,
 #if (defined(CONFIG_MODELF_PL_HARDWARE) \
      || defined(CONFIG_MODELF_PL_HARDWARE_MODULE))
 	if (pl_hardware_enable(parinfo->pl_hardware)) {
-                dev_err(parinfo->dev, "Failed to enable PL hardware\n");
+		dev_err(parinfo->dev, "Failed to enable PL hardware\n");
 		return;
-        }
+	}
 	wake_up_interruptible(&parinfo->sync_update_wait);
 #endif
 
@@ -1718,7 +1762,7 @@ static void modelffb_update_area(int x, int y, int width, int height,
 err_power_off:
 #if (defined(CONFIG_MODELF_PL_HARDWARE) \
      || defined(CONFIG_MODELF_PL_HARDWARE_MODULE))
-        pl_hardware_disable(parinfo->pl_hardware);
+	pl_hardware_disable(parinfo->pl_hardware);
 	wake_up_interruptible(&parinfo->sync_update_wait);
 #endif
 	return;
@@ -1732,9 +1776,10 @@ static int modelffb_panel_init(void)
 
 static void __modelffb_run(void)
 {
-	__modelffb_immediate_reg_write(MODELF_REG_POWER_SAVE_MODE, 
-		(__modelffb_reg_read(MODELF_REG_POWER_SAVE_MODE) & ~MODELF_POWER_ACTIVE)
-		| MODELF_POWER_ACTIVE);
+	__modelffb_immediate_reg_write(
+		MODELF_REG_POWER_SAVE_MODE,
+		(__modelffb_reg_read(MODELF_REG_POWER_SAVE_MODE) &
+		 ~MODELF_POWER_ACTIVE) | MODELF_POWER_ACTIVE);
 	__modelffb_immediate_simple_command(MODELF_COM_RUN);
 	__modelffb_wait_for_HRDY_ready(MODELF_TIMEOUT_MS);
 }
@@ -1747,16 +1792,18 @@ static void modelffb_run(void)
 	modelffb_unlock();
 
 #ifdef CONFIG_MODELF_DEBUG
-	printk(KERN_INFO "MODELFFB: WORKQUEUE: go into run mode\n");
+	dev_info(parinfo->dev, "WORKQUEUE: go into run mode\n");
 #endif
 }
 
 static void __modelffb_standby(void)
 {
-	__modelffb_immediate_reg_write(MODELF_REG_POWER_SAVE_MODE, 
-		(__modelffb_reg_read(MODELF_REG_POWER_SAVE_MODE) & ~MODELF_POWER_ACTIVE)
-		| MODELF_POWER_ACTIVE);
-	/* must not check HRDY before issuing command as this won't work on a sleep->standby transition */
+	__modelffb_immediate_reg_write(
+		MODELF_REG_POWER_SAVE_MODE,
+		(__modelffb_reg_read(MODELF_REG_POWER_SAVE_MODE) &
+		 ~MODELF_POWER_ACTIVE) | MODELF_POWER_ACTIVE);
+	/* must not check HRDY before issuing command as this won't work on a
+	 * sleep -> standby transition */
 	__modelffb_immediate_simple_command(MODELF_COM_STANDBY);
 	__modelffb_wait_for_HRDY_ready(MODELF_TIMEOUT_MS);
 }
@@ -1765,7 +1812,8 @@ static void __modelffb_sleep(void)
 {
 	__modelffb_immediate_simple_command(MODELF_COM_SLEEP);
 	__modelffb_wait_for_HRDY_ready(MODELF_TIMEOUT_MS);
-	__modelffb_immediate_reg_write(MODELF_REG_POWER_SAVE_MODE, MODELF_POWER_PASSIVE);
+	__modelffb_immediate_reg_write(MODELF_REG_POWER_SAVE_MODE,
+				       MODELF_POWER_PASSIVE);
 	__modelffb_wait_for_HRDY_ready(MODELF_TIMEOUT_MS);
 }
 
@@ -1777,13 +1825,14 @@ static void modelffb_sleep(void)
 	modelffb_unlock();
 
 #ifdef CONFIG_MODELF_DEBUG
-	printk(KERN_INFO "MODELFFB: WORKQUEUE: go into sleep mode\n");
+	dev_info(parinfo->dev, "WORKQUEUE: go into sleep mode\n");
 #endif
 }
 
 static void __modelffb_clear_temperature_judge(void)
 {
-	__modelffb_reg_write(MODELF_REG_DSPE_INT_STATUS, MODELF_INT_WF_UPDATE_INTERRUPT);
+	__modelffb_reg_write(MODELF_REG_DSPE_INT_STATUS,
+			     MODELF_INT_WF_UPDATE_INTERRUPT);
 }
 
 static void modelffb_measure_temperature(void)
@@ -1796,7 +1845,7 @@ static void modelffb_measure_temperature(void)
 #endif
 
 #ifdef CONFIG_MODELF_DEBUG
-	printk(KERN_INFO "MODELFFB: measure temperature\n");
+	dev_info(parinfo->dev, "Measuring temperature\n");
 #endif
 
 	if (modelffb_lock())
@@ -1805,7 +1854,8 @@ static void modelffb_measure_temperature(void)
 	/* only wait for LUTs if we're in run mode, shouldn't read synchronous
 	 * registers otherwise */
 	if (parinfo->power_mode == MODELF_POWER_RUN) {
-		__modelffb_wait_for_reg_value(MODELF_REG_LUT_STATUS, MODELF_BF_LUT_IN_USE, 0,
+		__modelffb_wait_for_reg_value(MODELF_REG_LUT_STATUS,
+					      MODELF_BF_LUT_IN_USE, 0,
 			MODELF_TIMEOUT_MS);
 	}
 
@@ -1816,7 +1866,7 @@ static void modelffb_measure_temperature(void)
 	if ((__modelffb_reg_read(MODELF_REG_DSPE_INT_STATUS)
 			& MODELF_INT_WF_UPDATE_INTERRUPT) != 0) {
 #ifdef CONFIG_MODELF_DEBUG
-		printk(KERN_INFO "MODELFFB: temperature zone has been changed\n");
+		dev_info(parinfo->dev, "Temperature zone has been changed\n");
 #endif
 		__modelffb_send_waveform();
 		__modelffb_clear_temperature_judge();
@@ -1839,8 +1889,8 @@ static void modelffb_measure_temperature(void)
 	mutex_lock(&temperature_lock);
 	temperature = pl_hardware_constrain_temperature_range((int8_t)regval);
 	stat = pl_hardware_set_temperature(parinfo->pl_hardware, temperature);
-	if (stat != 0)
-		printk("pl_hardware_set_temperature() failed\n");
+	if (stat)
+		dev_err(parinfo->dev, "Failed to set the temperature\n");
 	mutex_unlock(&temperature_lock);
 #endif
 }
@@ -1861,17 +1911,19 @@ static void modelffb_check_panel_resolution(void)
 	info->var.yres_virtual = info->var.yres;
 
 #ifdef CONFIG_MODELF_DEBUG
-	printk(KERN_INFO "MODELFFB: FB resolution is %dx%d\n",
-		info->var.xres, info->var.yres);
+	dev_info(parinfo->dev, "FB resolution: %dx%d\n",
+		 info->var.xres, info->var.yres);
 #endif
 }
 
-static int modelffb_check_var(struct fb_var_screeninfo *var, struct fb_info *info)
+static int modelffb_check_var(struct fb_var_screeninfo *var,
+			      struct fb_info *info)
 {
-	if (var->xres != info->fix.line_length / 2 ||
-			var->yres != info->fix.smem_len / info->fix.line_length ||
-			var->xres_virtual != info->fix.line_length / 2 ||
-			var->yres_virtual != info->fix.smem_len / info->fix.line_length) {
+	if ((var->xres != (info->fix.line_length / 2)) ||
+	    (var->yres != (info->fix.smem_len / info->fix.line_length)) ||
+	    (var->xres_virtual != (info->fix.line_length / 2)) ||
+	    (var->yres_virtual !=
+	     (info->fix.smem_len / info->fix.line_length))) {
 		var->xres = info->fix.line_length / 2;
 		var->yres = info->fix.smem_len / info->fix.line_length;
 		var->xres_virtual = var->xres;
@@ -1946,19 +1998,20 @@ static int modelffb_mmap(struct fb_info *info, struct vm_area_struct *vma)
 
 	while (size > 0) {
 		page = vmalloc_to_pfn((void *)pos);
-		if (remap_pfn_range(vma, start, page, PAGE_SIZE, PAGE_SHARED)) {
+
+		if (remap_pfn_range(vma, start, page, PAGE_SIZE, PAGE_SHARED))
 			return -EAGAIN;
-		}
 
 		start += PAGE_SIZE;
 		pos += PAGE_SIZE;
+
 		if (size > PAGE_SIZE)
 			size -= PAGE_SIZE;
 		else
 			size = 0;
 	}
 
-	vma->vm_flags |= VM_RESERVED;	/* avoid to swap out this VMA */
+	vma->vm_flags |= VM_RESERVED; /* avoid to swap out this VMA */
 
 	return 0;
 }
@@ -2014,14 +2067,14 @@ static int __devinit modelffb_framebuffer_alloc(struct platform_device *pdev)
 	platform_set_drvdata(pdev, info);
 
 	if (!info) {
-		printk(KERN_ERR "MODELFFB: failed to alloc modelffb fb_info\n");
+		dev_err(parinfo->dev, "Failed to alloc modelffb fb_info\n");
 		retval = -ENOMEM;
 		goto err;
 	}
 
 	parinfo = info->par;
 	if (!parinfo) {
-		printk(KERN_ERR "MODELFFB: failed to alloc modelffb_par\n");
+		dev_err(parinfo->dev, "Failed to alloc modelffb_par\n");
 		retval = -ENOMEM;
 		goto framebuffer_release;
 	}
@@ -2032,7 +2085,7 @@ static int __devinit modelffb_framebuffer_alloc(struct platform_device *pdev)
 
 	info->pseudo_palette = kmalloc(sizeof(u32) * 256, GFP_KERNEL);
 	if (!info->pseudo_palette) {
-		printk(KERN_ERR "MODELFFB: failed to alloc pseudo_palette\n");
+		dev_err(parinfo->dev, "Failed to alloc pseudo_palette\n");
 		retval = -ENOMEM;
 		goto framebuffer_release;
 	}
@@ -2087,7 +2140,7 @@ static int __devinit modelffb_regulator_init(void)
 	stat = pl_hardware_init(parinfo->pl_hardware, &modelffb_pl_config);
 	if (stat) {
 		dev_err(parinfo->dev,
-			"failed to initialize Plastic Logic hardware\n");
+			"Failed to initialize Plastic Logic hardware\n");
 		goto exit_free_plhw;
 	}
 
@@ -2128,18 +2181,18 @@ static int modelffb_alloc_vram(void)
 	info->screen_base = vmalloc(info->fix.smem_len + 4);
 	/* extra 4 bytes of the guard for 16-bit access */
 	if (!info->screen_base) {
-		printk(KERN_ERR "MODELFFB: failed to alloc video memory\n");
+		dev_err(parinfo->dev, "Failed to alloc video memory\n");
 		retval = -ENOMEM;
 		goto err;
 	}
 
 	parinfo->image_pool_lines = IMAGE_POOL_MAX_SZ / info->fix.line_length;
 	image_pool_size = info->fix.line_length * parinfo->image_pool_lines;
-	printk(KERN_INFO "MODELFFB: image pool lines: %d, size: %zu\n",
-	       parinfo->image_pool_lines, image_pool_size);
+	dev_info(parinfo->dev, "Image pool lines: %d, size: %zu\n",
+		 parinfo->image_pool_lines, image_pool_size);
 	parinfo->image_pool = kmalloc(image_pool_size, GFP_KERNEL);
 	if (!info->screen_base) {
-		printk(KERN_ERR "MODELFFB: failed to alloc image pool\n");
+		dev_err(parinfo->dev, "Failed to allocate image pool\n");
 		retval = -ENOMEM;
 		goto free_screen;
 	}
@@ -2160,7 +2213,7 @@ err:
 static void __devexit modelffb_free_vram(void)
 {
 	struct fb_info *info = parinfo->fbinfo;
-	printk(KERN_ERR "MODELFFB: modelffb_free_vram()\n");
+
 	kfree(parinfo->image_pool);
 	vfree(info->screen_base);
 }
@@ -2180,7 +2233,8 @@ static void modelffb_temperature_work_function(struct work_struct *ws)
 	__modelffb_start_temperature_timer();
 }
 
-static DECLARE_WORK(modelffb_temperature_work, modelffb_temperature_work_function);
+static DECLARE_WORK(modelffb_temperature_work,
+		    modelffb_temperature_work_function);
 
 static int __modelffb_queue_temperature(void)
 {
@@ -2218,16 +2272,16 @@ static void modelffb_commit_sleep(void)
 
 #if (defined(CONFIG_MODELF_PL_HARDWARE) \
      || defined(CONFIG_MODELF_PL_HARDWARE_MODULE))
-        pl_hardware_disable(parinfo->pl_hardware);
+	pl_hardware_disable(parinfo->pl_hardware);
 	wake_up_interruptible(&parinfo->sync_update_wait);
 #endif
 #ifdef CONFIG_MODELF_DEBUG
-		printk(KERN_INFO "MODELFFB: WORKQUEUE: go into standby mode\n");
+		dev_info(parinfo->dev, "WORKQUEUE: go into standby mode\n");
 #endif
 	}
 	else {
 #ifdef CONFIG_MODELF_DEBUG
-		printk(KERN_INFO "MODELFFB: WORKQUEUE: already in sleep mode\n");
+		dev_info(parinfo->dev, "WORKQUEUE: already in sleep mode\n");
 #endif
 	}
 }
@@ -2273,7 +2327,7 @@ static void modelffb_commit_run(void)
 	}
 	else {
 #ifdef CONFIG_MODELF_DEBUG
-		printk(KERN_INFO "MODELFFB: WORKQUEUE: already in run mode\n");
+		dev_info(parinfo->dev, "WORKQUEUE: already in run mode\n");
 #endif
 	}
 }
@@ -2283,45 +2337,53 @@ static void modelffb_oneshot(int waveform_mode, int x, int y, int width, int hei
 	int free_lut;
 
 	free_lut = modelffb_request_lut(x, y, width, height);
-	if (free_lut < 0) {
+
+	if (free_lut) {
 #ifdef CONFIG_MODELF_DEBUG
-		printk(KERN_INFO "MODELFFB: lut is busy => enqueue this oneshot\n");
+		dev_info(parinfo->dev,
+			 "LUT is busy => enqueue this oneshot\n");
 #endif
-		if (modelffb_enqueue_lut_queue(MODELF_ONESHOT_TYPE_ONESHOT, waveform_mode,
-				x, y, width, height) < 0) {
+		if (modelffb_enqueue_lut_queue(
+			    MODELF_ONESHOT_TYPE_ONESHOT, waveform_mode,
+			    x, y, width, height)) {
 			parinfo->need_flush_image = MODELF_NEED_FLUSH_IMAGE;
-			printk(KERN_INFO "MODELFFB: lut queue has been overflowed\n");
-			printk(KERN_INFO "MODELFFB: all image will be sent at once\n");
+			dev_info(parinfo->dev,
+				 "LUT queue has been overflowed, "
+				 "all image will be sent at once.\n");
 		}
-	}
-	else {
+	} else {
 		modelffb_send_image(x, y, width, height);
-		modelffb_update_area(x, y, width, height, parinfo->waveform_mode, free_lut);
+		modelffb_update_area(x, y, width, height,
+				     parinfo->waveform_mode, free_lut);
 		/* HIRQ handler will call modelf_queue_sleep() later */
 	}
 }
 
-static void modelffb_oneshot_cleanup(int waveform_mode, int x, int y, int width, int height)
+static void modelffb_oneshot_cleanup(int waveform_mode, int x, int y,
+				     int width, int height)
 {
 	int free_lut;
 
 	free_lut = modelffb_request_lut(x, y, width, height);
-	if (free_lut < 0) {
+
+	if (free_lut) {
 #ifdef CONFIG_MODELF_DEBUG
-		printk(KERN_INFO "MODELFFB: lut is busy => enqueue this cleanup\n");
+		dev_info(parinfo->dev, "LUT is busy, enqueue this cleanup\n");
 #endif
-		if (modelffb_enqueue_lut_queue(MODELF_ONESHOT_TYPE_CLENUP, waveform_mode,
-				x, y, width, height) < 0) {
+		if (modelffb_enqueue_lut_queue(
+			    MODELF_ONESHOT_TYPE_CLENUP, waveform_mode,
+			    x, y, width, height)) {
 #ifdef CONFIG_MODELF_DEFERRED_IO
 			if (parinfo->vram_updated == MODELF_VRAM_NEED_UPDATE)
-				parinfo->need_flush_image = MODELF_NEED_FLUSH_IMAGE;
+				parinfo->need_flush_image =
+					MODELF_NEED_FLUSH_IMAGE;
 #endif
 			parinfo->need_cleanup = MODELF_NEED_CLEANUP;
-			printk(KERN_INFO "MODELFFB: lut queue has been overflowed\n");
-			printk(KERN_INFO "MODELFFB: cleanup all will be committed later\n");
+			dev_info(parinfo->dev,
+				 "LUT queue has been overflowed, "
+				 "cleanup all will be committed later.\n");
 		}
-	}
-	else {
+	} else {
 #ifdef CONFIG_MODELF_DEFERRED_IO
 		if (parinfo->vram_updated == MODELF_VRAM_NEED_UPDATE)
 #endif
@@ -2338,22 +2400,24 @@ static void modelffb_oneshot_work_function(struct work_struct *ws)
 
 	modelffb_commit_run();
 #ifdef CONFIG_MODELF_DEBUG
-	printk(KERN_INFO "MODELFFB: %s (%d, %d) - (%d, %d)\n",
-		work->oneshot_type == MODELF_ONESHOT_TYPE_ONESHOT ? "oneshot" : "cleanup",
-		work->x, work->y, work->x + work->width - 1, work->y + work->height - 1);
+	dev_info(parinfo->dev, "%s (%d, %d) - (%d, %d)\n",
+		 (work->oneshot_type == MODELF_ONESHOT_TYPE_ONESHOT ?
+		  "oneshot" : "cleanup"),
+		 work->x, work->y, (work->x + work->width - 1),
+		 (work->y + work->height - 1));
 #endif
 
 	if (parinfo->suspend_update == MODELF_RESUME_UPDATE) {
 #ifdef CONFIG_MODELF_DEBUG
-		printk(KERN_INFO "MODELFFB: update is resumed\n");
+		dev_info(parinfo->dev, "Update has resumed\n");
 #endif
 	} else if (work->oneshot_type == MODELF_ONESHOT_TYPE_CLENUP) {
-		modelffb_oneshot_cleanup(work->waveform_mode,
-			work->x, work->y, work->width, work->height);
+		modelffb_oneshot_cleanup(work->waveform_mode, work->x, work->y,
+					 work->width, work->height);
 #ifdef CONFIG_MODELF_DEFERRED_IO
 	} else if (parinfo->vram_updated == MODELF_VRAM_NO_NEED_UPDATE) {
 #ifdef CONFIG_MODELF_DEBUG
-		printk(KERN_INFO "MODELFFB: VRAM is up to date\n");
+		dev_info(parinfo->dev, "VRAM is up to date\n");
 #endif
 #endif
 	} else {
@@ -2369,18 +2433,19 @@ static void modelffb_oneshot_work_function(struct work_struct *ws)
 }
 
 static int __modelffb_queue_oneshot(int oneshot_type, int waveform_mode,
-	int x, int y, int width, int height)
+				    int x, int y, int width, int height)
 {
 	int retval = 0;
 	struct modelffb_oneshot_work *os_work;
 
 	os_work = kmalloc(sizeof(struct modelffb_oneshot_work), GFP_KERNEL);
 	if (!os_work) {
-		printk(KERN_ERR "MODELFFB: alloc oneshot work failed\n");
+		dev_err(parinfo->dev, "Failed to allocate oneshot work\n");
 		retval = -ENOMEM;
 		goto end;
 	}
-	INIT_WORK((struct work_struct*)os_work, modelffb_oneshot_work_function);
+	INIT_WORK((struct work_struct*)os_work,
+		  modelffb_oneshot_work_function);
 
 	os_work->oneshot_type = oneshot_type;
 	os_work->waveform_mode = waveform_mode;
@@ -2401,60 +2466,59 @@ static void modelffb_cleanup_work_function(struct work_struct *ws)
 	struct fb_info *info = parinfo->fbinfo;
 
 #ifdef CONFIG_MODELF_DEBUG
-	printk(KERN_INFO "MODELFFB: WORKQUEUE: cleanup mode_%d (%d, %d) - (%d, %d)\n",
-		work->waveform_mode, work->x, work->y,
-		work->x + work->width - 1, work->y + work->height - 1);
+	dev_info(parinfo->dev,
+		 "WORKQUEUE: cleanup mode_%d (%d, %d) - (%d, %d)\n",
+		 work->waveform_mode, work->x, work->y,
+		 work->x + work->width - 1, work->y + work->height - 1);
 #endif
 
 	modelffb_commit_run();
-	if (work->x == 0 && work->y == 0 &&
-			work->width == info->var.xres && work->height == info->var.yres) {
+	if ((work->x == 0) && (work->y == 0) &&
+	    (work->width == info->var.xres) &&
+	    (work->height == info->var.yres)) {
 		modelffb_cleanup_full(work->waveform_mode);
 #ifdef CONFIG_MODELF_DEBUG
-		printk(KERN_INFO "MODELFFB: cleanup all\n");
+		dev_info(parinfo->dev, "cleanup all\n");
 #endif
-	}
-	else {
-		modelffb_cleanup_area(
-			work->x, work->y, work->width, work->height, work->waveform_mode);
+	} else {
+		modelffb_cleanup_area(work->x, work->y, work->width,
+				      work->height, work->waveform_mode);
 	}
 	/* HIRQ handler will call modelf_queue_sleep() later */
 
 	kfree((void*)work);
 }
 
-static int __modelffb_queue_cleanup(int waveform_mode, int x, int y, int width, int height)
+static int __modelffb_queue_cleanup(int waveform_mode, int x, int y,
+				    int width, int height)
 {
-	int retval = 0;
-
 	SYNC_LOG("queue_cleanup");
 	modelffb_sync_set_status(MODELFFB_SYNC_PENDING);
 
 	if (parinfo->suspend_update == MODELF_SUSPEND_UPDATE) {
-		__modelffb_queue_oneshot(MODELF_ONESHOT_TYPE_CLENUP, waveform_mode,
-			x, y, width, height);
-	}
-	else {
+		__modelffb_queue_oneshot(MODELF_ONESHOT_TYPE_CLENUP,
+					 waveform_mode, x, y, width, height);
+	} else {
 		struct modelffb_cleanup_work *cu_work;
-		cu_work = kmalloc(sizeof(struct modelffb_cleanup_work), GFP_KERNEL);
+		cu_work = kmalloc(sizeof(struct modelffb_cleanup_work),
+				  GFP_KERNEL);
 		if (!cu_work) {
-			printk(KERN_ERR "MODELFFB: alloc cleanup workqueue failed\n");
-			retval = -ENOMEM;
-			goto end;
+			dev_err(parinfo->dev,
+				"Failed to allocate cleanup queue\n");
+			return -ENOMEM;
 		}
-		INIT_WORK((struct work_struct*)cu_work, modelffb_cleanup_work_function);
+		INIT_WORK((struct work_struct*)cu_work,
+			  modelffb_cleanup_work_function);
 
 		cu_work->waveform_mode = waveform_mode;
 		cu_work->x = x;
 		cu_work->y = y;
 		cu_work->width = width;
 		cu_work->height = height;
-
-		queue_work(parinfo->workqueue, (struct work_struct*)cu_work);
+		queue_work(parinfo->workqueue, (struct work_struct *)cu_work);
 	}
 
-end:
-	return retval;
+	return 0;
 }
 
 static void modelffb_suspend_update_work_function(struct work_struct *ws)
@@ -2464,12 +2528,11 @@ static void modelffb_suspend_update_work_function(struct work_struct *ws)
 
 	if (work->update == MODELF_SUSPEND_UPDATE) {
 #ifdef CONFIG_MODELF_DEBUG
-		printk(KERN_INFO "MODELFFB: WORKQUEUE: suspend update\n");
+		dev_info(parinfo->dev, "WORKQUEUE: suspend update\n");
 #endif
-	}
-	else if (work->update == MODELF_RESUME_UPDATE) {
+	} else if (work->update == MODELF_RESUME_UPDATE) {
 #ifdef CONFIG_MODELF_DEBUG
-		printk(KERN_INFO "MODELFFB: WORKQUEUE: resume update\n");
+		dev_info(parinfo->dev, "WORKQUEUE: resume update\n");
 #ifdef CONFIG_MODELF_DEFERRED_IO
 		parinfo->vram_updated = MODELF_VRAM_NO_NEED_UPDATE;
 #endif
@@ -2491,19 +2554,22 @@ static int __modelffb_queue_suspend_update(int update)
 	struct modelffb_suspend_update_work *su_work;
 
 	if (parinfo->suspend_update == update) {
-		printk(KERN_ERR "MODELFFB: %s doubled\n",
+		dev_err(parinfo->dev, "%s doubled\n",
 			parinfo->suspend_update == MODELF_SUSPEND_UPDATE ?
 			"suspend update" : "resume update");
 		goto end;
 	}
 
-	su_work = kmalloc(sizeof(struct modelffb_suspend_update_work), GFP_KERNEL);
+	su_work = kmalloc(sizeof(struct modelffb_suspend_update_work),
+			  GFP_KERNEL);
 	if (!su_work) {
-		printk(KERN_ERR "MODELFFB: alloc suspend_update work failed\n");
+		dev_err(parinfo->dev,
+			"Failed to allocate suspend_update work\n");
 		retval = -ENOMEM;
 		goto end;
 	}
-	INIT_WORK((struct work_struct*)su_work, modelffb_suspend_update_work_function);
+	INIT_WORK((struct work_struct*)su_work,
+		  modelffb_suspend_update_work_function);
 
 	su_work->update = update;
 
@@ -2521,51 +2587,59 @@ static void modelffb_irq_work_function(struct work_struct *ws)
 
 	del_timer_sync(&parinfo->sleep_timer);
 #ifdef CONFIG_MODELF_DEBUG
-	printk(KERN_INFO "MODELFFB: WORKQUEUE: HIRQ\n");
+	dev_info(parinfo->dev, "WORKQUEUE: HIRQ\n");
 #endif
 
 	if (modelffb_lock())
 		return;
 	__modelffb_run();
-	__modelffb_reg_write(MODELF_REG_DSPE_INT_STATUS, MODELF_INT_DSPE_ONE_LUT_FREE);
-	__modelffb_reg_write(MODELF_REG_INTERRUPT_STATUS, MODELF_INT_DISPLAY_ENGINE);
+	__modelffb_reg_write(MODELF_REG_DSPE_INT_STATUS,
+			     MODELF_INT_DSPE_ONE_LUT_FREE);
+	__modelffb_reg_write(MODELF_REG_INTERRUPT_STATUS,
+			     MODELF_INT_DISPLAY_ENGINE);
 	__modelffb_sync_lut();
 
-	if (parinfo->need_flush_image == MODELF_NO_NEED_FLUSH_IMAGE &&
-			parinfo->need_cleanup == MODELF_NO_NEED_CLEANUP) {
+	if ((parinfo->need_flush_image == MODELF_NO_NEED_FLUSH_IMAGE) &&
+	    (parinfo->need_cleanup == MODELF_NO_NEED_CLEANUP)) {
 		struct modelffb_oneshot_info *os_info;
+
 		while (1) {
 			if (__modelffb_lut_queue_is_empty())
 				break;
 
 			os_info = __modelffb_peek_lut_queue();
-			free_lut = __modelffb_request_lut(os_info->x, os_info->y,
-				os_info->width, os_info->height);
+			free_lut = __modelffb_request_lut(
+				os_info->x, os_info->y, os_info->width,
+				os_info->height);
 
-			if (free_lut < 0)
+			if (free_lut)
 				break;
 
 			__modelffb_dequeue_lut_queue();
 
 #ifdef CONFIG_MODELF_DEFERRED_IO
 			if (parinfo->vram_updated == MODELF_VRAM_NEED_UPDATE)
-				__modelffb_send_image(os_info->x, os_info->y,
+				__modelffb_send_image(
+					os_info->x, os_info->y,
 					os_info->width, os_info->height);
 #endif
 
-			if (os_info->oneshot_type == MODELF_ONESHOT_TYPE_ONESHOT)
-				__modelffb_update_area(os_info->x, os_info->y,
+			if (os_info->oneshot_type ==
+			    MODELF_ONESHOT_TYPE_ONESHOT)
+				__modelffb_update_area(
+					os_info->x, os_info->y,
 					os_info->width, os_info->height,
 					os_info->waveform_mode, free_lut);
-			else if (os_info->oneshot_type == MODELF_ONESHOT_TYPE_CLENUP)
-				__modelffb_cleanup_area_lut(os_info->x, os_info->y,
+			else if (os_info->oneshot_type ==
+				 MODELF_ONESHOT_TYPE_CLENUP)
+				__modelffb_cleanup_area_lut(
+					os_info->x, os_info->y,
 					os_info->width, os_info->height,
 					os_info->waveform_mode, free_lut);
 		}
 
 		modelffb_sync_set_status(MODELFFB_SYNC_IDLE);
-	}
-	else if (__modelffb_lut_is_empty()) {
+	} else if (__modelffb_lut_is_empty()) {
 		if (parinfo->need_flush_image == MODELF_NEED_FLUSH_IMAGE) {
 			__modelffb_reset_lut_queue();
 			parinfo->need_flush_image = MODELF_NO_NEED_FLUSH_IMAGE;
@@ -2578,10 +2652,10 @@ static void modelffb_irq_work_function(struct work_struct *ws)
 		if (parinfo->need_cleanup == MODELF_NEED_CLEANUP) {
 			parinfo->need_cleanup = MODELF_NO_NEED_CLEANUP;
 			__modelffb_cleanup_full(parinfo->waveform_mode);
-		}
-		else if (parinfo->need_cleanup == MODELF_NO_NEED_CLEANUP)
+		} else if (parinfo->need_cleanup == MODELF_NO_NEED_CLEANUP)
 			__modelffb_update_full(parinfo->waveform_mode);
 	}
+
 	__modelffb_wait_for_HRDY_ready(MODELF_TIMEOUT_MS);
 	if (parinfo->power_mode == MODELF_POWER_RUN)
 		__modelffb_run();
@@ -2607,12 +2681,12 @@ static irqreturn_t __modelffb_irq_handler(int irq, void *dev_id)
 static void modelffb_deferred_io_work_function(struct work_struct *ws)
 {
 #ifdef CONFIG_MODELF_DEBUG
-	printk(KERN_INFO "MODELFFB: WORKQUEUE: deferred\n");
+	dev_info(parinfo->dev, "WORKQUEUE: deferred\n");
 #endif
 
 	if (parinfo->suspend_update == MODELF_SUSPEND_UPDATE) {
 #ifdef CONFIG_MODELF_DEBUG
-		printk(KERN_INFO "MODELFFB: update has been suspended\n");
+		dev_info(parinfo->dev, "Update has been suspended\n");
 #endif
 	}
 	else if (parinfo->vram_updated == MODELF_VRAM_NEED_UPDATE) {
@@ -2623,12 +2697,14 @@ static void modelffb_deferred_io_work_function(struct work_struct *ws)
 	}
 }
 
-static DECLARE_WORK(modelffb_deferred_io_work, modelffb_deferred_io_work_function);
+static DECLARE_WORK(modelffb_deferred_io_work,
+		    modelffb_deferred_io_work_function);
 
-static void __modelffb_dpy_deferred_io(struct fb_info *info, struct list_head *pagelist)
+static void __modelffb_dpy_deferred_io(struct fb_info *info,
+				       struct list_head *pagelist)
 {
 #ifdef CONFIG_MODELF_DEBUG
-	printk(KERN_INFO "MODELFFB: deferred\n");
+	dev_info(parinfo->dev, "Deferred I/O\n");
 #endif
 	parinfo->vram_updated = MODELF_VRAM_NEED_UPDATE;
 	queue_work(parinfo->workqueue, &modelffb_deferred_io_work);
@@ -2652,8 +2728,9 @@ static int __devinit modelffb_register_framebuffer(void)
 #endif
 
 	retval = register_framebuffer(info);
-	if(retval < 0) {
-		printk(KERN_ERR "MODELFFB: register frame buffer failed (%d)\n", retval);
+	if (retval) {
+		dev_err(parinfo->dev, "Failed to register frame buffer (%d)\n",
+			retval);
 		goto err;
 	}
 
@@ -2681,18 +2758,18 @@ static int modelffb_modelf_init(void)
 	int stat;
 
 	if (!(parinfo->status & MODELF_STATUS_INITCODE_STORED)) {
-		printk(KERN_ERR "MODELFFB: init code not stored\n");
+		dev_err(parinfo->dev, "Init code not stored\n");
 		return -EINVAL;
 	}
 
 	if (!(parinfo->status & MODELF_STATUS_WAVEFORM_STORED)) {
-		printk(KERN_ERR "MODELFFB: waveform not stored\n");
+		dev_err(parinfo->dev, "Waveform not stored\n");
 		return -EINVAL;
 	}
 
 	stat = modelffb_chip_init();
 	if (stat) {
-		printk(KERN_ERR "MODELFFB: chip_init failed\n");
+		dev_err(parinfo->dev, "chip_init failed\n");
 		goto exit_now;
 	}
 
@@ -2700,20 +2777,20 @@ static int modelffb_modelf_init(void)
 
 	stat = modelffb_alloc_vram();
 	if (stat) {
-		printk(KERN_ERR "MODELFFB: alloc_vram failed\n");
+		dev_err(parinfo->dev, "alloc_vram failed\n");
 		goto exit_now;
 	}
 
 	stat = modelffb_register_framebuffer();
 	if (stat) {
-		printk(KERN_ERR "MODELFFB: register_framebuffer failed\n");
+		dev_err(parinfo->dev, "register_framebuffer failed\n");
 		goto free_vram;
 	}
 
 	if (parinfo->opt_clear_on_init) {
 		stat = modelffb_panel_init();
 		if (stat) {
-			printk(KERN_ERR "MODELFFB: panel_init failed\n");
+			dev_err(parinfo->dev, "panel_init failed\n");
 			goto framebuffer_unregister;
 		}
 	}
@@ -2722,7 +2799,7 @@ static int modelffb_modelf_init(void)
 			   (IRQF_DISABLED | IRQF_TRIGGER_HIGH), "modelf",
 			   parinfo->dev);
 	if (stat) {
-		printk(KERN_ERR "MODELFFB: request_irq failed\n");
+		dev_err(parinfo->dev, "request_irq failed\n");
 		goto framebuffer_unregister;
 	}
 
@@ -2750,7 +2827,7 @@ static ssize_t __modelffb_store_init_code(struct device *dev,
 	struct device_attribute *attr, const char *buf, size_t count)
 {
 	if (count > MODELF_MAX_INITCODE_SIZE) {
-		printk(KERN_ERR "MODELFFB: MAX_INITCODE_SIZE has been reached\n");
+		dev_err(parinfo->dev, "MAX_INITCODE_SIZE has been reached\n");
 	}
 	else {
 		memcpy((void*)parinfo->init_code, buf, count);
@@ -2766,7 +2843,7 @@ static ssize_t __modelffb_store_waveform(struct device *dev,
 {
 	if (parinfo->waveform_index + count >
 		parinfo->waveform + MODELF_MAX_WAVEFORM_SIZE) {
-		printk(KERN_ERR "MODELFFB: MAX_WAVEFORM_SIZE has been reached\n");
+		dev_err(parinfo->dev, "MAX_WAVEFORM_SIZE has been reached\n");
 	}
 	else {
 		memcpy((void*)parinfo->waveform_index, buf, count);
@@ -2871,82 +2948,87 @@ end:
 
 static int __modelffb_set_element(char *str)
 {
-	int retval = 0;
 	char *tok, *next_tok = str;
 
 	tok = strsep(&next_tok, " \t\n");
-	if (tok != NULL) {
-		if (strcmp(tok, "waveform_mode") == 0) {
-		/* echo set waveform_mode mode > /sys/devices/platform/modelffb/control */
-			tok = strsep(&next_tok, " \t\n");
-			if (tok != NULL) {
-				sscanf(tok, "%d", &parinfo->waveform_mode);
-				printk(KERN_INFO "MODELFFB: waveform mode has been set as %d\n",
-					parinfo->waveform_mode);
-			}
-			else {
-				printk(KERN_ERR "MODELFFB: no waveform mode has been specified\n");
-			}
-		}
-		else if (strcmp(tok, "powercut_time") == 0) {
-		/* echo set powercut_time seconds > /sys/devices/platform/modelffb/control */
-			tok = strsep(&next_tok, " \t\n");
-			if (tok != NULL) {
-				del_timer_sync(&parinfo->sleep_timer);
-				sscanf(tok, "%d", &parinfo->seconds_to_sleep);
-				printk(KERN_INFO "MODELFFB: %d seconds to stand by\n",
-					parinfo->seconds_to_sleep);
-				__modelffb_queue_sleep();
-			}
-			else {
-				printk(KERN_ERR "MODELFFB: no powercut time has been specified\n");
-			}
-		}
-		else if (strcmp(tok, "measure_temp_interval") == 0) {
-		/* echo set measure_temp_interval seconds > /sys/devices/platform/modelffb/control */
-			tok = strsep(&next_tok, " \t\n");
-			if (tok != NULL) {
-				del_timer_sync(&parinfo->temperature_timer);
-				sscanf(tok, "%d", &parinfo->seconds_to_measure_temperature);
-				printk(KERN_INFO "MODELFFB: %d seconds to measure temperature\n",
-					parinfo->seconds_to_measure_temperature);
-				if (parinfo->seconds_to_measure_temperature != 0)
-					__modelffb_queue_temperature();
-			}
-			else {
-				printk(KERN_ERR "MODELFFB: no interval time has been specified\n");
-			}
-		}
-		else if (strcmp(tok, "send_waveform") == 0) {
-		/* echo set send_waveform_wait wait/nowait > /sys/devices/platform/modelffb/control */
-			tok = strsep(&next_tok, " \t\n");
-			if (tok != NULL) {
-				if (strcmp(tok, "wait") == 0) {
-				printk(KERN_INFO "MODELFFB: send waveform: wait\n");
-				parinfo->send_waveform_wait = MODELF_SEND_WAVEFORM_WAIT;
-				}
-				else if (strcmp(tok, "nowait") == 0) {
-				printk(KERN_INFO "MODELFFB: send waveform: nowait\n");
-				parinfo->send_waveform_wait = MODELF_SEND_WAVEFORM_NOWAIT;
-				}
-			}
-			else {
-				printk(KERN_ERR "MODELFFB: no wait selection has been specified\n");
-			}
-		}
-		else {
-			printk(KERN_ERR "MODELFFB: invalid set argument\n");
-		}
+	if (!tok) {
+		dev_err(parinfo->dev, "No element identifier\n");
+		return -EINVAL;
 	}
-	else {
-		retval = -1;
-		goto end;
+
+	if (!strcmp(tok, "waveform_mode")) {
+		/* echo set waveform_mode mode >
+		   /sys/devices/platform/modelffb/control */
+		tok = strsep(&next_tok, " \t\n");
+		if (!tok) {
+			dev_err(parinfo->dev,
+				"No waveform mode specified\n");
+			return -EINVAL;
+		}
+
+		sscanf(tok, "%d", &parinfo->waveform_mode);
+		dev_info(parinfo->dev, "Waveform mode has been set as %d\n",
+			 parinfo->waveform_mode);
+	} else if (!strcmp(tok, "powercut_time")) {
+		/* echo set powercut_time seconds >
+		   /sys/devices/platform/modelffb/control */
+		tok = strsep(&next_tok, " \t\n");
+		if (!tok) {
+			dev_err(parinfo->dev,
+				"No powercut time specified\n");
+			return -EINVAL;
+		}
+
+		del_timer_sync(&parinfo->sleep_timer);
+		sscanf(tok, "%d", &parinfo->seconds_to_sleep);
+		dev_info(parinfo->dev, "%d seconds to standby\n",
+			 parinfo->seconds_to_sleep);
+		__modelffb_queue_sleep();
+	} else if (strcmp(tok, "measure_temp_interval") == 0) {
+		/* echo set measure_temp_interval seconds >
+		   /sys/devices/platform/modelffb/control */
+		tok = strsep(&next_tok, " \t\n");
+		if (!tok) {
+			dev_err(parinfo->dev,
+				"No interval time specified\n");
+			return -EINVAL;
+		}
+
+		del_timer_sync(&parinfo->temperature_timer);
+		sscanf(tok, "%d",
+		       &parinfo->seconds_to_measure_temperature);
+		dev_info(parinfo->dev, "%d seconds to measure temperature\n",
+			 parinfo->seconds_to_measure_temperature);
+		if (parinfo->seconds_to_measure_temperature)
+			__modelffb_queue_temperature();
+	} else if (!strcmp(tok, "send_waveform")) {
+		/* echo set send_waveform_wait wait/nowait >
+		   /sys/devices/platform/modelffb/control */
+		tok = strsep(&next_tok, " \t\n");
+		if (!tok) {
+			dev_err(parinfo->dev,
+				"No wait selection specified\n");
+			return -EINVAL;
+		}
+
+		if (!strcmp(tok, "wait")) {
+			dev_info(parinfo->dev, "send waveform: wait\n");
+			parinfo->send_waveform_wait =
+				MODELF_SEND_WAVEFORM_WAIT;
+		} else if (!strcmp(tok, "nowait")) {
+			dev_info(parinfo->dev, "send waveform: nowait\n");
+			parinfo->send_waveform_wait =
+				MODELF_SEND_WAVEFORM_NOWAIT;
+		}
+	} else {
+		dev_err(parinfo->dev, "Invalid set argument\n");
+		return -EINVAL;
 	}
-end:
-	return retval;
+
+	return 0;
 }
 
-static void modelffb_setopt(struct fb_info *info, char *tokbuf, size_t len)
+static int modelffb_setopt(struct fb_info *info, char *tokbuf, size_t len)
 {
 	char *opt;
 	char *value;
@@ -2954,7 +3036,7 @@ static void modelffb_setopt(struct fb_info *info, char *tokbuf, size_t len)
 	opt = strsep(&tokbuf, " \t\n");
 
 	if (!opt)
-		return;
+		return -EINVAL;
 
 	value = strsep(&tokbuf, " \t\n");
 
@@ -2962,22 +3044,26 @@ static void modelffb_setopt(struct fb_info *info, char *tokbuf, size_t len)
 		long unsigned int int_value;
 
 		if (kstrtoul(value, 10, &int_value))
-			return;
+			return -EINVAL;
 
 		parinfo->opt_clear_on_exit = int_value ? true : false;
 	} else if (!strcmp(opt, "clear_on_init") && value) {
 		long unsigned int int_value;
 
 		if (kstrtoul(value, 10, &int_value))
-			return;
+			return -EINVAL;
 
-		printk("CLEAR ON INIT: %d\n", (int)int_value);
 		parinfo->opt_clear_on_init = int_value ? true : false;
+	} else {
+		dev_err(parinfo->dev, "Invalid setopt identifier\n");
 	}
+
+	return 0;
 }
 
-static ssize_t modelffb_store_control(struct device *dev,
-	struct device_attribute *attr, const char *buf, size_t count)
+static ssize_t modelffb_store_control(
+	struct device *dev, struct device_attribute *attr, const char *buf,
+	size_t count)
 {
 	char localbuf[256];
 	char *tok, *next_tok;
@@ -2989,112 +3075,110 @@ static ssize_t modelffb_store_control(struct device *dev,
 
 	tok = strsep(&next_tok, " \t\n");
 
-	if (strcmp(tok, "init") == 0) {
+	if (!strcmp(tok, "init")) {
 	/* echo init > /sys/devices/platform/modelffb/control */
-		if ((parinfo->status & MODELF_STATUS_INIT_DONE) ==
-		    MODELF_STATUS_INIT_DONE) {
-			printk(KERN_ERR "MODELFFB: init doubled\n");
-		}
-		else if (modelffb_modelf_init() == 0)
+		if (parinfo->status & MODELF_STATUS_INIT_DONE) {
+			dev_err(parinfo->dev, "Already initialised\n");
+		} else if (modelffb_modelf_init() == 0)
 			parinfo->status |= MODELF_STATUS_INIT_DONE;
-	}
-	else if (strcmp(tok, "set") == 0) {
+	} else if (!strcmp(tok, "set")) {
 	/* echo set element value > /sys/devices/platform/modelffb/control */
 		__modelffb_set_element(next_tok);
-	}
-	else if (!strcmp(tok, "setopt")) {
+	} else if (!strcmp(tok, "setopt")) {
 		modelffb_setopt(info, next_tok, count);
-	}
-	else if ((parinfo->status & MODELF_STATUS_INIT_DONE) == 0) {
-		printk(KERN_ERR "MODELFFB: not yet init done\n");
-	}
-	else if (strcmp(tok, "dumpmem") == 0) {
-	/* echo dumpmem address size > /sys/devices/platform/modelffb/control */
-		uint32_t start = 0, size = 0;
+	} else if (!(parinfo->status & MODELF_STATUS_INIT_DONE)) {
+		dev_err(parinfo->dev, "Not yet initialised\n");
+	} else if (!strcmp(tok, "dumpmem")) {
+	/* echo dumpmem address size >
+	   /sys/devices/platform/modelffb/control */
+		uint32_t start = 0;
+		uint32_t size = 0;
 
-		if (__parse_uint32_2(next_tok, &start, &size) == 0) {
+		if (!__parse_uint32_2(next_tok, &start, &size)) {
 			modelffb_commit_run();
 			modelffb_dump_memory(start, size);
 			__modelffb_queue_sleep();
 		}
-	}
-	else if (strcmp(tok, "dumpreg") == 0) {
-	/* echo dumpreg address size > /sys/devices/platform/modelffb/control */
-		uint32_t start = 0, size = 0;
+	} else if (!strcmp(tok, "dumpreg")) {
+	/* echo dumpreg address size >
+	   /sys/devices/platform/modelffb/control */
+		uint32_t start = 0;
+		uint32_t size = 0;
 
 		if (__parse_uint32_2(next_tok, &start, &size) == 0) {
 			modelffb_commit_run();
 			modelffb_dump_register(start, size);
 			__modelffb_queue_sleep();
 		}
-	}
-	else if (strcmp(tok, "writereg") == 0) {
-	/* echo writereg address data > /sys/devices/platform/modelffb/control */
-		uint32_t addr = 0, data = 0;
+	} else if (!strcmp(tok, "writereg")) {
+	/* echo writereg address data >
+	   /sys/devices/platform/modelffb/control */
+		uint32_t addr = 0;
+		uint32_t data = 0;
 
 		if (__parse_uint32_2(next_tok, &addr, &data) == 0) {
 			modelffb_commit_run();
 			modelffb_write_register(addr, data);
 			__modelffb_queue_sleep();
 		}
-	}
-	else if (strcmp(tok, "cleanup") == 0) {
+	} else if (!strcmp(tok, "cleanup")) {
 	/* echo cleanup [wfmode] [x] [y] [width] [height]
 		> /sys/devices/platform/modelffb/control */
-		int waveform_mode = parinfo->waveform_mode, x = 0, y = 0;
-		int width = info->var.xres, height = info->var.yres;
+		int waveform_mode = parinfo->waveform_mode;
+		int x = 0;
+		int y = 0;
+		int width = info->var.xres;
+		int height = info->var.yres;
 
 		tok = strsep(&next_tok, " \t\n");
-		if (tok != NULL) {
-			if (strcmp(tok, "whiteout") == 0)
+		if (tok) {
+			if (!strcmp(tok, "whiteout"))
 				waveform_mode = MODELF_WAVEFORM_WHITEOUT;
-			else if (strcmp(tok, "direct_mono") == 0)
+			else if (!strcmp(tok, "direct_mono"))
 				waveform_mode = MODELF_WAVEFORM_DIRECT_MONO;
-			else if (strcmp(tok, "high_quality") == 0)
+			else if (!strcmp(tok, "high_quality"))
 				waveform_mode = MODELF_WAVEFORM_HIGH_QUALITY;
-			else if (strcmp(tok, "high_speed") == 0)
+			else if (!strcmp(tok, "high_speed"))
 				waveform_mode = MODELF_WAVEFORM_HIGH_SPEED;
 			else
 				sscanf(tok, "%d", &waveform_mode);
 		}
 		__parse_uint32_4(next_tok, &x, &y, &width, &height);
-
 		__modelffb_queue_cleanup(waveform_mode, x, y, width, height);
-	}
-	else if (!strcmp(tok, "sync")) {
+	} else if (!strcmp(tok, "sync")) {
 		tok = strsep(&next_tok, " \t\n");
 
 		if (unlikely(!tok))
-			printk(KERN_ERR "No sync status provided\n");
+			dev_err(parinfo->dev, "No sync status provided\n");
 		else
 			modelffb_sync_wait(tok);
-	}
-	else if (!strcmp(tok, "power")) {
+	} else if (!strcmp(tok, "power")) {
 		tok = strsep(&next_tok, " \t\n");
 
 		if (unlikely(!tok))
-			printk(KERN_ERR "No power status provided\n");
+			dev_err(parinfo->dev, "No power status provided\n");
 		else
 			modelffb_sync_wait_power(tok);
-	}
-	else if (strcmp(tok, "suspend_update") == 0) {
+	} else if (!strcmp(tok, "suspend_update")) {
 	/* echo suspend_update > /sys/devices/platform/modelffb/control */
 		__modelffb_queue_suspend_update(MODELF_SUSPEND_UPDATE);
-	}
-	else if (strcmp(tok, "resume_update") == 0) {
+	} else if (!strcmp(tok, "resume_update")) {
 	/* echo resume_update > /sys/devices/platform/modelffb/control */
 		__modelffb_queue_suspend_update(MODELF_RESUME_UPDATE);
-	}
-	else if (strcmp(tok, "oneshot") == 0) {
-	/* echo oneshot [x] [y] [width] [height] > /sys/devices/platform/modelffb/control */
-		int x = 0, y = 0, width = info->var.xres, height = info->var.yres;
+	} else if (!strcmp(tok, "oneshot")) {
+	/* echo oneshot [x] [y] [width] [height] >
+	   /sys/devices/platform/modelffb/control */
+		int x = 0;
+		int y = 0;
+		int width = info->var.xres;
+		int height = info->var.yres;
 
 		__parse_uint32_4(next_tok, &x, &y, &width, &height);
-		__modelffb_queue_oneshot(MODELF_ONESHOT_TYPE_ONESHOT, parinfo->waveform_mode,
-			x, y, width, height);
-	}
-	else {
-		printk(KERN_ERR "MODELFFB: invalid control argument\n");
+		__modelffb_queue_oneshot(MODELF_ONESHOT_TYPE_ONESHOT,
+					 parinfo->waveform_mode,
+					 x, y, width, height);
+	} else {
+		dev_err(parinfo->dev, "Invalid control argument\n");
 	}
 
 	return count;
@@ -3118,8 +3202,7 @@ static ssize_t modelffb_show_on_drawing(struct device *dev,
 			strncpy(buf, "0", 255);
 		else
 			strncpy(buf, "1", 255);
-	}
-	else {
+	} else {
 		strncpy(buf, "0", 255);
 	}
 
@@ -3128,76 +3211,76 @@ static ssize_t modelffb_show_on_drawing(struct device *dev,
 
 #if (defined(CONFIG_MODELF_PL_HARDWARE) \
      || defined(CONFIG_MODELF_PL_HARDWARE_MODULE))
-static ssize_t temperature_range_show(struct device *dev,
-                                struct device_attribute *attr, char *buf,
-                                struct temperature_set* set,
-                                int (*format_text)(const struct temperature_entry* p_range, char *tbuf, int buf_space))
+static ssize_t temperature_range_show(
+	struct device *dev, struct device_attribute *attr, char *buf,
+	struct temperature_set* set,
+	int (*format_text)(const struct temperature_entry* p_range, char *tbuf,
+			   int buf_space))
 {
-        char *tbuf = buf;
-        int written;
-        const struct temperature_entry** p_range = 0;
-        int buf_space = PAGE_SIZE;
+	char *tbuf = buf;
+	int written;
+	const struct temperature_entry** p_range = NULL;
+	int buf_space = PAGE_SIZE;
 
-        if (format_text == 0)
-                return -EINVAL;
+	if (!format_text)
+		return -EINVAL;
 
-        p_range = temperature_set_get_first_range(set);
+	p_range = temperature_set_get_first_range(set);
 
-        while (buf_space >= 0 && p_range != 0) {
-                written = (format_text)(*p_range, tbuf, buf_space);
+	while (buf_space >= 0 && p_range != 0) {
+		written = format_text(*p_range, tbuf, buf_space);
 
-                p_range = temperature_set_get_next_range(set, p_range);
+		p_range = temperature_set_get_next_range(set, p_range);
 
-                tbuf += written;
-                buf_space -= written;
-        }
+		tbuf += written;
+		buf_space -= written;
+	}
 
-        return tbuf - buf;
+	return tbuf - buf;
 }
 
-static ssize_t temperature_range_store(struct device *dev,
-                                struct device_attribute *attr, const char *buf,
-                                size_t count,
-                                struct temperature_set* set,
-                                void (*erase_set)(struct temperature_set* set),
-                                int (*read_and_store)(const char *p_range_text))
+static ssize_t temperature_range_store(
+	struct device *dev, struct device_attribute *attr, const char *buf,
+	size_t count, struct temperature_set* set,
+	void (*erase_set)(struct temperature_set* set),
+	int (*read_and_store)(const char *p_range_text))
 
 {
-        int retval = -EINVAL;
-        const char *p_next_range = buf;
+	int retval = -EINVAL;
+	const char *p_next_range = buf;
 
-        if (erase_set == 0 || read_and_store == 0)
-                return -EINVAL;
+	if (!erase_set || !read_and_store)
+		return -EINVAL;
 
-        (erase_set)(set);
+	erase_set(set);
 
-        do {
-                /* give up if invalid */
-                retval = (read_and_store)(p_next_range);
+	do {
+		/* give up if invalid */
+		retval = read_and_store(p_next_range);
 
-                if (retval)
-                        break;
+		if (retval)
+			break;
 
-                /* locate \n at end of this range */
-                p_next_range = strchr(p_next_range, '\n');
+		/* locate \n at end of this range */
+		p_next_range = strchr(p_next_range, '\n');
 
-                /* then advance to the 1st char of the next range */
-                if (p_next_range == 0 || *++p_next_range == '\0') {
-                        retval = strlen(buf);
-                }
-        }
-        while (p_next_range != 0 && *p_next_range != '\0');
-        temperature_set_commit(set);
+		/* then advance to the 1st char of the next range */
+		if (!p_next_range || (*++p_next_range == '\0'))
+			retval = strlen(buf);
+	} while (p_next_range != 0 && *p_next_range != '\0');
 
-        return retval;
+	temperature_set_commit(set);
+
+	return retval;
 }
 
-static ssize_t vcom_show(struct device *dev,
-                                struct device_attribute *attr, char *buf)
+static ssize_t vcom_show(struct device *dev, struct device_attribute *attr,
+			 char *buf)
 {
-        struct temperature_set *set = get_vcom_temperature_set();
+	struct temperature_set *set = get_vcom_temperature_set();
 
-        return temperature_range_show(dev, attr, buf, set, temperature_set_format_integer);
+	return temperature_range_show(dev, attr, buf, set,
+				      temperature_set_format_integer);
 }
 
 static ssize_t vcom_store(struct device *dev, struct device_attribute *attr,
@@ -3258,35 +3341,40 @@ static int modelffb_create_file(void)
 	int retval = 0;
 
 	retval = device_create_file(parinfo->dev, &dev_attr_init_code);
-	if (retval != 0) {
-		printk(KERN_ERR "MODELFFB: cannot create file \"init_code\"\n");
+	if (retval) {
+		dev_err(parinfo->dev, "Cannot create file \"init_code\"\n");
 		goto end;
 	}
+
 	retval = device_create_file(parinfo->dev, &dev_attr_waveform);
-	if (retval != 0) {
-		printk(KERN_ERR "MODELFFB: cannot create file \"waveform\"\n");
+	if (retval) {
+		dev_err(parinfo->dev, "Cannot create file \"waveform\"\n");
 		goto remove_init_code;
 	}
+
 	retval = device_create_file(parinfo->dev, &dev_attr_control);
-	if (retval != 0) {
-		printk(KERN_ERR "MODELFFB: cannot create file \"control\"\n");
+	if (retval) {
+		dev_err(parinfo->dev, "Cannot create file \"control\"\n");
 		goto remove_waveform;
+
 	}
 	retval = device_create_file(parinfo->dev, &dev_attr_keycode);
-	if (retval != 0) {
-		printk(KERN_ERR "MODELFFB: cannot create file \"keycode\"\n");
+	if (retval) {
+		dev_err(parinfo->dev, "Cannot create file \"keycode\"\n");
 		goto remove_control;
 	}
+
 	retval = device_create_file(parinfo->dev, &dev_attr_on_drawing);
-	if (retval != 0) {
-		printk(KERN_ERR "MODELFFB: cannot create file \"on_drawing\"\n");
+	if (retval) {
+		dev_err(parinfo->dev, "Cannot create file \"on_drawing\"\n");
 		goto remove_keycode;
 	}
+
 #if (defined(CONFIG_MODELF_PL_HARDWARE) \
      || defined(CONFIG_MODELF_PL_HARDWARE_MODULE))
 	retval = device_create_file(parinfo->dev, &dev_attr_vcom);
-	if (retval != 0) {
-		printk(KERN_ERR "MODELFFB: cannot create file \"vcom\".\n");
+	if (retval) {
+		dev_err(parinfo->dev, "Cannot create file \"vcom\"\n");
 		goto remove_on_drawing;
 	}
 #endif
@@ -3312,7 +3400,6 @@ end:
 
 static void modelffb_remove_file(void)
 {
-	printk(KERN_ERR "MODELFFB: modelffb_remove_file()\n");
 	device_remove_file(parinfo->dev, &dev_attr_on_drawing);
 	device_remove_file(parinfo->dev, &dev_attr_keycode);
 	device_remove_file(parinfo->dev, &dev_attr_control);
@@ -3369,7 +3456,7 @@ static int __devinit modelffb_setup_gpio(int gpio, const char *name)
 
 	stat = gpio_request(gpio, name);
 	if (stat) {
-		printk(KERN_ERR "MODELFFB: failed to request GPIO %s %d\n",
+		dev_err(parinfo->dev, "failed to request GPIO %s %d\n",
 		       name, gpio);
 		return stat;
 	}
@@ -3417,18 +3504,18 @@ static int __devinit modelffb_probe(struct platform_device *pdev)
 	int retval = 0;
 
 #ifdef CONFIG_MODELF_DEBUG
-	printk(KERN_INFO "MODELFFB: check rev: %d\n", CHECKREV);
+	dev_info(parinfo->dev, "Check rev: %d\n", CHECKREV);
 #endif
 
 	retval = modelffb_framebuffer_alloc(pdev);
 	if (retval) {
-		printk(KERN_ERR "MODELFFB: failed to alloc frame buffer\n");
+		dev_err(parinfo->dev, "Failed to alloc frame buffer\n");
 		goto exit_now;
 	}
 
 	retval = modelffb_alloc_memory();
 	if (retval) {
-		printk(KERN_ERR "MODELFFB: failed to alloc modelffb_par\n");
+		dev_err(parinfo->dev, "Failed to alloc modelffb_par\n");
 		goto exit_release_framebuffer;
 	}
 	__modelffb_bit_swap_table_init();
@@ -3439,7 +3526,7 @@ static int __devinit modelffb_probe(struct platform_device *pdev)
 
 	parinfo->workqueue = create_singlethread_workqueue("modelf_workqueue");
 	if (!parinfo->workqueue) {
-		printk(KERN_ERR "MODELFFB: create workqueue failed\n");
+		dev_err(parinfo->dev, "Failed to create workqueue\n");
 		retval = -ENOMEM;
 		goto exit_free_sysfs;
 	}
@@ -3449,15 +3536,15 @@ static int __devinit modelffb_probe(struct platform_device *pdev)
 		if (retval)
 			goto exit_destroy_workqueue;
 		gpio_direction_output(pdata->gpio_hdc, 1);
-		printk(KERN_INFO "MODELFFB: using HDC on pin %d\n",
-		       pdata->gpio_hdc);
+		dev_info(parinfo->dev, "Using HDC on pin %d\n",
+			 pdata->gpio_hdc);
 	} else {
 		retval = modelffb_setup_gpio(pdata->gpio_cs, "MODELF_CS");
 		if (retval)
 			goto exit_destroy_workqueue;
 		gpio_direction_output(pdata->gpio_cs, 1);
-		printk(KERN_INFO "MODELFFB: using SPI CS on pin %d\n",
-		       pdata->gpio_cs);
+		dev_info(parinfo->dev, "Using SPI CS on pin %d\n",
+			 pdata->gpio_cs);
 	}
 
 	if (pdata->gpio_hrdy) {
@@ -3465,13 +3552,13 @@ static int __devinit modelffb_probe(struct platform_device *pdev)
 		if (retval)
 			goto exit_free_gpio_hdc_cs;
 		gpio_direction_input(pdata->gpio_hrdy);
-		printk(KERN_INFO "MODELFFB: using HRDY on pin %d\n",
-		       pdata->gpio_hrdy);
+		dev_info(parinfo->dev, "Using HRDY on pin %d\n",
+			 pdata->gpio_hrdy);
 	}
 
 	retval = spi_register_driver(&modelffb_spi_driver);
 	if (retval) {
-		printk(KERN_ERR "Failed to register SPI driver\n");
+		dev_err(parinfo->dev, "Failed to register SPI driver\n");
 		goto exit_free_gpio_hrdy;
 	}
 
@@ -3505,13 +3592,13 @@ static int __devinit modelffb_probe(struct platform_device *pdev)
 	init_waitqueue_head(&parinfo->sync_update_wait);
 	parinfo->sync_status = MODELFFB_SYNC_IDLE;
 
-	printk(KERN_INFO "MODELFFB: Ready, deferred I/O "
+	dev_info(parinfo->dev, "Ready, deferred I/O "
 #ifdef CONFIG_MODELF_DEFERRED_IO
-	       "enabled"
+		 "enabled"
 #else
-	       "disabled"
+		 "disabled"
 #endif
-	       ".\n");
+		 ".\n");
 
 	return 0;
 
@@ -3596,7 +3683,7 @@ static int __devexit modelffb_remove(struct platform_device *pdev)
 	modelffb_free_memory();
 	modelffb_framebuffer_release();
 
-	printk(KERN_INFO "MODELFFB: modelF has been removed.\n");
+	dev_info(parinfo->dev, "modelF has been removed.\n");
 
 	return 0;
 }
