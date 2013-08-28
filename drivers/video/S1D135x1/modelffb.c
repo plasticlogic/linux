@@ -70,6 +70,10 @@ static const char *modelffb_sync_status_table[MODELFFB_SYNC_N] = {
 #include "vcom.h"
 #include "temperature-set.h"
 
+static char *modelffb_panel_type_modparam = "";
+module_param_named(panel_type, modelffb_panel_type_modparam, charp, S_IRUGO);
+MODULE_PARM_DESC(panel_type, "Panel type identifier");
+
 /* ToDo: define in board file */
 struct pl_hardware_config modelffb_pl_config = {
 #ifdef CONFIG_MODELF_PL_ROBIN
@@ -1147,8 +1151,10 @@ static inline uint8_t __modelffb_8bit_desaturate(uint16_t color)
 	return grey;
 }
 
-static void __modelffb_pool_read_shaped_16bit_image(int x, int y, int width,
-						    int lines)
+/* -- straight pixel ordering -- */
+
+static void __modelffb_pool_read_shaped_16bit_image(
+	int x, int y, int width, int lines)
 {
 	struct fb_info *info = parinfo->fbinfo;
 	uint8_t *out = parinfo->image_pool;
@@ -1157,12 +1163,71 @@ static void __modelffb_pool_read_shaped_16bit_image(int x, int y, int width,
 	for (line = 0; line < lines; ++line) {
 		const uint16_t *in = (const uint16_t *)
 			(info->screen_base +
-			 info->fix.line_length * (line + y) +
-			 x * sizeof(uint16_t));
+			 (info->fix.line_length * (line + y)) +
+			 (x * sizeof(uint16_t)));
 		int i;
 
 		for (i = 0; i < width; ++i)
 			*out++ = __modelffb_8bit_desaturate(*in++);
+	}
+}
+
+/* -- interleaved sources pixel ordering -- */
+
+#define fixup_interleaved_area(_x, _y, _w, _h) ({	\
+		_x /= 2;				\
+		_y *= 2;				\
+		_w = (_w + 1) / 2;			\
+		_h = _h * 2;				\
+	})
+
+static void __modelffb_pool_read_shaped_16bit_interleaved_image(
+	int x, int y, int width, int lines)
+{
+	struct fb_info *info = parinfo->fbinfo;
+	const int fb_lines = lines / 2;
+	int fb_line;
+
+	for (fb_line = 0; fb_line < fb_lines; ++fb_line) {
+		const uint16_t *in = (const uint16_t *)
+			(info->screen_base +
+			 (info->fix.line_length * (fb_line + (y / 2))) +
+			 ((x * 2) * sizeof(uint16_t)));
+		uint8_t *out1 = parinfo->image_pool + (fb_line * 2 * width);
+		uint8_t *out2 = &out1[width];
+		int i;
+
+		for (i = 0; i < width; ++i) {
+			*out2++ = __modelffb_8bit_desaturate(*in++);
+			*out1++ = __modelffb_8bit_desaturate(*in++);
+		}
+	}
+}
+
+/* -- common implementation for straight and interleaved pixel ordering -- */
+
+static void __modelffb_send_image_16b(int x, int y, int width, int height)
+{
+	void (* const copy_data)(int x, int y, int width, int height) =
+		parinfo->opt.interleaved_sources ?
+		__modelffb_pool_read_shaped_16bit_interleaved_image :
+		__modelffb_pool_read_shaped_16bit_image;
+	const int last_line = y + height;
+	int line;
+
+	for (line = y; line < last_line;) {
+		const int lines = min(parinfo->image_pool_lines,
+				      (last_line - line));
+		const size_t length = width * lines;
+
+		copy_data(x, line, width, lines);
+		__modelffb_command_p5(
+			MODELF_COM_LOAD_IMAGE_AREA, MODELF_BPP_8,
+			(x & 0x1ff), (line & 0x3ff), (width & 0x1ff),
+			(lines & 0x3ff));
+		__modelffb_data_transfer( /* 16-bit access */
+			parinfo->image_pool, ((length + 1) / 2) * 2);
+		line += lines;
 	}
 }
 
@@ -1179,6 +1244,13 @@ static int __modelffb_send_image(int x, int y, int width, int height)
 
 	switch (info->var.bits_per_pixel) {
 	case 1:
+		if (parinfo->opt.interleaved_sources) {
+			dev_err(parinfo->dev,
+				"Interleaved sources not supported with 1bpp "
+				"pixel format\n");
+			return -EINVAL;
+		}
+
 		for (line = y; line < last_line; line++) {
 			__modelffb_pool_read_shaped_1bit_image(x, line, width);
 			__modelffb_command_p5(
@@ -1189,6 +1261,13 @@ static int __modelffb_send_image(int x, int y, int width, int height)
 		}
 		break;
 	case 8:
+		if (parinfo->opt.interleaved_sources) {
+			dev_err(parinfo->dev,
+				"Interleaved sources not supported with 8bpp "
+				"pixel format\n");
+			return -EINVAL;
+		}
+
 		for (line = y; line < last_line; line++) {
 			__modelffb_command_p5(
 				MODELF_COM_LOAD_IMAGE_AREA, MODELF_BPP_8,
@@ -1201,21 +1280,9 @@ static int __modelffb_send_image(int x, int y, int width, int height)
 		}
 		break;
 	case 16:
-		for (line = y; line < last_line;) {
-			const int lines = min(parinfo->image_pool_lines,
-					      (last_line - line));
-			const size_t length = width * lines;
-
-			__modelffb_pool_read_shaped_16bit_image(
-				x, line, width, lines);
-			__modelffb_command_p5(
-				MODELF_COM_LOAD_IMAGE_AREA, MODELF_BPP_8,
-				(x & 0x1ff), (line & 0x3ff), (width & 0x1ff),
-				(lines & 0x3ff));
-			__modelffb_data_transfer( /* 16-bit access */
-				parinfo->image_pool, ((length + 1) / 2) * 2);
-			line += lines;
-		}
+		if (parinfo->opt.interleaved_sources)
+			fixup_interleaved_area(x, y, width, height);
+		__modelffb_send_image_16b(x, y, width, height);
 		break;
 	default:
 		break;
@@ -1655,6 +1722,9 @@ static void __modelffb_print_lut_queue(void)
 static void __modelffb_cleanup_area_lut(int x, int y, int width, int height,
 					int waveform_mode, int lut)
 {
+	if (parinfo->opt.interleaved_sources)
+		fixup_interleaved_area(x, y, width, height);
+
 	__modelffb_simple_command_p5(MODELF_COM_UPDATE_AREA,
 		MODELF_WAVEFORM_MODE(waveform_mode) | MODELF_UPDATE_LUT(lut),
 		x & 0x1ff, y & 0x3ff, width & 0x1ff, height & 0x3ff);
@@ -1708,6 +1778,9 @@ static void modelffb_cleanup_area(int x, int y, int width, int height,
 
 	if (modelffb_lock())
 		goto err_power_off;
+
+	if (parinfo->opt.interleaved_sources)
+		fixup_interleaved_area(x, y, width, height);
 
 	__modelffb_wait_for_reg_value(MODELF_REG_LUT_STATUS,
 				      MODELF_BF_LUT_IN_USE, 0,
@@ -1902,18 +1975,23 @@ static void modelffb_check_panel_resolution(void)
 
 	if (modelffb_lock())
 		return;
+
 	__modelffb_wait_for_HRDY_ready(MODELF_TIMEOUT_MS);
 	modelffb_unlock();
 
 	info->var.xres = modelffb_read_register(MODELF_REG_LINE_DATA_LENGTH);
-	info->var.xres_virtual = info->var.xres;
 	info->var.yres = modelffb_read_register(MODELF_REG_FRAME_DATA_LENGTH);
+
+	if (parinfo->opt.interleaved_sources) {
+		info->var.xres *= 2;
+		info->var.yres /= 2;
+	}
+
+	info->var.xres_virtual = info->var.xres;
 	info->var.yres_virtual = info->var.yres;
 
-#ifdef CONFIG_MODELF_DEBUG
 	dev_info(parinfo->dev, "FB resolution: %dx%d\n",
 		 info->var.xres, info->var.yres);
-#endif
 }
 
 static int modelffb_check_var(struct fb_var_screeninfo *var,
@@ -2100,8 +2178,9 @@ static int __devinit modelffb_framebuffer_alloc(struct platform_device *pdev)
 	memset(parinfo->lut_in_use, 0, MODELF_MAX_LUT_NUM);
 	memset(parinfo->lut_queue, 0, MODELF_MAX_LUT_QUEUE_NUM);
 
-	parinfo->opt_clear_on_exit = false;
-	parinfo->opt_clear_on_init = true;
+	parinfo->opt.clear_on_init = 1;
+	parinfo->opt.clear_on_exit = 0;
+	parinfo->opt.interleaved_sources = 0;
 
 	return 0;
 
@@ -2166,6 +2245,8 @@ static void __devexit modelffb_regulator_exit(void)
 static int modelffb_alloc_vram(void)
 {
 	struct fb_info *info = parinfo->fbinfo;
+	size_t ep_xres;
+	size_t ep_line_length;
 	size_t image_pool_size;
 	size_t mem_len;
 	int retval = 0;
@@ -2186,8 +2267,17 @@ static int modelffb_alloc_vram(void)
 		goto err;
 	}
 
-	parinfo->image_pool_lines = IMAGE_POOL_MAX_SZ / info->fix.line_length;
-	image_pool_size = info->fix.line_length * parinfo->image_pool_lines;
+	if (parinfo->opt.interleaved_sources)
+		ep_xres = info->var.xres / 2;
+	else
+		ep_xres = info->var.xres;
+
+	ep_line_length = ep_xres * 2; /* 16bpp */
+	parinfo->image_pool_lines = IMAGE_POOL_MAX_SZ / ep_line_length;
+	if (parinfo->opt.interleaved_sources)
+		parinfo->image_pool_lines =
+			round_down(parinfo->image_pool_lines, 2);
+	image_pool_size = ep_line_length * parinfo->image_pool_lines;
 	dev_info(parinfo->dev, "Image pool lines: %d, size: %zu\n",
 		 parinfo->image_pool_lines, image_pool_size);
 	parinfo->image_pool = kmalloc(image_pool_size, GFP_KERNEL);
@@ -2787,7 +2877,7 @@ static int modelffb_modelf_init(void)
 		goto free_vram;
 	}
 
-	if (parinfo->opt_clear_on_init) {
+	if (parinfo->opt.clear_on_init) {
 		stat = modelffb_panel_init();
 		if (stat) {
 			dev_err(parinfo->dev, "panel_init failed\n");
@@ -3032,28 +3122,39 @@ static int modelffb_setopt(struct fb_info *info, char *tokbuf, size_t len)
 {
 	char *opt;
 	char *value;
+	long unsigned int_value;
 
 	opt = strsep(&tokbuf, " \t\n");
 
-	if (!opt)
+	if (!opt) {
+		dev_err(parinfo->dev, "No option identifier specified\n");
 		return -EINVAL;
+	}
 
 	value = strsep(&tokbuf, " \t\n");
 
+	if (!value) {
+		dev_err(parinfo->dev, "No value specified for %s\n", opt);
+		return -EINVAL;
+	}
+
+	if (kstrtoul(value, 10, &int_value)) {
+		dev_err(parinfo->dev, "Invalid numerical value: %s\n", value);
+		return -EINVAL;
+	}
+
 	if (!strcmp(opt, "clear_on_exit") && value) {
-		long unsigned int int_value;
-
-		if (kstrtoul(value, 10, &int_value))
-			return -EINVAL;
-
-		parinfo->opt_clear_on_exit = int_value ? true : false;
+		parinfo->opt.clear_on_exit = int_value ? 1 : 0;
 	} else if (!strcmp(opt, "clear_on_init") && value) {
-		long unsigned int int_value;
-
-		if (kstrtoul(value, 10, &int_value))
+		parinfo->opt.clear_on_init = int_value ? 1 : 0;
+	} else if (!strcmp(opt, "interleaved_sources") && value) {
+		if (parinfo->status & MODELF_STATUS_INIT_DONE) {
+			dev_err(parinfo->dev,
+				"Controller already initialised\n");
 			return -EINVAL;
+		}
 
-		parinfo->opt_clear_on_init = int_value ? true : false;
+		parinfo->opt.interleaved_sources = int_value ? 1 : 0;
 	} else {
 		dev_err(parinfo->dev, "Invalid setopt identifier\n");
 	}
@@ -3592,13 +3693,15 @@ static int __devinit modelffb_probe(struct platform_device *pdev)
 	init_waitqueue_head(&parinfo->sync_update_wait);
 	parinfo->sync_status = MODELFFB_SYNC_IDLE;
 
-	dev_info(parinfo->dev, "Ready, deferred I/O "
+	if (!strcmp(modelffb_panel_type_modparam, "Type19")) {
+		dev_info(parinfo->dev, "Interleaved sources enabled\n");
+		parinfo->opt.interleaved_sources = 1;
+	}
+
 #ifdef CONFIG_MODELF_DEFERRED_IO
-		 "enabled"
-#else
-		 "disabled"
+	dev_info(parinfo->dev, "Deferred I/O enabled\n");
 #endif
-		 ".\n");
+	dev_info(parinfo->dev, "Ready.\n");
 
 	return 0;
 
@@ -3658,7 +3761,7 @@ static int __devexit modelffb_remove(struct platform_device *pdev)
 		disable_irq_nosync(parinfo->pdata->hirq);
 		free_irq(parinfo->pdata->hirq, parinfo->dev);
 
-		if (parinfo->opt_clear_on_exit)
+		if (parinfo->opt.clear_on_exit)
 			do_clear_on_exit();
 
 		modelffb_unregister_framebuffer();

@@ -102,8 +102,11 @@ struct modelffb_par {
      || defined(CONFIG_MODELF_PL_HARDWARE_MODULE))
         struct pl_hardware *pl_hardware;
 #endif
-	bool opt_clear_on_exit;
-	bool opt_clear_on_init;
+	struct {
+		u32 clear_on_init:1;
+		u32 clear_on_exit:1;
+		u32 interleaved_sources:1;
+	} opt;
 };
 
 struct modelffb_cleanup_work {
