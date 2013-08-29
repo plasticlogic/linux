@@ -39,7 +39,7 @@
 #endif
 
 #define GPIO_TO_PIN(bank, gpio) (32 * (bank) + (gpio))
-#ifdef CONFIG_MODELF_PL_Z5_0
+#ifdef CONFIG_MODELF_PL_Z5
 #define MODELF_HIRQ_GPIO GPIO_TO_PIN(3, 21)
 #define MODELF_SPIHCS_GPIO GPIO_TO_PIN(3, 17)
 #else

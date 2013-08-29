@@ -2493,8 +2493,8 @@ config MODELF_PL_Z1_3
 	help
 	  Choose this option to enable PL Hummingbird Z1.3 expansion board.
 
-config MODELF_PL_Z5_0
-	bool "Hummingbird Z5.0"
+config MODELF_PL_Z5
+	bool "Hummingbird Z5.x"
 	help
 	  Choose this option to enable PL Hummingbird Z5.0 expansion board.
 

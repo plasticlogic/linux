@@ -264,7 +264,7 @@ struct pl_hardware_vcom {
 #define GPIO_POK		GPIO_TO_PIN(0, 15)
 #define GPIO_PMIC_EN		GPIO_TO_PIN(3, 21)
 #define GPIO_VCOM_SW_CLOSE	GPIO_TO_PIN(0, 14)
-#elif defined(CONFIG_MODELF_PL_Z5_0)
+#elif defined(CONFIG_MODELF_PL_Z5)
 #define GPIO_POK		GPIO_TO_PIN(0, 15)
 #define GPIO_PMIC_EN		GPIO_TO_PIN(2, 25)
 #define GPIO_VCOM_SW_CLOSE	GPIO_TO_PIN(0, 14)
@@ -362,7 +362,7 @@ static int pl_hardware_module_a_wait_pok(struct pl_hardware *p);
 static int pl_hardware_gpio_switch(struct pl_hardware *p, int gpio, bool on);
 #endif
 
-#if defined(CONFIG_MODELF_PL_Z5_0)
+#if defined(CONFIG_MODELF_PL_Z5)
 /* Hummingbird Z5 hardware */
 static int pl_hardware_z50_init(struct pl_hardware *p);
 static int pl_hardware_z50_free(struct pl_hardware *p);
@@ -406,7 +406,7 @@ int pl_hardware_init(struct pl_hardware *p,
 
 	p->is_module_a = false;
 
-#ifdef CONFIG_MODELF_PL_Z5_0
+#ifdef CONFIG_MODELF_PL_Z5
 	stat = pl_hardware_z50_init(p);
 	if (stat) {
 		printk("PLHW: Failed to intialise HBZ5 hardware\n");
@@ -465,7 +465,7 @@ int pl_hardware_init(struct pl_hardware *p,
 	return 0;
 
 err_free_all:
-#ifdef CONFIG_MODELF_PL_Z5_0
+#ifdef CONFIG_MODELF_PL_Z5
 	pl_hardware_z50_free(p);
 err_free_i2c:
 #endif
@@ -483,7 +483,7 @@ void pl_hardware_free(struct pl_hardware *p)
 	if (p->init_done) {
 		i2c_put_adapter(p->i2c);
 		pl_hardware_free_module_a(p);
-#ifdef CONFIG_MODELF_PL_Z5_0
+#ifdef CONFIG_MODELF_PL_Z5
 		pl_hardware_z50_free(p);
 #endif
 	}
@@ -1350,7 +1350,7 @@ static int pl_hardware_gpio_switch(struct pl_hardware *p, int gpio, bool on)
 }
 #endif
 
-#ifdef CONFIG_MODELF_PL_Z5_0
+#ifdef CONFIG_MODELF_PL_Z5
 
 static const struct gpio z50_io_init[] = {
 	{ GPIO_SOL_EP_SELECT,GPIOF_IN,            "SOL_EP_SELECT"   },
@@ -1404,7 +1404,7 @@ static int pl_hardware_z50_free(struct pl_hardware *p)
 	return 0;
 }
 
-#endif /* CONFIG_MODELF_PL_Z5_0 */
+#endif /* CONFIG_MODELF_PL_Z5 */
 
 MODULE_AUTHOR("Guillaume Tucker <guillaume.tucker@plasticlogic.com");
 MODULE_DESCRIPTION("Plastic Logic E-Paper hardware control");
