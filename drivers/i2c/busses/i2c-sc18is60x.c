@@ -445,7 +445,7 @@ static int __devinit sc18is60x_probe(struct platform_device *pdev)
 	strlcpy(adap->name, "sc18is60x SPI-I2C adapter", sizeof(adap->name));
 	stat = i2c_add_numbered_adapter(adap);
 	if (stat) {
-		dev_err(&pdev->dev, "Failed to add I2C adapter");
+		dev_err(&pdev->dev, "Failed to add I2C adapter\n");
 		goto exit_free_device;
 	}
 
@@ -466,7 +466,7 @@ static int __devinit sc18is60x_probe(struct platform_device *pdev)
 	dev->dev = &pdev->dev;
 	i2c_set_adapdata(adap, dev);
 	platform_set_drvdata(pdev, dev);
-	dev_info(&dev->adapter.dev, "Ready.");
+	dev_info(&dev->adapter.dev, "Ready.\n");
 
 	return 0;
 
