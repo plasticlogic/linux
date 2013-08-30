@@ -1786,6 +1786,21 @@ static int __init sc18is60x_init(void)
 }
 #endif
 
+#if defined(CONFIG_I2C_S1D135X1) || defined(CONFIG_I2C_S1D135X1_MODULE)
+static struct platform_device s1d135x1_i2c_device = {
+	.name = "s1d135x1_i2c",
+	.id = 5,
+	.dev = {
+		.platform_data = NULL,
+	},
+};
+
+static void s1d135x1_i2c_init(int evm_id, int profile)
+{
+	platform_device_register(&s1d135x1_i2c_device);
+}
+#endif
+
 static struct pinmux_config bone_pin_mux[] = {
 	/* User LED gpios (gpio1_21 to gpio1_24) */
     {"gpmc_a5.rgmii2_td0", OMAP_MUX_MODE7 | AM33XX_PIN_OUTPUT}, // USR0
@@ -2496,6 +2511,9 @@ static struct modelffb_platform_data am33xx_modelf_platform_data = {
 #elif defined(CONFIG_MODELF_PL_Z6_Z7)
 	.gpio_cs = GPIO_TO_PIN(0, 5),
 	.hirq = OMAP_GPIO_IRQ(GPIO_TO_PIN(3, 21)),
+#endif
+#if defined(CONFIG_I2C_S1D135X1) || defined(CONFIG_I2C_S1D135X1_MODULE)
+	.i2c_clk_divider = 4, /* 100 kHz */
 #endif
 };
 
@@ -3993,6 +4011,9 @@ static struct evm_dev_cfg beaglebone_old_dev_cfg[] = {
 #ifdef CONFIG_SPI_SPIDEV_HOTPLUG
 	{spidev_hotplug_init, DEV_ON_BASEBOARD, PROFILE_ALL},
 #endif
+#if defined(CONFIG_I2C_S1D135X1) || defined(CONFIG_I2C_S1D135X1_MODULE)
+	{s1d135x1_i2c_init, DEV_ON_BASEBOARD, PROFILE_ALL},
+#endif
 #if defined(CONFIG_FB_MODELF) || defined(CONFIG_FB_MODELF_MODULE)
 	{modelf_init,	DEV_ON_BASEBOARD, PROFILE_ALL},
 #endif
@@ -4013,6 +4034,9 @@ static struct evm_dev_cfg beaglebone_dev_cfg[] = {
 #endif
 #ifdef CONFIG_SPI_SPIDEV_HOTPLUG
 	{spidev_hotplug_init, DEV_ON_BASEBOARD, PROFILE_ALL},
+#endif
+#if defined(CONFIG_I2C_S1D135X1) || defined(CONFIG_I2C_S1D135X1_MODULE)
+	{s1d135x1_i2c_init, DEV_ON_BASEBOARD, PROFILE_ALL},
 #endif
 #if defined(CONFIG_FB_MODELF) || defined(CONFIG_FB_MODELF_MODULE)
 	{modelf_init,	DEV_ON_BASEBOARD, PROFILE_ALL},
