@@ -34,4 +34,18 @@ struct modelffb_platform_data {
 	unsigned int hirq; /* GPIO-based host IRQ */
 };
 
+/* Used by the SPI-I2C bridge driver */
+
+#if defined(CONFIG_I2C_S1D135X1) || defined(CONFIG_I2C_S1D135X1_MODULE)
+struct s1d135x1_spi {
+	struct spi_device *(*get)(void);
+	void (*put)(struct spi_device *spi);
+	void (*write_reg)(struct spi_device *spi, u16 address, u16 data);
+	u16 (*read_reg)(struct spi_device *spi, u16 address);
+	bool init_done;
+};
+
+extern struct s1d135x1_spi s1d135x1_spi;
+#endif /* CONFIG_I2C_S1D135X1 */
+
 #endif /* INCLUDE_LINUX_MODELFFB_H */
