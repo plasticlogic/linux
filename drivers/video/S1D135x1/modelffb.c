@@ -79,7 +79,11 @@ struct pl_hardware_config modelffb_pl_config = {
 #ifdef CONFIG_MODELF_PL_ROBIN
 	.i2c_bus_number = 4,
 #else
+#if defined(CONFIG_I2C_S1D135X1) || defined(CONFIG_I2C_S1D135X1_MODULE)
+	.i2c_bus_number = 5,
+#else
 	.i2c_bus_number = 3,
+#endif
 #endif
 	.dac_i2c_address = 0x39,
 	.adc_i2c_address = 0x34,
@@ -2204,44 +2208,6 @@ static void __devexit modelffb_framebuffer_release(void)
 	framebuffer_release(info);
 }
 
-static int __devinit modelffb_regulator_init(void)
-{
-#if (defined(CONFIG_MODELF_PL_HARDWARE) \
-     || defined(CONFIG_MODELF_PL_HARDWARE_MODULE))
-	int stat;
-
-	parinfo->pl_hardware = pl_hardware_alloc();
-	if (!parinfo->pl_hardware) {
-		stat = -ENOMEM;
-		goto exit_now;
-	}
-
-	stat = pl_hardware_init(parinfo->pl_hardware, &modelffb_pl_config);
-	if (stat) {
-		dev_err(parinfo->dev,
-			"Failed to initialize Plastic Logic hardware\n");
-		goto exit_free_plhw;
-	}
-
-	return 0;
-
-exit_free_plhw:
-	pl_hardware_free(parinfo->pl_hardware);
-exit_now:
-	return stat;
-#else
-	return 0;
-#endif
-}
-
-static void __devexit modelffb_regulator_exit(void)
-{
-#if (defined(CONFIG_MODELF_PL_HARDWARE) \
-     || defined(CONFIG_MODELF_PL_HARDWARE_MODULE))
-	pl_hardware_free(parinfo->pl_hardware);
-#endif
-}
-
 static int modelffb_alloc_vram(void)
 {
 	struct fb_info *info = parinfo->fbinfo;
@@ -2422,7 +2388,8 @@ static void modelffb_commit_run(void)
 	}
 }
 
-static void modelffb_oneshot(int waveform_mode, int x, int y, int width, int height)
+static void modelffb_oneshot(int waveform_mode, int x, int y, int width,
+			     int height)
 {
 	int free_lut;
 
@@ -2843,6 +2810,45 @@ static void modelffb_unregister_framebuffer(void)
 #endif
 }
 
+static int modelffb_regulator_init(void)
+{
+#if (defined(CONFIG_MODELF_PL_HARDWARE) \
+     || defined(CONFIG_MODELF_PL_HARDWARE_MODULE))
+	int stat;
+
+	parinfo->pl_hardware = pl_hardware_alloc();
+	if (!parinfo->pl_hardware) {
+		stat = -ENOMEM;
+		goto exit_now;
+	}
+
+	stat = pl_hardware_init(parinfo->pl_hardware, &modelffb_pl_config);
+	if (stat) {
+		dev_err(parinfo->dev,
+			"Failed to initialize Plastic Logic hardware\n");
+		goto exit_free_plhw;
+	}
+
+	return 0;
+
+exit_free_plhw:
+	pl_hardware_free(parinfo->pl_hardware);
+exit_now:
+	return stat;
+#else
+	return 0;
+#endif
+}
+
+static void modelffb_regulator_exit(void)
+{
+#if (defined(CONFIG_MODELF_PL_HARDWARE) \
+     || defined(CONFIG_MODELF_PL_HARDWARE_MODULE))
+	if (parinfo->pl_hardware)
+		pl_hardware_free(parinfo->pl_hardware);
+#endif
+}
+
 static int modelffb_modelf_init(void)
 {
 	int stat;
@@ -2877,20 +2883,26 @@ static int modelffb_modelf_init(void)
 		goto free_vram;
 	}
 
-	if (parinfo->opt.clear_on_init) {
-		stat = modelffb_panel_init();
-		if (stat) {
-			dev_err(parinfo->dev, "panel_init failed\n");
-			goto framebuffer_unregister;
-		}
-	}
-
 	stat = request_irq(parinfo->pdata->hirq, __modelffb_irq_handler,
 			   (IRQF_DISABLED | IRQF_TRIGGER_HIGH), "modelf",
 			   parinfo->dev);
 	if (stat) {
 		dev_err(parinfo->dev, "request_irq failed\n");
 		goto framebuffer_unregister;
+	}
+
+	stat = modelffb_regulator_init();
+	if (stat) {
+		dev_err(parinfo->dev, "regulator_init failed\n");
+		goto free_hirq;
+	}
+
+	if (parinfo->opt.clear_on_init) {
+		stat = modelffb_panel_init();
+		if (stat) {
+			dev_err(parinfo->dev, "panel_init failed\n");
+			goto free_regulator;
+		}
 	}
 
 	modelffb_measure_temperature();
@@ -2903,6 +2915,10 @@ static int modelffb_modelf_init(void)
 
 	return 0;
 
+free_regulator:
+	modelffb_regulator_exit();
+free_hirq:
+	free_irq(parinfo->pdata->hirq, parinfo->dev);
 framebuffer_unregister:
 	modelffb_unregister_framebuffer();
 free_vram:
@@ -3512,6 +3528,55 @@ static void modelffb_remove_file(void)
 #endif
 }
 
+/* =========== SPI-I2C bridge support =========== */
+
+#if defined(CONFIG_I2C_S1D135X1) || defined(CONFIG_I2C_S1D135X1_MODULE)
+
+static struct spi_device *modelffb_i2c_get_spi(void)
+{
+	if (modelffb_lock())
+		return NULL;
+
+	__modelffb_run();
+
+	return parinfo->spi;
+}
+
+static void modelffb_i2c_put_spi(struct spi_device *spi)
+{
+	BUG_ON(spi != parinfo->spi);
+
+	__modelffb_queue_sleep();
+	modelffb_unlock();
+}
+
+static void modelffb_i2c_write_reg(struct spi_device *spi, u16 address,
+				   u16 data)
+{
+	BUG_ON(spi != parinfo->spi);
+
+	gpio_set_value(parinfo->pdata->gpio_cs, 0);
+	__modelffb_immediate_reg_write(address, data);
+	gpio_set_value(parinfo->pdata->gpio_cs, 1);
+}
+
+static u16 modelffb_i2c_read_reg(struct spi_device *spi, u16 address)
+{
+	u16 regval;
+
+	BUG_ON(spi != parinfo->spi);
+
+	gpio_set_value(parinfo->pdata->gpio_cs, 0);
+	regval = __modelffb_reg_read(address);
+	gpio_set_value(parinfo->pdata->gpio_cs, 1);
+
+	return regval;
+}
+
+#endif /* CONFIG_I2C_S1D135X1 */
+
+/* =========== SPI driver interface (stubs) =========== */
+
 static int __devinit modelffb_spi_probe(struct spi_device *spi)
 {
 	return 0;
@@ -3667,9 +3732,13 @@ static int __devinit modelffb_probe(struct platform_device *pdev)
 	if (retval)
 		goto exit_unregister_spi_driver;
 
-	retval = modelffb_regulator_init();
-	if (retval)
-		goto exit_release_bus;
+#if defined(CONFIG_I2C_S1D135X1) || defined(CONFIG_I2C_S1D135X1_MODULE)
+	s1d135x1_spi.get = modelffb_i2c_get_spi;
+	s1d135x1_spi.put = modelffb_i2c_put_spi;
+	s1d135x1_spi.write_reg = modelffb_i2c_write_reg;
+	s1d135x1_spi.read_reg = modelffb_i2c_read_reg;
+	s1d135x1_spi.init_done = true;
+#endif
 
 	parinfo->status = 0;
 	parinfo->waveform_mode = MODELF_WAVEFORM_HIGH_QUALITY;
@@ -3701,13 +3770,10 @@ static int __devinit modelffb_probe(struct platform_device *pdev)
 #ifdef CONFIG_MODELF_DEFERRED_IO
 	dev_info(parinfo->dev, "Deferred I/O enabled\n");
 #endif
-	dev_info(parinfo->dev, "Ready.\n");
+	dev_info(parinfo->dev, "Ready\n");
 
 	return 0;
 
-	modelffb_regulator_exit();
-exit_release_bus:
-	modelffb_release_bus();
 exit_unregister_spi_driver:
 	spi_unregister_driver(&modelffb_spi_driver);
 exit_free_gpio_hrdy:
@@ -3754,6 +3820,10 @@ static void __devexit do_clear_on_exit(void)
 
 static int __devexit modelffb_remove(struct platform_device *pdev)
 {
+#if defined(CONFIG_I2C_S1D135X1) || defined(CONFIG_I2C_S1D135X1_MODULE)
+	s1d135x1_spi.init_done = false;
+#endif
+
 	del_timer_sync(&parinfo->sleep_timer);
 	del_timer_sync(&parinfo->temperature_timer);
 
@@ -3828,13 +3898,12 @@ static int __init __modelffb_init(void)
 {
 	return platform_driver_register(&modelffb_driver);
 }
+module_init(__modelffb_init);
 
 static void __exit __modelffb_exit(void)
 {
 	platform_driver_unregister(&modelffb_driver);
 }
-
-module_init(__modelffb_init);
 module_exit(__modelffb_exit);
 
 MODULE_DESCRIPTION("fbdev driver for modelF EPD controller");
