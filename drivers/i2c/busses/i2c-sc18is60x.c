@@ -383,7 +383,8 @@ static int sc18is60x_master_xfer(struct i2c_adapter *adap,
 			dev_err(&adap->dev,
 				"Message is too long: %d (max is %d)\n",
 				msgs[msg_n].len, SC18IS60X_MAX_I2C_LEN);
-			return -EINVAL;
+			stat = -EINVAL;
+			goto error_put_spi;
 		}
 	}
 
@@ -399,12 +400,19 @@ static int sc18is60x_master_xfer(struct i2c_adapter *adap,
 		stat = -EINVAL;
 	}
 
-	if (stat)
+	if (stat) {
 		dev_err(&adap->dev, "Transaction failed\n");
+		goto error_put_spi;
+	}
 
 	stat = sc18is60x_put_spi(spi);
 
 	return stat ? stat : num;
+
+error_put_spi:
+	(void) sc18is60x_put_spi(spi);
+
+	return stat;
 }
 
 static u32 sc18is60x_functionality(struct i2c_adapter *adap)
