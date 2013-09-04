@@ -32,6 +32,9 @@ struct modelffb_platform_data {
 	int gpio_hdc; /* data / command switch, leave to 0 if not used */
 	int gpio_cs;  /* SPI chip select, used if gpio_hdc is left to 0 */
 	unsigned int hirq; /* GPIO-based host IRQ */
+#if defined(CONFIG_I2C_S1D135X1) || defined(CONFIG_I2C_S1D135X1_MODULE)
+	unsigned i2c_clk_divider;
+#endif
 };
 
 /* Used by the SPI-I2C bridge driver */

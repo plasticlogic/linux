@@ -1084,6 +1084,11 @@ static int modelffb_chip_init(void)
 	}
 #endif
 
+#if defined(CONFIG_I2C_S1D135X1) || defined(CONFIG_I2C_S1D135X1_MODULE)
+	__modelffb_immediate_reg_write(MODELF_REG_I2C_CLOCK,
+				       parinfo->pdata->i2c_clk_divider);
+#endif
+
 	modelffb_unlock();
 
 	return 0;
