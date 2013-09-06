@@ -2504,12 +2504,18 @@ static struct modelffb_platform_data am33xx_modelf_platform_data = {
 	.gpio_hdc = 0,
 #if defined(CONFIG_MODELF_PL_Z1_3) || defined(CONFIG_MODELF_PL_ROBIN)
 	.gpio_cs = GPIO_TO_PIN(0, 5),
+	.gpio_pwr_en = 0,
+	.gpio_reset = 0,
 	.hirq = OMAP_GPIO_IRQ(GPIO_TO_PIN(0, 20)),
 #elif defined(CONFIG_MODELF_PL_Z5)
 	.gpio_cs = GPIO_TO_PIN(3, 17),
+	.gpio_pwr_en = GPIO_TO_PIN(1, 1),
+	.gpio_reset = 0,
 	.hirq = OMAP_GPIO_IRQ(GPIO_TO_PIN(3, 21)),
 #elif defined(CONFIG_MODELF_PL_Z6_Z7)
 	.gpio_cs = GPIO_TO_PIN(0, 5),
+	.gpio_pwr_en = GPIO_TO_PIN(1, 15),
+	.gpio_reset = GPIO_TO_PIN(0, 26),
 	.hirq = OMAP_GPIO_IRQ(GPIO_TO_PIN(3, 21)),
 #endif
 #if defined(CONFIG_I2C_S1D135X1) || defined(CONFIG_I2C_S1D135X1_MODULE)
