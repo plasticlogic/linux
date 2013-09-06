@@ -3727,10 +3727,28 @@ static int __devinit modelffb_probe(struct platform_device *pdev)
 			 pdata->gpio_hrdy);
 	}
 
+	if (pdata->gpio_pwr_en) {
+		retval = modelffb_setup_gpio(pdata->gpio_pwr_en, "MODELF_PWR");
+		if (retval)
+			goto exit_free_gpio_hrdy;
+		gpio_direction_output(pdata->gpio_pwr_en, 1);
+		dev_info(parinfo->dev, "Using power enable on pin %d\n",
+			 pdata->gpio_pwr_en);
+	}
+
+	if (pdata->gpio_reset) {
+		retval = modelffb_setup_gpio(pdata->gpio_reset,"MODELF_RESET");
+		if (retval)
+			goto exit_free_gpio_pwr_en;
+		gpio_direction_output(pdata->gpio_reset, 1);
+		dev_info(parinfo->dev, "Using reset on pin %d\n",
+			 pdata->gpio_reset);
+	}
+
 	retval = spi_register_driver(&modelffb_spi_driver);
 	if (retval) {
 		dev_err(parinfo->dev, "Failed to register SPI driver\n");
-		goto exit_free_gpio_hrdy;
+		goto exit_free_gpio_reset;
 	}
 
 	retval = modelffb_request_bus();
@@ -3781,6 +3799,12 @@ static int __devinit modelffb_probe(struct platform_device *pdev)
 
 exit_unregister_spi_driver:
 	spi_unregister_driver(&modelffb_spi_driver);
+exit_free_gpio_reset:
+	if (pdata->gpio_reset)
+		gpio_free(pdata->gpio_reset);
+exit_free_gpio_pwr_en:
+	if (pdata->gpio_pwr_en)
+		gpio_free(pdata->gpio_pwr_en);
 exit_free_gpio_hrdy:
 	if (pdata->gpio_hrdy)
 		gpio_free(pdata->gpio_hrdy);
@@ -3846,6 +3870,12 @@ static int __devexit modelffb_remove(struct platform_device *pdev)
 	modelffb_regulator_exit();
 	modelffb_release_bus();
 	spi_unregister_driver(&modelffb_spi_driver);
+
+	if (parinfo->pdata->gpio_reset)
+		gpio_free(parinfo->pdata->gpio_reset);
+
+	if (parinfo->pdata->gpio_pwr_en)
+		gpio_free(parinfo->pdata->gpio_pwr_en);
 
 	if (parinfo->pdata->gpio_hrdy)
 		gpio_free(parinfo->pdata->gpio_hrdy);

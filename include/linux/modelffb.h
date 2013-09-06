@@ -31,6 +31,8 @@ struct modelffb_platform_data {
 	int gpio_hrdy; /* host ready, not compulsory with SPI */
 	int gpio_hdc; /* data / command switch, leave to 0 if not used */
 	int gpio_cs;  /* SPI chip select, used if gpio_hdc is left to 0 */
+	int gpio_pwr_en; /* power enable */
+	int gpio_reset; /* reset */
 	unsigned int hirq; /* GPIO-based host IRQ */
 #if defined(CONFIG_I2C_S1D135X1) || defined(CONFIG_I2C_S1D135X1_MODULE)
 	unsigned i2c_clk_divider;
