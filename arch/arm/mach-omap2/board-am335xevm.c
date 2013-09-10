@@ -2482,7 +2482,7 @@ static struct spi_board_info am335x_modelf_spi_info[] = {
 		.modalias      = "modelffb_spi",
 		.platform_data = NULL,
 		.irq           = -1,
-#if defined(CONFIG_MODELF_PL_Z6_Z7)
+#if defined(CONFIG_MODELF_PL_Z5)
 		.max_speed_hz  = 12000000,
 #else
 		.max_speed_hz  = 24000000, /* S1D13541 max is 32 MHz */
