@@ -58,6 +58,8 @@ enum modelffb_sync_status {
 
 struct modelffb_par {
 	struct fb_info *fbinfo;
+	unsigned left_border;
+	unsigned right_border;
 	uint32_t command_addr;
 	uint32_t data_addr;
 	uint32_t init_code;

@@ -1222,6 +1222,7 @@ static void __modelffb_send_image_16b(int x, int y, int width, int height)
 		__modelffb_pool_read_shaped_16bit_interleaved_image :
 		__modelffb_pool_read_shaped_16bit_image;
 	const int last_line = y + height;
+	const int ep_x = x + parinfo->left_border;
 	int line;
 
 	for (line = y; line < last_line;) {
@@ -1232,7 +1233,7 @@ static void __modelffb_send_image_16b(int x, int y, int width, int height)
 		copy_data(x, line, width, lines);
 		__modelffb_command_p5(
 			MODELF_COM_LOAD_IMAGE_AREA, MODELF_BPP_8,
-			(x & 0x1ff), (line & 0x3ff), (width & 0x1ff),
+			(ep_x & 0x1ff), (line & 0x3ff), (width & 0x1ff),
 			(lines & 0x3ff));
 		__modelffb_data_transfer( /* 16-bit access */
 			parinfo->image_pool, ((length + 1) / 2) * 2);
@@ -1734,6 +1735,8 @@ static void __modelffb_cleanup_area_lut(int x, int y, int width, int height,
 	if (parinfo->opt.interleaved_sources)
 		fixup_interleaved_area(x, y, width, height);
 
+	x += parinfo->left_border;
+
 	__modelffb_simple_command_p5(MODELF_COM_UPDATE_AREA,
 		MODELF_WAVEFORM_MODE(waveform_mode) | MODELF_UPDATE_LUT(lut),
 		x & 0x1ff, y & 0x3ff, width & 0x1ff, height & 0x3ff);
@@ -1790,6 +1793,8 @@ static void modelffb_cleanup_area(int x, int y, int width, int height,
 
 	if (parinfo->opt.interleaved_sources)
 		fixup_interleaved_area(x, y, width, height);
+
+	x += parinfo->left_border;
 
 	__modelffb_wait_for_reg_value(MODELF_REG_LUT_STATUS,
 				      MODELF_BF_LUT_IN_USE, 0,
@@ -1996,6 +2001,7 @@ static void modelffb_check_panel_resolution(void)
 		info->var.yres /= 2;
 	}
 
+	info->var.xres -= (parinfo->left_border + parinfo->right_border);
 	info->var.xres_virtual = info->var.xres;
 	info->var.yres_virtual = info->var.yres;
 
@@ -2182,6 +2188,8 @@ static int __devinit modelffb_framebuffer_alloc(struct platform_device *pdev)
 	info->fbops = &modelffb_ops;
 
 	parinfo->fbinfo = info;
+	parinfo->left_border = 0;
+	parinfo->right_border = 0;
 	parinfo->lut_queue_head = 0;
 	parinfo->lut_queue_count = 0;
 	memset(parinfo->lut_in_use, 0, MODELF_MAX_LUT_NUM);
@@ -3785,10 +3793,22 @@ static int __devinit modelffb_probe(struct platform_device *pdev)
 	init_waitqueue_head(&parinfo->sync_update_wait);
 	parinfo->sync_status = MODELFFB_SYNC_IDLE;
 
-	if (!strcmp(modelffb_panel_type_modparam, "Type19")) {
+	if (!strcmp(modelffb_panel_type_modparam, "Type16")) {
+		parinfo->left_border = 80;
+	} else if (!strcmp(modelffb_panel_type_modparam, "Type17")) {
+		parinfo->right_border = 7;
+	} else if (!strcmp(modelffb_panel_type_modparam, "Type19")) {
 		dev_info(parinfo->dev, "Interleaved sources enabled\n");
 		parinfo->opt.interleaved_sources = 1;
 	}
+
+	if (parinfo->left_border)
+		dev_info(parinfo->dev, "Left border: %d pixels\n",
+			 parinfo->left_border);
+
+	if (parinfo->right_border)
+		dev_info(parinfo->dev, "Right border: %d pixels\n",
+			 parinfo->right_border);
 
 #ifdef CONFIG_MODELF_DEFERRED_IO
 	dev_info(parinfo->dev, "Deferred I/O enabled\n");
