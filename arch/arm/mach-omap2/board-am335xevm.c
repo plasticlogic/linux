@@ -3203,6 +3203,7 @@ static int bone_io_config_from_cape_eeprom( void)
 	RULER( NR_ITEMS( cape_config.muxdata));
 	return 0;
 }
+
 static void beaglebone_cape_setup(struct memory_accessor *mem_acc, void *context)
 {
 	int ret;
@@ -3460,7 +3461,8 @@ out2:
 	}
 }
 
-#if !defined(MODELF_PL_HARDWARE) && !defined(MODELF_PL_HARDWARE_MODULE)
+#if !defined(CONFIG_MODELF_PL_HARDWARE) \
+	&& !defined(CONFIG_MODELF_PL_HARDWARE_MODULE)
 static struct at24_platform_data cape_eeprom_info = {
         .byte_len       = (256*1024) / 8,
         .page_size      = 64,
@@ -3468,13 +3470,18 @@ static struct at24_platform_data cape_eeprom_info = {
         .context        = (void *)NULL,
 	.setup		= beaglebone_cape_setup,
 };
+
+#else /* just to fix compiler warnings */
+void(*cape_eeprom_setup_stub)(struct memory_accessor *, void *) =
+	beaglebone_cape_setup;
 #endif
 
 static struct i2c_board_info __initdata cape_i2c_boardinfo[] = {
 	{
 		I2C_BOARD_INFO("tlv320aic3x", 0x1b),
 	},
-#if !defined(MODELF_PL_HARDWARE) && !defined(MODELF_PL_HARDWARE_MODULE)
+#if !defined(CONFIG_MODELF_PL_HARDWARE) && \
+	!defined(CONFIG_MODELF_PL_HARDWARE_MODULE)
         {
                 I2C_BOARD_INFO("24c256", 0x54),
                 .platform_data  = &cape_eeprom_info,
@@ -4278,6 +4285,8 @@ out:
 	machine_halt();
 }
 
+#if !defined(CONFIG_MODELF_PL_HARDWARE) \
+	&& !defined(CONFIG_MODELF_PL_HARDWARE_MODULE)
 static struct at24_platform_data am335x_daughter_board_eeprom_info = {
 	.byte_len       = (256*1024) / 8,
 	.page_size      = 64,
@@ -4285,6 +4294,10 @@ static struct at24_platform_data am335x_daughter_board_eeprom_info = {
 	.setup          = am335x_setup_daughter_board,
 	.context        = (void *)NULL,
 };
+#else
+void(*daughter_board_eeprom_setup_stub)(struct memory_accessor *, void *) =
+	am335x_setup_daughter_board;
+#endif
 
 static struct at24_platform_data am335x_baseboard_eeprom_info = {
 	.byte_len       = (256*1024) / 8,
@@ -4356,11 +4369,14 @@ static struct tps65910_board am335x_tps65910_info = {
 *	   eeprom probe is called last.
 */
 static struct i2c_board_info __initdata am335x_i2c_boardinfo[] = {
+#if !defined(CONFIG_MODELF_PL_HARDWARE) \
+	&& !defined(CONFIG_MODELF_PL_HARDWARE_MODULE)
 	{
 		/* Daughter Board EEPROM */
 		I2C_BOARD_INFO("24c256", DAUG_BOARD_I2C_ADDR),
 		.platform_data  = &am335x_daughter_board_eeprom_info,
 	},
+#endif
 	{
 		/* Baseboard board EEPROM */
 		I2C_BOARD_INFO("24c256", BASEBOARD_I2C_ADDR),
