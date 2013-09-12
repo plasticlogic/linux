@@ -183,15 +183,16 @@ static inline void my_spi_write(struct spi_device *spi, const void *buffer,
 {
 	int error;
 	struct spi_message m;
-	struct spi_transfer t[1];
+	struct spi_transfer t;
 
 	spi_message_init(&m);
-	memset(t, 0, sizeof(t));
+	memset(&t, 0, sizeof t);
 
-	t[0].tx_buf = buffer;
-	t[0].len = bytes;
-	t[0].bits_per_word = 16;
-	spi_message_add_tail(&t[0], &m);
+	t.tx_buf = buffer;
+	t.len = bytes;
+	t.bits_per_word = 16;
+	t.speed_hz = parinfo->opt.spi_freq_hz;
+	spi_message_add_tail(&t, &m);
 
 	error = spi_sync(spi, &m);
 	if (error < 0)
@@ -203,15 +204,16 @@ static inline void my_spi_read(struct spi_device *spi, void *buffer,
 {
 	int error;
 	struct spi_message m;
-	struct spi_transfer t[1];
+	struct spi_transfer t;
 
 	spi_message_init(&m);
-	memset(t, 0, sizeof(t));
+	memset(&t, 0, sizeof t);
 
-	t[0].rx_buf = buffer;
-	t[0].len = bytes;
-	t[0].bits_per_word = 16;
-	spi_message_add_tail(&t[0], &m);
+	t.rx_buf = buffer;
+	t.len = bytes;
+	t.bits_per_word = 16;
+	t.speed_hz = parinfo->opt.spi_freq_hz;
+	spi_message_add_tail(&t, &m);
 
 	error = spi_sync(spi, &m);
 	if (error < 0)
@@ -237,6 +239,7 @@ static inline void __modelffb_write_n16(struct spi_device *spi,
 		it->tx_buf = &data[i];
 		it->len = sizeof(uint16_t);
 		it->bits_per_word = 16;
+		it->speed_hz = parinfo->opt.spi_freq_hz;
 		spi_message_add_tail(it, &m);
 	}
 
@@ -259,11 +262,13 @@ static inline uint16_t __modelffb_read_reg(struct spi_device *spi,
 	t[0].tx_buf = &address;
 	t[0].len = sizeof(address);
 	t[0].bits_per_word = 16;
+	t[0].speed_hz = parinfo->opt.spi_freq_hz;
 	spi_message_add_tail(&t[0], &m);
 
 	t[1].rx_buf = &readval;
 	t[1].len = sizeof(readval);
 	t[1].bits_per_word = 16;
+	t[1].speed_hz = parinfo->opt.spi_freq_hz;
 	memcpy(&t[2], &t[1], sizeof(struct spi_transfer));
 	spi_message_add_tail(&t[1], &m);
 	spi_message_add_tail(&t[2], &m);
@@ -2198,6 +2203,7 @@ static int __devinit modelffb_framebuffer_alloc(struct platform_device *pdev)
 	parinfo->opt.clear_on_init = 1;
 	parinfo->opt.clear_on_exit = 0;
 	parinfo->opt.interleaved_sources = 0;
+	parinfo->opt.spi_freq_hz = 0;
 
 	return 0;
 
@@ -3184,6 +3190,8 @@ static int modelffb_setopt(struct fb_info *info, char *tokbuf, size_t len)
 		}
 
 		parinfo->opt.interleaved_sources = int_value ? 1 : 0;
+	} else if (!strcmp(opt, "spi_freq_hz")) {
+		parinfo->opt.spi_freq_hz = int_value;
 	} else {
 		dev_err(parinfo->dev, "Invalid setopt identifier\n");
 	}
