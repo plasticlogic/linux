@@ -266,6 +266,14 @@ void __iomem *epdc_base;
 
 struct mxc_epdc_fb_data *g_fb_data;
 
+#if (defined(CONFIG_FB_MXC_EPDC_PL_HARDWARE) \
+     || defined(CONFIG_FB_MXC_EPDC_PL_HARDWARE_MODULE))
+/* Temperature override settings */
+static bool g_temperature_override = false;
+static u32 g_temperature_override_index = DEFAULT_TEMP_INDEX;
+static u32 g_temperature = DEFAULT_TEMP;
+#endif
+
 /* forward declaration */
 static int mxc_epdc_fb_get_temp_index(struct mxc_epdc_fb_data *fb_data,
 						int temp);
@@ -546,6 +554,14 @@ static inline bool epdc_signal_eof(void)
 
 static inline void epdc_set_temp(u32 temp)
 {
+#if (defined(CONFIG_FB_MXC_EPDC_PL_HARDWARE) \
+     || defined(CONFIG_FB_MXC_EPDC_PL_HARDWARE_MODULE))
+	/* If the temperature override has been set, only use the override temperature */
+	if (g_temperature_override)
+	{
+		temp = g_temperature_override_index;
+	}
+#endif
 	__raw_writel(temp, EPDC_TEMP);
 }
 
@@ -1547,6 +1563,14 @@ int mxc_epdc_fb_set_temperature(int temperature, struct fb_info *info)
 	fb_data->temp_index = mxc_epdc_fb_get_temp_index(fb_data, temperature);
 	spin_unlock_irqrestore(&fb_data->queue_lock, flags);
 
+#if (defined(CONFIG_FB_MXC_EPDC_PL_HARDWARE) \
+     || defined(CONFIG_FB_MXC_EPDC_PL_HARDWARE_MODULE))
+	if (g_temperature_override)
+		g_temperature_override_index = fb_data->temp_index;
+
+	g_temperature = temperature;
+#endif
+
 	return 0;
 }
 EXPORT_SYMBOL(mxc_epdc_fb_set_temperature);
@@ -1595,6 +1619,26 @@ int mxc_epdc_fb_set_upd_scheme(u32 upd_scheme, struct fb_info *info)
 	return 0;
 }
 EXPORT_SYMBOL(mxc_epdc_fb_set_upd_scheme);
+
+
+#if (defined(CONFIG_FB_MXC_EPDC_PL_HARDWARE) \
+     || defined(CONFIG_FB_MXC_EPDC_PL_HARDWARE_MODULE))
+int mxc_epdc_fb_set_auto_temp_mode(u32 auto_mode, struct fb_info *info)
+{
+	g_temperature_override = auto_mode ? true : false;
+	return 0;
+}
+
+int mxc_epdc_fb_get_auto_temp_mode(void)
+{
+	return g_temperature_override;
+}
+
+int mxc_epdc_fb_get_temperature(void)
+{
+	return g_temperature;
+}
+#endif
 
 typedef void(reverse_t)(void *dst, const void *src, size_t n);
 
@@ -2794,6 +2838,35 @@ static int mxc_epdc_fb_ioctl(struct fb_info *info, unsigned int cmd,
 			ret = 0;
 			break;
 		}
+#if (defined(CONFIG_FB_MXC_EPDC_PL_HARDWARE) \
+     || defined(CONFIG_FB_MXC_EPDC_PL_HARDWARE_MODULE))
+	case MXCFB_SET_AUTO_TEMPERATURE_MODE:
+		{
+			u32 auto_mode = 0;
+			if (!get_user(auto_mode, (__u32 __user *) arg))
+				ret = mxc_epdc_fb_set_auto_temp_mode(auto_mode, info);
+			break;	
+		}
+
+	case MXCFB_GET_AUTO_TEMPERATURE_MODE:
+		{
+			int temp_mode = mxc_epdc_fb_get_auto_temp_mode();
+			if (put_user(temp_mode,
+				(int __user *)argp))
+				ret = -EFAULT;
+			ret = 0;
+			break;
+		}
+	case MXCFB_GET_TEMPERATURE:
+		{
+			int temperature = mxc_epdc_fb_get_temperature();
+			if (put_user(temperature,
+				(int __user *)argp))
+				ret = -EFAULT;
+			ret = 0;
+			break;
+		}
+#endif
 	default:
 		break;
 	}
