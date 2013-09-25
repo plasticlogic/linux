@@ -80,6 +80,9 @@
 #define MAX17135_TIMING_DOWN_VSNEG 0
 #define MAX17135_TIMING_DOWN_VGNEG 0
 
+/* TPS65185 HVPMIC */
+#define TPS65185_PWRDOWN_DELAY 4
+
 #if USE_CPLD
 /* CPLD definitions */
 
@@ -642,6 +645,11 @@ int pl_hardware_disable(struct pl_hardware *p)
 #endif
 	}
 
+	if (p->config->hvpmic_id == PLHW_HVPMIC_TPS65185)
+		/* The TPS65185 PMIC has a configurable delay before powering down.
+		 * Add a delay here to give the PMIC a chance to power down
+		 * before continuing */
+		mdelay(TPS65185_PWRDOWN_DELAY); 
 	p->hv_on = false;
 
 	return 0;
