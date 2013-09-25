@@ -2343,13 +2343,13 @@ static void modelffb_commit_sleep(void)
 		del_timer_sync(&parinfo->sleep_timer);
 		parinfo->power_mode = MODELF_POWER_SLEEP;
 
-		modelffb_sleep();
-
 #if (defined(CONFIG_MODELF_PL_HARDWARE) \
      || defined(CONFIG_MODELF_PL_HARDWARE_MODULE))
-	pl_hardware_disable(parinfo->pl_hardware);
-	wake_up_interruptible(&parinfo->sync_update_wait);
+		pl_hardware_disable(parinfo->pl_hardware);
+		wake_up_interruptible(&parinfo->sync_update_wait);
 #endif
+		modelffb_sleep();
+
 #ifdef CONFIG_MODELF_DEBUG
 		dev_info(parinfo->dev, "WORKQUEUE: go into standby mode\n");
 #endif
