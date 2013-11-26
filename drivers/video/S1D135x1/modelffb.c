@@ -1948,6 +1948,12 @@ static void modelffb_measure_temperature(void)
 	}
 
 	__modelffb_standby();
+#ifdef CONFIG_MODELF_PL_Z6_Z7
+	if (!parinfo->opt.temperature_auto)
+		__modelffb_reg_write(MODELF_REG_FAKE_TEMPERATURE,
+			0xC000 | parinfo->opt.temperature);
+	else
+#endif
 	__modelffb_simple_command(MODELF_COM_TEMPERATURE);
 	__modelffb_wait_for_HRDY_ready(MODELF_TIMEOUT_MS);
 
@@ -1961,6 +1967,11 @@ static void modelffb_measure_temperature(void)
 	}
 	__modelffb_wait_for_HRDY_ready(MODELF_TIMEOUT_MS);
 
+#ifdef CONFIG_MODELF_PL_Z6_Z7
+	if (!parinfo->opt.temperature_auto)
+		regval = __modelffb_reg_read(MODELF_REG_FAKE_TEMPERATURE);
+	else
+#endif
 	regval =  __modelffb_reg_read(MODELF_REG_SENSOR_TEMPERATURE);
 #ifdef CONFIG_MODELF_DEBUG
 	__modelffb_print_reg(MODELF_REG_SENSOR_TEMPERATURE);
@@ -2200,6 +2211,8 @@ static int __devinit modelffb_framebuffer_alloc(struct platform_device *pdev)
 	parinfo->opt.clear_on_exit = 0;
 	parinfo->opt.interleaved_sources = 0;
 	parinfo->opt.spi_freq_hz = 0;
+	parinfo->opt.temperature_auto = 1;
+	parinfo->opt.temperature = 20;
 
 	return 0;
 
@@ -3219,6 +3232,10 @@ static int modelffb_setopt(struct fb_info *info, char *tokbuf, size_t len)
 		}
 
 		modelffb_apply_display_type(value);
+	} else if (!strcmp(opt, "temperature_auto") && is_int_value) {
+		parinfo->opt.temperature_auto = int_value;
+	} else if (!strcmp(opt, "temperature") && is_int_value) {
+		parinfo->opt.temperature = int_value;
 	} else {
 		dev_err(parinfo->dev, "Invalid setopt identifier\n");
 		ret = -EINVAL;

@@ -109,6 +109,8 @@ struct modelffb_par {
 		u32 clear_on_exit:1;
 		u32 interleaved_sources:1;
 		unsigned spi_freq_hz;
+		unsigned temperature_auto;
+		int temperature;
 	} opt;
 };
 
