@@ -70,10 +70,6 @@ static const char *modelffb_sync_status_table[MODELFFB_SYNC_N] = {
 #include "vcom.h"
 #include "temperature-set.h"
 
-static char *modelffb_panel_type_modparam = "";
-module_param_named(panel_type, modelffb_panel_type_modparam, charp, S_IRUGO);
-MODULE_PARM_DESC(panel_type, "Panel type identifier");
-
 /* ToDo: define in board file */
 struct pl_hardware_config modelffb_pl_config = {
 #ifdef CONFIG_MODELF_PL_ROBIN
@@ -3153,11 +3149,34 @@ static int __modelffb_set_element(char *str)
 	return 0;
 }
 
+static void modelffb_apply_display_type(const char *disp_type)
+{
+	if (!strcmp(disp_type, "Type16")) {
+		parinfo->left_border = 80;
+	} else if (!strcmp(disp_type, "Type17")) {
+		parinfo->right_border = 7;
+	} else if (!strcmp(disp_type, "Type19")) {
+		dev_info(parinfo->dev, "Interleaved sources enabled\n");
+		parinfo->opt.interleaved_sources = 1;
+	}
+
+	if (parinfo->left_border)
+		dev_info(parinfo->dev, "Left border: %d pixels\n",
+			 parinfo->left_border);
+
+	if (parinfo->right_border)
+		dev_info(parinfo->dev, "Right border: %d pixels\n",
+			 parinfo->right_border);
+}
+
 static int modelffb_setopt(struct fb_info *info, char *tokbuf, size_t len)
 {
 	char *opt;
 	char *value;
 	long unsigned int_value;
+	bool is_int_value;
+	bool is_init;
+	int ret;
 
 	opt = strsep(&tokbuf, " \t\n");
 
@@ -3173,30 +3192,39 @@ static int modelffb_setopt(struct fb_info *info, char *tokbuf, size_t len)
 		return -EINVAL;
 	}
 
-	if (kstrtoul(value, 10, &int_value)) {
-		dev_err(parinfo->dev, "Invalid numerical value: %s\n", value);
-		return -EINVAL;
-	}
+	is_int_value = kstrtoul(value, 10, &int_value) ? false : true;
+	is_init = (parinfo->status & MODELF_STATUS_INIT_DONE) ? true : false;
 
-	if (!strcmp(opt, "clear_on_exit") && value) {
+	ret = 0;
+
+	if (!strcmp(opt, "clear_on_exit") && is_int_value) {
 		parinfo->opt.clear_on_exit = int_value ? 1 : 0;
-	} else if (!strcmp(opt, "clear_on_init") && value) {
+	} else if (!strcmp(opt, "clear_on_init") && is_int_value) {
 		parinfo->opt.clear_on_init = int_value ? 1 : 0;
-	} else if (!strcmp(opt, "interleaved_sources") && value) {
-		if (parinfo->status & MODELF_STATUS_INIT_DONE) {
+	} else if (!strcmp(opt, "interleaved_sources") && is_int_value) {
+		if (is_init) {
 			dev_err(parinfo->dev,
 				"Controller already initialised\n");
-			return -EINVAL;
+			ret = -EINVAL;
 		}
 
 		parinfo->opt.interleaved_sources = int_value ? 1 : 0;
-	} else if (!strcmp(opt, "spi_freq_hz")) {
+	} else if (!strcmp(opt, "spi_freq_hz") && is_int_value) {
 		parinfo->opt.spi_freq_hz = int_value;
+	} else if (!strcmp(opt, "display_type")) {
+		if (is_init) {
+			dev_err(parinfo->dev,
+				"Controller already initialised\n");
+			ret = -EINVAL;
+		}
+
+		modelffb_apply_display_type(value);
 	} else {
 		dev_err(parinfo->dev, "Invalid setopt identifier\n");
+		ret = -EINVAL;
 	}
 
-	return 0;
+	return ret;
 }
 
 static ssize_t modelffb_store_control(
@@ -3800,23 +3828,6 @@ static int __devinit modelffb_probe(struct platform_device *pdev)
 		__modelffb_temperature_timer_handler;
 	init_waitqueue_head(&parinfo->sync_update_wait);
 	parinfo->sync_status = MODELFFB_SYNC_IDLE;
-
-	if (!strcmp(modelffb_panel_type_modparam, "Type16")) {
-		parinfo->left_border = 80;
-	} else if (!strcmp(modelffb_panel_type_modparam, "Type17")) {
-		parinfo->right_border = 7;
-	} else if (!strcmp(modelffb_panel_type_modparam, "Type19")) {
-		dev_info(parinfo->dev, "Interleaved sources enabled\n");
-		parinfo->opt.interleaved_sources = 1;
-	}
-
-	if (parinfo->left_border)
-		dev_info(parinfo->dev, "Left border: %d pixels\n",
-			 parinfo->left_border);
-
-	if (parinfo->right_border)
-		dev_info(parinfo->dev, "Right border: %d pixels\n",
-			 parinfo->right_border);
 
 #ifdef CONFIG_MODELF_DEFERRED_IO
 	dev_info(parinfo->dev, "Deferred I/O enabled\n");
