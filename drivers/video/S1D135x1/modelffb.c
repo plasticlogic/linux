@@ -3219,9 +3219,9 @@ static int modelffb_setopt(struct fb_info *info, char *tokbuf, size_t len)
 			dev_err(parinfo->dev,
 				"Controller already initialised\n");
 			ret = -EINVAL;
+		} else {
+			parinfo->opt.interleaved_sources = int_value ? 1 : 0;
 		}
-
-		parinfo->opt.interleaved_sources = int_value ? 1 : 0;
 	} else if (!strcmp(opt, "spi_freq_hz") && is_int_value) {
 		parinfo->opt.spi_freq_hz = int_value;
 	} else if (!strcmp(opt, "display_type")) {
@@ -3229,9 +3229,9 @@ static int modelffb_setopt(struct fb_info *info, char *tokbuf, size_t len)
 			dev_err(parinfo->dev,
 				"Controller already initialised\n");
 			ret = -EINVAL;
+		} else {
+			modelffb_apply_display_type(value);
 		}
-
-		modelffb_apply_display_type(value);
 	} else if (!strcmp(opt, "temperature_auto") && is_int_value) {
 		parinfo->opt.temperature_auto = int_value;
 	} else if (!strcmp(opt, "temperature") && is_int_value) {
