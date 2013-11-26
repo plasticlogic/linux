@@ -3234,8 +3234,10 @@ static int modelffb_setopt(struct fb_info *info, char *tokbuf, size_t len)
 		}
 	} else if (!strcmp(opt, "temperature_auto") && is_int_value) {
 		parinfo->opt.temperature_auto = int_value;
+		modelffb_measure_temperature();
 	} else if (!strcmp(opt, "temperature") && is_int_value) {
 		parinfo->opt.temperature = int_value;
+		modelffb_measure_temperature();
 	} else {
 		dev_err(parinfo->dev, "Invalid setopt identifier\n");
 		ret = -EINVAL;
