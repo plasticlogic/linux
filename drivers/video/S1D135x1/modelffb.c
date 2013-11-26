@@ -3502,6 +3502,19 @@ exit_unlock:
 
 	return stat;
 }
+
+static ssize_t modelffb_show_temperature(
+	struct device *dev, struct device_attribute *attr, char *buf)
+{
+	return scnprintf(buf, PAGE_SIZE, "%d\n", parinfo->opt.temperature);
+}
+
+static ssize_t modelffb_show_temperature_auto(
+	struct device *dev, struct device_attribute *attr, char *buf)
+{
+	return scnprintf(buf, PAGE_SIZE, "%d\n",
+			 parinfo->opt.temperature_auto);
+}
 #endif
 
 static DEVICE_ATTR(init_code, S_IFREG | S_IWUSR | S_IRUSR,
@@ -3517,6 +3530,10 @@ static DEVICE_ATTR(on_drawing, S_IFREG | S_IRUSR | S_IRGRP | S_IROTH,
 #if (defined(CONFIG_MODELF_PL_HARDWARE) \
      || defined(CONFIG_MODELF_PL_HARDWARE_MODULE))
 static DEVICE_ATTR(vcom, S_IRUGO | S_IWUGO, vcom_show, vcom_store);
+static DEVICE_ATTR(temperature, S_IRUGO | S_IWUGO, modelffb_show_temperature,
+	NULL);
+static DEVICE_ATTR(temperature_auto, S_IRUGO | S_IWUGO,
+	modelffb_show_temperature_auto, NULL);
 #endif
 
 static int modelffb_create_file(void)
@@ -3560,12 +3577,28 @@ static int modelffb_create_file(void)
 		dev_err(parinfo->dev, "Cannot create file \"vcom\"\n");
 		goto remove_on_drawing;
 	}
+
+	retval = device_create_file(parinfo->dev, &dev_attr_temperature);
+	if (retval) {
+		dev_err(parinfo->dev, "Cannot create file \"temperature\"\n");
+		goto remove_vcom;
+	}
+
+	retval = device_create_file(parinfo->dev, &dev_attr_temperature_auto);
+	if (retval) {
+		dev_err(parinfo->dev, "Cannot create file \"temperature_auto\"\n");
+		goto remove_temperature;
+	}
 #endif
 
 	return 0;
 
 #if (defined(CONFIG_MODELF_PL_HARDWARE) \
      || defined(CONFIG_MODELF_PL_HARDWARE_MODULE))
+remove_temperature:
+	device_remove_file(parinfo->dev, &dev_attr_temperature);
+remove_vcom:
+	device_remove_file(parinfo->dev, &dev_attr_vcom);
 remove_on_drawing:
 	device_remove_file(parinfo->dev, &dev_attr_on_drawing);
 #endif
@@ -3591,6 +3624,8 @@ static void modelffb_remove_file(void)
 #if (defined(CONFIG_MODELF_PL_HARDWARE) \
      || defined(CONFIG_MODELF_PL_HARDWARE_MODULE))
 	device_remove_file(parinfo->dev, &dev_attr_vcom);
+	device_remove_file(parinfo->dev, &dev_attr_temperature);
+	device_remove_file(parinfo->dev, &dev_attr_temperature_auto);
 #endif
 }
 
