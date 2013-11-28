@@ -1948,13 +1948,11 @@ static void modelffb_measure_temperature(void)
 	}
 
 	__modelffb_standby();
-#ifdef CONFIG_MODELF_PL_Z6_Z7
 	if (!parinfo->opt.temperature_auto)
 		__modelffb_reg_write(MODELF_REG_FAKE_TEMPERATURE,
-			0xC000 | parinfo->opt.temperature);
+				     0xC000 | parinfo->opt.temperature);
 	else
-#endif
-	__modelffb_simple_command(MODELF_COM_TEMPERATURE);
+		__modelffb_simple_command(MODELF_COM_TEMPERATURE);
 	__modelffb_wait_for_HRDY_ready(MODELF_TIMEOUT_MS);
 
 	if ((__modelffb_reg_read(MODELF_REG_DSPE_INT_STATUS)
@@ -1967,12 +1965,10 @@ static void modelffb_measure_temperature(void)
 	}
 	__modelffb_wait_for_HRDY_ready(MODELF_TIMEOUT_MS);
 
-#ifdef CONFIG_MODELF_PL_Z6_Z7
 	if (!parinfo->opt.temperature_auto)
 		regval = __modelffb_reg_read(MODELF_REG_FAKE_TEMPERATURE);
 	else
-#endif
-	regval =  __modelffb_reg_read(MODELF_REG_SENSOR_TEMPERATURE);
+		regval =  __modelffb_reg_read(MODELF_REG_SENSOR_TEMPERATURE);
 #ifdef CONFIG_MODELF_DEBUG
 	__modelffb_print_reg(MODELF_REG_SENSOR_TEMPERATURE);
 #endif
