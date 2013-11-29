@@ -83,6 +83,9 @@
 #include "devices.h"
 #include "hsmmc.h"
 
+/* Set to 1 to disable the keypad on Hummingbird Z5.1 due to hardware issues */
+#define PLHW_USE_Z5_KEYPAD 0
+
 /* Convert GPIO signal to GPIO pin number */
 #define GPIO_TO_PIN(bank, gpio) (32 * (bank) + (gpio))
 
@@ -1397,7 +1400,7 @@ static struct platform_device lcd3a1_keys = {
 
 /* Configure GPIOs for PLDEK keys */
 
-#if defined(CONFIG_MODELF_PL_Z5)
+#if defined(CONFIG_MODELF_PL_Z5) && PLHW_USE_Z5_KEYPAD
 static struct pinmux_config pldek_keys_pin_mux[] = {
 	{"gpmc_ad11.gpio0_27",  OMAP_MUX_MODE7 | AM33XX_PIN_INPUT}, /* Left */
 	{"gpmc_ad15.gpio1_15",  OMAP_MUX_MODE7 | AM33XX_PIN_INPUT}, /* Right */
@@ -1494,7 +1497,9 @@ static struct gpio_keys_button pldek_gpio_keys[] = {
 };
 #endif
 
-#if defined(CONFIG_MODELF_PL_Z5) || defined(CONFIG_MODELF_PL_Z6_Z7)
+#if (defined(CONFIG_MODELF_PL_Z5) && PLHW_USE_Z5_KEYPAD) || \
+	defined(CONFIG_MODELF_PL_Z6_Z7)
+/*#if defined(CONFIG_MODELF_PL_Z5) || defined(CONFIG_MODELF_PL_Z6_Z7)*/
 static struct gpio_keys_platform_data pldek_gpio_key_info = {
 	.buttons        = pldek_gpio_keys,
 	.nbuttons       = ARRAY_SIZE(pldek_gpio_keys),
@@ -4018,7 +4023,9 @@ static struct evm_dev_cfg beaglebone_old_dev_cfg[] = {
 	{mmc0_init,	DEV_ON_BASEBOARD, PROFILE_NONE},
 	{boneleds_init,	DEV_ON_BASEBOARD, PROFILE_ALL},
 	{pldek_gpio_init, DEV_ON_BASEBOARD, PROFILE_ALL},
-#if defined(CONFIG_MODELF_PL_Z5) || defined(CONFIG_MODELF_PL_Z6_Z7)
+#if (defined(CONFIG_MODELF_PL_Z5) && PLHW_USE_Z5_KEYPAD) || \
+	defined(CONFIG_MODELF_PL_Z6_Z7)
+/*#if defined(CONFIG_MODELF_PL_Z5) || defined(CONFIG_MODELF_PL_Z6_Z7)*/
 	{pldek_keys_init, DEV_ON_BASEBOARD, PROFILE_ALL},
 #endif
 #ifdef CONFIG_SPI_SPIDEV_HOTPLUG
@@ -4042,7 +4049,9 @@ static struct evm_dev_cfg beaglebone_dev_cfg[] = {
 	{usb1_init,	DEV_ON_BASEBOARD, PROFILE_NONE},
 	{mmc0_init,	DEV_ON_BASEBOARD, PROFILE_NONE},
 	{pldek_gpio_init, DEV_ON_BASEBOARD, PROFILE_ALL},
-#if defined(CONFIG_MODELF_PL_Z5) || defined(CONFIG_MODELF_PL_Z6_Z7)
+#if (defined(CONFIG_MODELF_PL_Z5) && PLHW_USE_Z5_KEYPAD) || \
+	defined(CONFIG_MODELF_PL_Z6_Z7)
+/*#if defined(CONFIG_MODELF_PL_Z5) || defined(CONFIG_MODELF_PL_Z6_Z7)*/
 	{pldek_keys_init, DEV_ON_BASEBOARD, PROFILE_ALL},
 #endif
 #ifdef CONFIG_SPI_SPIDEV_HOTPLUG
