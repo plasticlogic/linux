@@ -3165,7 +3165,6 @@ static void modelffb_apply_display_type(const char *disp_type)
 	} else if (!strcmp(disp_type, "Type17")) {
 		parinfo->right_border = 7;
 	} else if (!strcmp(disp_type, "Type19")) {
-		dev_info(parinfo->dev, "Interleaved sources enabled\n");
 		parinfo->opt.interleaved_sources = 1;
 	}
 
@@ -3176,6 +3175,9 @@ static void modelffb_apply_display_type(const char *disp_type)
 	if (parinfo->right_border)
 		dev_info(parinfo->dev, "Right border: %d pixels\n",
 			 parinfo->right_border);
+
+	if (parinfo->opt.interleaved_sources)
+		dev_info(parinfo->dev, "Interleaved sources enabled\n");
 }
 
 static int modelffb_setopt(struct fb_info *info, char *tokbuf, size_t len)
