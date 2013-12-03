@@ -342,16 +342,46 @@ static int pl_hardware_do_set_temperature(struct pl_hardware *plhw,
 					 int temperature);
 
 /* GPIO control */
-static int pl_hardware_gpio_init(struct pl_hardware *p);
-static void pl_hardware_gpio_free(struct pl_hardware *p);
+static int pl_hardware_gpio_init(void);
+static void pl_hardware_gpio_free(void);
 #ifndef CONFIG_MODELF_PL_ROBIN
 static int pl_hardware_gpio_wait_pok(struct pl_hardware *p);
 static int pl_hardware_gpio_switch(struct pl_hardware *p, int gpio, bool on);
 #endif
 
+/* Static initialisation */
+static bool plhw_static_init_done = false;
+
+
 /* ----------------------------------------------------------------------------
  * public interface
  */
+
+int pl_hardware_static_init(void)
+{
+	int ret;
+
+	if (plhw_static_init_done)
+		return 0;
+
+	ret = pl_hardware_gpio_init();
+
+	if (!ret)
+		plhw_static_init_done = true;
+
+	return ret;
+}
+EXPORT_SYMBOL(pl_hardware_static_init);
+
+void pl_hardware_static_free(void)
+{
+	if (!plhw_static_init_done)
+		return;
+
+	pl_hardware_gpio_free();
+	plhw_static_init_done = false;
+}
+EXPORT_SYMBOL(pl_hardware_static_free);
 
 struct pl_hardware *pl_hardware_alloc(void)
 {
@@ -375,6 +405,8 @@ int pl_hardware_init(struct pl_hardware *p,
 	};
 	int stat;
 
+	BUG_ON(!plhw_static_init_done);
+
 	if (p->init_done)
 		return -EINVAL;
 
@@ -387,12 +419,6 @@ int pl_hardware_init(struct pl_hardware *p,
 		       p->config->i2c_bus_number);
 		stat = -ENXIO;
 		goto err_exit;
-	}
-
-	stat = pl_hardware_gpio_init(p);
-	if (stat) {
-		printk("PLHW: Failed to initialise GPIOs\n");
-		goto err_free_i2c;
 	}
 
 	stat = hvpmic_init[config->hvpmic_id](p);
@@ -434,8 +460,6 @@ int pl_hardware_init(struct pl_hardware *p,
 	return 0;
 
 err_free_all:
-	pl_hardware_gpio_free(p);
-err_free_i2c:
 	i2c_put_adapter(p->i2c);
 err_exit:
 
@@ -449,7 +473,6 @@ void pl_hardware_free(struct pl_hardware *p)
 
 	if (p->init_done) {
 		i2c_put_adapter(p->i2c);
-		pl_hardware_gpio_free(p);
 #ifdef CONFIG_MODELF_PL_Z6_Z7 /* it takes time to turn the power off */
 		mdelay(150);
 #endif
@@ -1157,7 +1180,7 @@ static int pl_hardware_do_set_temperature(struct pl_hardware *plhw,
 }
 
 #ifdef CONFIG_MODELF_PL_ROBIN
-static int pl_hardware_gpio_init(struct pl_hardware *p)
+static int pl_hardware_gpio_init(void)
 {
 	return 0;
 }
@@ -1176,7 +1199,7 @@ static const struct gpio pl_hardware_gpio_init_data[] = {
 #endif
 };
 
-static int pl_hardware_gpio_init(struct pl_hardware *p)
+static int pl_hardware_gpio_init(void)
 {
 	int stat;
 	int i;
@@ -1210,7 +1233,7 @@ error_ret:
 }
 #endif
 
-static void pl_hardware_gpio_free(struct pl_hardware *p)
+static void pl_hardware_gpio_free(void)
 {
 #ifndef CONFIG_MODELF_PL_ROBIN
 	int i;

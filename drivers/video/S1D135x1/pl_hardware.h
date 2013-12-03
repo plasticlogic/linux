@@ -27,6 +27,9 @@ struct pl_hardware_config {
 	enum pl_hardware_hvpmic_id hvpmic_id;
 };
 
+extern int pl_hardware_static_init(void);
+extern void pl_hardware_static_free(void);
+
 extern struct pl_hardware *pl_hardware_alloc(void);
 extern int pl_hardware_init(struct pl_hardware *plhw,
 			    const struct pl_hardware_config *config);
