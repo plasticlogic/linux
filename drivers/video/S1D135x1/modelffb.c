@@ -2870,6 +2870,7 @@ static void modelffb_regulator_exit(void)
      || defined(CONFIG_MODELF_PL_HARDWARE_MODULE))
 	if (parinfo->pl_hardware)
 		pl_hardware_free(parinfo->pl_hardware);
+	pl_hardware_static_free();
 #endif
 }
 
@@ -3770,6 +3771,15 @@ static int __devinit modelffb_probe(struct platform_device *pdev)
 	const struct modelffb_platform_data *pdata = pdev->dev.platform_data;
 	int retval = 0;
 
+#if (defined(CONFIG_MODELF_PL_HARDWARE) \
+     || defined(CONFIG_MODELF_PL_HARDWARE_MODULE))
+	retval = pl_hardware_static_init();
+	if (retval) {
+		dev_err(parinfo->dev, "PLHW static init failed\n");
+		goto exit_now;
+	}
+#endif
+
 #ifdef CONFIG_MODELF_DEBUG
 	dev_info(parinfo->dev, "Check rev: %d\n", CHECKREV);
 #endif
@@ -3777,7 +3787,12 @@ static int __devinit modelffb_probe(struct platform_device *pdev)
 	retval = modelffb_framebuffer_alloc(pdev);
 	if (retval) {
 		dev_err(parinfo->dev, "Failed to alloc frame buffer\n");
+#if (defined(CONFIG_MODELF_PL_HARDWARE) \
+     || defined(CONFIG_MODELF_PL_HARDWARE_MODULE))
+		goto exit_plhw_static;
+#else
 		goto exit_now;
+#endif
 	}
 
 	retval = modelffb_alloc_memory();
@@ -3912,6 +3927,11 @@ exit_free_memory:
 	modelffb_free_memory();
 exit_release_framebuffer:
 	modelffb_framebuffer_release();
+#if (defined(CONFIG_MODELF_PL_HARDWARE) \
+     || defined(CONFIG_MODELF_PL_HARDWARE_MODULE))
+exit_plhw_static:
+	pl_hardware_static_free();
+#endif
 exit_now:
 
 	return retval;
