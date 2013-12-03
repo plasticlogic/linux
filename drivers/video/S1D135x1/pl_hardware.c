@@ -32,17 +32,9 @@
 #include "temperature-set.h"
 #include "vcom.h"
 
-/* Set to 1 to enable the CPLD code */
-#define USE_CPLD 0
-
 /* I2C addresses */
-#define CPLD_I2C_ADDRESS 0x70
 #define MAX17135_I2C_ADDRESS 0x48 /* Maxim MAX17135 HVPMIC */
 #define TPS65185_I2C_ADDRESS 0x68 /* TI TPS65185 HVPMIC */
-
-/* CPLD parameters */
-#define CPLD_MIN_VERSION 0x01
-#define CPLD_NB_BYTES 3
 
 /* DAC */
 #define DAC5820_CMD_LOAD_IN_DAC_A__UP_DAC_B__OUT_AB 0x0
@@ -82,46 +74,6 @@
 
 /* TPS65185 HVPMIC */
 #define TPS65185_PWRDOWN_DELAY 4
-
-#if USE_CPLD
-/* CPLD definitions */
-
-enum pl_hardware_cpld_switch {
-	CPLD_HVEN,
-	CPLD_COM_SW_EN,
-	CPLD_COM_SW_CLOSE,
-	CPLD_COM_PSU,
-	CPLD_BPCOM_CLAMP,
-};
-
-struct cpld_byte_0 {
-	__u8 cpld_hven:1;
-	__u8 bpcom_clamp:1;
-	__u8 version:6;
-};
-
-struct cpld_byte_1 {
-	__u8 vcom_sw_close:1;
-	__u8 vcom_sw_en:1;
-	__u8 vcom_psu_en:1;
-	__u8 vgpos_clamp:1;
-	__u8 build_version:4;
-};
-
-struct cpld_byte_2 {
-	__u8 board_id:4;
-	__u8 reserved:4;
-};
-
-union pl_hardware_cpld {
-	struct {
-		struct cpld_byte_0 b0;
-		struct cpld_byte_1 b1;
-		struct cpld_byte_2 b2;
-	};
-	u8 data[CPLD_NB_BYTES];
-};
-#endif /* USE_CPLD */
 
 /* MAX17135 definitions */
 
@@ -331,9 +283,6 @@ struct pl_hardware {
 	bool init_done;
 	const struct pl_hardware_config *config;
 	struct i2c_adapter *i2c;
-#if USE_CPLD
-	union pl_hardware_cpld cpld;
-#endif
 	struct pl_hardware_max17135 max17135;
 	struct pl_hardware_tps65185 tps65185;
 	struct pl_hardware_dac dac;
@@ -341,24 +290,11 @@ struct pl_hardware {
 	struct pl_hardware_vcom vcom;
 	int last_temperature;
 	bool hv_on;
-	bool is_module_a;
 };
-
-#if USE_CPLD
-/* CPLD */
-static int pl_hardware_cpld_init(struct pl_hardware *p);
-static int pl_hardware_cpld_switch(struct pl_hardware *p,
-				   enum pl_hardware_cpld_switch sw, bool on);
-static int pl_hardware_cpld_read_data(struct pl_hardware *p);
-static int pl_hardware_cpld_write_data(struct pl_hardware *p);
-#endif
 
 /* MAX17135 HVPMIC */
 static int pl_hardware_max17135_init(struct pl_hardware *p);
 static int pl_hardware_max17135_load_timings(struct pl_hardware *p);
-#if USE_CPLD
-static int pl_hardware_max17135_wait_pok(struct pl_hardware *p);
-#endif
 
 /* TPS65185 HVPMIC */
 static int pl_hardware_tps65185_init(struct pl_hardware *p);
@@ -431,7 +367,7 @@ struct pl_hardware *pl_hardware_alloc(void)
 EXPORT_SYMBOL(pl_hardware_alloc);
 
 int pl_hardware_init(struct pl_hardware *p,
-			      const struct pl_hardware_config *config)
+		     const struct pl_hardware_config *config)
 {
 	static int (*hvpmic_init[])(struct pl_hardware *) = {
 		[PLHW_HVPMIC_MAX17135] = &pl_hardware_max17135_init,
@@ -453,20 +389,10 @@ int pl_hardware_init(struct pl_hardware *p,
 		goto err_exit;
 	}
 
-	p->is_module_a = false;
-
-#if USE_CPLD
-	stat = pl_hardware_cpld_init(p);
-#else /* ToDo: also handle CPLD free when other init steps fail... */
-	stat = -1;
-#endif
+	stat = pl_hardware_gpio_init(p);
 	if (stat) {
-		printk("PLHW: No CPLD found, assume Module A\n");
-		stat = pl_hardware_gpio_init(p);
-		if (stat) {
-			printk("PLHW: Failed to initialise Module A\n");
-			goto err_free_i2c;
-		}
+		printk("PLHW: Failed to initialise GPIOs\n");
+		goto err_free_i2c;
 	}
 
 	stat = hvpmic_init[config->hvpmic_id](p);
@@ -570,39 +496,17 @@ int pl_hardware_enable(struct pl_hardware *p)
 	if (p->hv_on)
 		return 0;
 
-	if (p->is_module_a == false) {
-#if USE_CPLD
-		STEP(pl_hardware_cpld_switch(p, CPLD_BPCOM_CLAMP, true),
-		     "Clamp BPCOM to 0V");
-		STEP(pl_hardware_cpld_switch(p, CPLD_HVEN, true), "HV ON");
-		STEP(pl_hardware_max17135_wait_pok(p), "wait for POK");
-		STEP(pl_hardware_cpld_switch(p, CPLD_COM_SW_CLOSE, false),
-		     "COM open");
-		STEP(pl_hardware_cpld_switch(p, CPLD_COM_SW_EN, true),
-		     "COM enable");
-		STEP(pl_hardware_cpld_switch(p, CPLD_COM_PSU, true),
-		     "COM PSU on");
+#ifndef CONFIG_MODELF_PL_ROBIN
+	STEP(pl_hardware_gpio_switch(p, GPIO_VCOM_SW_CLOSE, false),"COM open");
+	STEP(pl_hardware_gpio_switch(p, GPIO_PMIC_EN, true), "HV ON");
+	STEP(pl_hardware_gpio_wait_pok(p), "wait for POK");
+#endif
+	if (p->config->hvpmic_id == PLHW_HVPMIC_MAX17135)
 		STEP(pl_hardware_dac_set_power(p, true), "DAC power on");
-		STEP(pl_hardware_vcomcal_set_vcom(p), "VCOM calibration");
-		STEP(pl_hardware_cpld_switch(p, CPLD_COM_SW_CLOSE, true),
-		     "COM close");
-#endif
-	} else {
+	STEP(pl_hardware_vcomcal_set_vcom(p), "VCOM calibration");
 #ifndef CONFIG_MODELF_PL_ROBIN
-		STEP(pl_hardware_gpio_switch(p, GPIO_VCOM_SW_CLOSE, false),
-		     "COM open");
-		STEP(pl_hardware_gpio_switch(p, GPIO_PMIC_EN, true), "HV ON");
-		STEP(pl_hardware_gpio_wait_pok(p), "wait for POK");
+	STEP(pl_hardware_gpio_switch(p, GPIO_VCOM_SW_CLOSE, true),"COM close");
 #endif
-		if (p->config->hvpmic_id == PLHW_HVPMIC_MAX17135)
-			STEP(pl_hardware_dac_set_power(p, true),
-			     "DAC power on");
-		STEP(pl_hardware_vcomcal_set_vcom(p), "VCOM calibration");
-#ifndef CONFIG_MODELF_PL_ROBIN
-		STEP(pl_hardware_gpio_switch(p, GPIO_VCOM_SW_CLOSE, true),
-		     "COM close");
-#endif
-	}
 
 	p->hv_on = true;
 
@@ -620,36 +524,22 @@ int pl_hardware_disable(struct pl_hardware *p)
 	if (!p->hv_on)
 		return 0;
 
-	if (p->is_module_a == false) {
-#if USE_CPLD
-		STEP(pl_hardware_cpld_switch(p, CPLD_COM_SW_CLOSE, false),
-		     "COM open");
-		STEP(pl_hardware_cpld_switch(p, CPLD_COM_SW_EN, false),
-		     "COM disable");
+#ifndef CONFIG_MODELF_PL_ROBIN
+	STEP(pl_hardware_gpio_switch(p, GPIO_VCOM_SW_CLOSE, false),"COM open");
+#endif
+	if (p->config->hvpmic_id == PLHW_HVPMIC_MAX17135)
 		STEP(pl_hardware_dac_set_power(p, false), "DAC power off");
-		STEP(pl_hardware_gpio_switch(p, CPLD_COM_PSU, false),
-		     "COM PSU off");
-		STEP(pl_hardware_cpld_switch(p, CPLD_HVEN, false), "HV OFF");
-#endif
-	} else {
 #ifndef CONFIG_MODELF_PL_ROBIN
-		STEP(pl_hardware_gpio_switch(p, GPIO_VCOM_SW_CLOSE, false),
-		     "COM open");
+	STEP(pl_hardware_gpio_switch(p, GPIO_PMIC_EN, false), "HV OFF");
 #endif
-		if (p->config->hvpmic_id == PLHW_HVPMIC_MAX17135)
-			STEP(pl_hardware_dac_set_power(p, false),
-			     "DAC power off");
-#ifndef CONFIG_MODELF_PL_ROBIN
-		STEP(pl_hardware_gpio_switch(p, GPIO_PMIC_EN, false),
-		     "HV OFF");
-#endif
+
+	if (p->config->hvpmic_id == PLHW_HVPMIC_TPS65185) {
+		/* The TPS65185 PMIC has a configurable delay before powering
+		 * down.  Add a delay here to give the PMIC a chance to power
+		 * down before continuing */
+		mdelay(TPS65185_PWRDOWN_DELAY);
 	}
 
-	if (p->config->hvpmic_id == PLHW_HVPMIC_TPS65185)
-		/* The TPS65185 PMIC has a configurable delay before powering down.
-		 * Add a delay here to give the PMIC a chance to power down
-		 * before continuing */
-		mdelay(TPS65185_PWRDOWN_DELAY); 
 	p->hv_on = false;
 
 	return 0;
@@ -667,72 +557,6 @@ EXPORT_SYMBOL(pl_hardware_is_enabled);
 /* ----------------------------------------------------------------------------
  * static functions
  */
-
-/* CPLD */
-
-#if USE_CPLD
-static int pl_hardware_cpld_init(struct pl_hardware *p)
-{
-	int stat;
-
-	stat = pl_hardware_cpld_read_data(p);
-	if (stat)
-		return stat;
-
-	printk("PLHW CPLD version: %d, build: %d, board id: 0x%02X\n",
-	       p->cpld.b0.version, p->cpld.b1.build_version,
-	       p->cpld.b2.board_id);
-
-	if (p->cpld.b0.version < CPLD_MIN_VERSION) {
-		printk("PLHW unsupported CPLD version (min: 0x%02X)\n",
-		       CPLD_MIN_VERSION);
-		return -ENODEV;
-	}
-
-	return 0;
-}
-
-static int pl_hardware_cpld_switch(struct pl_hardware *p,
-				   enum pl_hardware_cpld_switch sw, bool on)
-{
-	switch (sw) {
-	case CPLD_HVEN:         p->cpld.b0.cpld_hven     = on ? 1 : 0;  break;
-	case CPLD_COM_SW_EN:    p->cpld.b1.vcom_sw_en    = on ? 1 : 0;  break;
-	case CPLD_COM_SW_CLOSE: p->cpld.b1.vcom_sw_close = on ? 1 : 0;  break;
-	case CPLD_COM_PSU:      p->cpld.b1.vcom_psu_en   = on ? 1 : 0;  break;
-	case CPLD_BPCOM_CLAMP:  p->cpld.b0.bpcom_clamp   = on ? 1 : 0;  break;
-	default:
-		printk("PLHW: invalid switch identifier\n");
-		return -EINVAL;
-	}
-
-	return pl_hardware_cpld_write_data(p);
-}
-
-static int pl_hardware_cpld_read_data(struct pl_hardware *p)
-{
-	int stat;
-
-	stat = pl_hardware_i2c_rdwr(p->i2c, CPLD_I2C_ADDRESS, I2C_M_RD,
-				 p->cpld.data, CPLD_NB_BYTES);
-	if (stat)
-		printk("PLHW: Failed to read CPLD data\n");
-
-	return stat;
-}
-
-static int pl_hardware_cpld_write_data(struct pl_hardware *p)
-{
-	int stat;
-
-	stat = pl_hardware_i2c_rdwr(p->i2c, CPLD_I2C_ADDRESS, 0,
-				 p->cpld.data, CPLD_NB_BYTES);
-	if (stat)
-		printk("PLHW: Failed to write CPLD data\n");
-
-	return 0;
-}
-#endif /* USE_CPLD */
 
 /* MAX17135 HVPMIC */
 
@@ -792,46 +616,6 @@ static int pl_hardware_max17135_load_timings(struct pl_hardware *p)
 
 	return 0;
 }
-
-#if USE_CPLD
-static int pl_hardware_max17135_wait_pok(struct pl_hardware *p)
-{
-	static const unsigned POLL_DELAY_MS = 5;
-	unsigned timeout = 100;
-	int pok = 0;
-	int stat = 0;
-
-	while (!pok) {
-		union max17135_fault fault;
-
-		mdelay(POLL_DELAY_MS);
-
-		stat = pl_hardware_read_i2c_reg(
-			p->i2c, MAX17135_I2C_ADDRESS,
-			MAX17135_REG_FAULT, &fault.byte, 1);
-		if (stat) {
-			printk("PLHW: failed to read MAX17135 POK\n");
-			break;
-		}
-
-		pok = fault.pok;
-
-		if (timeout > POLL_DELAY_MS) {
-			timeout -= POLL_DELAY_MS;
-		} else {
-			timeout = 0;
-
-			if (!pok) {
-				printk("PLHW: POK timeout\n");
-				stat = -ETIME;
-				break;
-			}
-		}
-	}
-
-	return stat;
-}
-#endif
 
 /* TPS65185 HVPMIC */
 
@@ -1372,17 +1156,9 @@ static int pl_hardware_do_set_temperature(struct pl_hardware *plhw,
 	return ret;
 }
 
-int pl_hardware_is_module_a(const struct pl_hardware *plhw)
-{
-	return plhw->is_module_a;
-}
-EXPORT_SYMBOL(pl_hardware_is_module_a);
-
 #ifdef CONFIG_MODELF_PL_ROBIN
 static int pl_hardware_gpio_init(struct pl_hardware *p)
 {
-	p->is_module_a = true;
-
 	return 0;
 }
 #else
@@ -1404,8 +1180,6 @@ static int pl_hardware_gpio_init(struct pl_hardware *p)
 {
 	int stat;
 	int i;
-
-	p->is_module_a = true;
 
 	for (i = 0; i < ARRAY_SIZE(pl_hardware_gpio_init_data); i++) {
 		const struct gpio *gpio = &pl_hardware_gpio_init_data[i];

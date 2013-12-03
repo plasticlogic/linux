@@ -44,6 +44,4 @@ int pl_hardware_refresh_current_vcom(struct pl_hardware *plhw);
 
 s32 pl_hardware_constrain_temperature_range(s32 temperature);
 
-int pl_hardware_is_module_a(const struct pl_hardware *plhw);
-
 #endif /* INCLUDE_PL_HARDWARE_H */
