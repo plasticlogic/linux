@@ -2954,6 +2954,7 @@ exit_now:
 }
 
 /* =========== file accessor =========== */
+
 static ssize_t __modelffb_store_init_code(struct device *dev,
 	struct device_attribute *attr, const char *buf, size_t count)
 {
@@ -3245,6 +3246,16 @@ static int modelffb_setopt(struct fb_info *info, char *tokbuf, size_t len)
 	return ret;
 }
 
+static bool modelffb_is_init_done(void)
+{
+	if (!(parinfo->status & MODELF_STATUS_INIT_DONE)) {
+		dev_err(parinfo->dev, "Not yet initialised\n");
+		return false;
+	}
+
+	return true;
+}
+
 static ssize_t modelffb_store_control(
 	struct device *dev, struct device_attribute *attr, const char *buf,
 	size_t count)
@@ -3270,8 +3281,8 @@ static ssize_t modelffb_store_control(
 		__modelffb_set_element(next_tok);
 	} else if (!strcmp(tok, "setopt")) {
 		modelffb_setopt(info, next_tok, count);
-	} else if (!(parinfo->status & MODELF_STATUS_INIT_DONE)) {
-		dev_err(parinfo->dev, "Not yet initialised\n");
+	} else if (!modelffb_is_init_done()) {
+		dev_err(parinfo->dev, "Cannot perform action\n");
 	} else if (!strcmp(tok, "dumpmem")) {
 	/* echo dumpmem address size >
 	   /sys/devices/platform/modelffb/control */
@@ -3380,6 +3391,9 @@ static ssize_t __modelffb_store_keycode(struct device *dev,
 static ssize_t modelffb_show_on_drawing(struct device *dev,
 	struct device_attribute *attr, char *buf)
 {
+	if (!modelffb_is_init_done())
+		return -EINVAL;
+
 	if (parinfo->power_mode == MODELF_POWER_RUN) {
 		modelffb_sync_lut();
 		if (__modelffb_lut_is_empty())
@@ -3405,6 +3419,9 @@ static ssize_t temperature_range_show(
 	int written;
 	const struct temperature_entry** p_range = NULL;
 	int buf_space = PAGE_SIZE;
+
+	if (!modelffb_is_init_done())
+		return -EINVAL;
 
 	if (!format_text)
 		return -EINVAL;
@@ -3461,7 +3478,12 @@ static ssize_t temperature_range_store(
 static ssize_t vcom_show(struct device *dev, struct device_attribute *attr,
 			 char *buf)
 {
-	struct temperature_set *set = get_vcom_temperature_set();
+	struct temperature_set *set;
+
+	if (!modelffb_is_init_done())
+		return -EINVAL;
+
+	set = get_vcom_temperature_set();
 
 	return temperature_range_show(dev, attr, buf, set,
 				      temperature_set_format_integer);
@@ -3472,6 +3494,9 @@ static ssize_t vcom_store(struct device *dev, struct device_attribute *attr,
 {
 	struct temperature_set *set;
 	ssize_t stat;
+
+	if (!modelffb_is_init_done())
+		return -EINVAL;
 
 	mutex_lock(&temperature_lock);
 
@@ -3507,12 +3532,18 @@ exit_unlock:
 static ssize_t modelffb_show_temperature(
 	struct device *dev, struct device_attribute *attr, char *buf)
 {
+	if (!modelffb_is_init_done())
+		return -EINVAL;
+
 	return scnprintf(buf, PAGE_SIZE, "%d\n", parinfo->opt.temperature);
 }
 
 static ssize_t modelffb_show_temperature_auto(
 	struct device *dev, struct device_attribute *attr, char *buf)
 {
+	if (!modelffb_is_init_done())
+		return -EINVAL;
+
 	return scnprintf(buf, PAGE_SIZE, "%d\n",
 			 parinfo->opt.temperature_auto);
 }
