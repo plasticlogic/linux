@@ -29,8 +29,6 @@
 #include <linux/delay.h>
 #include <linux/gpio.h>
 #include "pl_hardware.h"
-#include "temperature-set.h"
-#include "vcom.h"
 
 /* I2C addresses */
 #define MAX17135_I2C_ADDRESS 0x48 /* Maxim MAX17135 HVPMIC */
@@ -113,9 +111,9 @@ union max17135_fault {
 };
 
 struct pl_hardware_max17135 {
-	__u8 prod_id;
-	__u8 prod_rev;
-	__u8 timings[MAX17135_NB_TIMINGS];
+	u8 prod_id;
+	u8 prod_rev;
+	u8 timings[MAX17135_NB_TIMINGS];
 };
 
 /* TI TPS65185 HVPMIC definitions */
@@ -197,7 +195,7 @@ union dac5820_ext_payload {
 };
 
 struct pl_hardware_dac {
-	__u8 i2c_address;
+	u8 i2c_address;
 };
 
 /* ADC definitions */
@@ -227,7 +225,7 @@ union adc11607_setup_config {
 };
 
 struct pl_hardware_adc {
-	__u8 i2c_address;
+	u8 i2c_address;
 	union adc11607_setup_config cmd;
 	unsigned nb_channels;
 	unsigned ref_mv;
@@ -238,11 +236,11 @@ struct pl_hardware_adc {
 /* VCOM definitions */
 
 struct pl_hardware_vcom {
-	int ref_mv;
-	int target_mv;
-	int vref_mv;
-	int last_v_in;
-	int swing;
+	long ref_mv;
+	long target_mv;
+	long vref_mv;
+	long last_v_in;
+	long swing;
 	bool dac_measured;
 	int dac_offset;
 	int dac_dx;
@@ -288,7 +286,6 @@ struct pl_hardware {
 	struct pl_hardware_dac dac;
 	struct pl_hardware_adc adc;
 	struct pl_hardware_vcom vcom;
-	int last_temperature;
 	bool hv_on;
 };
 
@@ -304,7 +301,7 @@ static int pl_hardware_dac_init(struct pl_hardware *p);
 static int pl_hardware_dac_set_power(struct pl_hardware *p,
 				     bool on);
 #if !defined(CONFIG_MODELF_PL_Z6_Z7)
-static int pl_hardware_dac_write(struct pl_hardware *p, __u8 value);
+static int pl_hardware_dac_write(struct pl_hardware *p, u8 value);
 #endif
 
 /* ADC */
@@ -317,7 +314,7 @@ static void pl_hardware_adc_invalidate(struct pl_hardware_adc *adc);
 static int pl_hardware_adc_read_results(struct pl_hardware *p);
 static int pl_hardware_adc_get_mv(struct pl_hardware *p);
 static int pl_hardware_adc_read_mv(struct pl_hardware *p,
-				   unsigned channel, int *value);
+				   unsigned channel, long *value);
 #endif
 
 /* VCOM calibration */
@@ -326,20 +323,17 @@ static int pl_hardware_vcomcal_set_vcom(struct pl_hardware *p);
 #if !defined(CONFIG_MODELF_PL_ROBIN) && !defined(CONFIG_MODELF_PL_Z6_Z7)
 static int pl_hardware_vcomcal_measure_dac(struct pl_hardware *p);
 static int pl_hardware_vcomcal_get_dac_value(struct pl_hardware *p,
-					     int vcom_mv);
+					     long vcom_mv);
 static void pl_hardware_vcomcal_scale_vcom(struct pl_hardware *p);
 #endif
 
 /* I2C helpers */
-static int pl_hardware_read_i2c_reg(struct i2c_adapter *i2c, __u8 addr,
-				    __u8 reg, void *data, size_t size);
-static int pl_hardware_write_i2c_reg8(struct i2c_adapter *i2c, __u8 addr,
-				      __u8 reg, __u8 value);
-static int pl_hardware_i2c_rdwr(struct i2c_adapter *i2c, __u8 addr,
-				__u16 flags, void *data, size_t size);
-
-static int pl_hardware_do_set_temperature(struct pl_hardware *plhw,
-					 int temperature);
+static int pl_hardware_read_i2c_reg(struct i2c_adapter *i2c, u8 addr,
+				    u8 reg, void *data, size_t size);
+static int pl_hardware_write_i2c_reg8(struct i2c_adapter *i2c, u8 addr, u8 reg,
+				      u8 value);
+static int pl_hardware_i2c_rdwr(struct i2c_adapter *i2c, u8 addr, u16 flags,
+				void *data, size_t size);
 
 /* GPIO control */
 static int pl_hardware_gpio_init(void);
@@ -348,6 +342,9 @@ static void pl_hardware_gpio_free(void);
 static int pl_hardware_gpio_wait_pok(struct pl_hardware *p);
 static int pl_hardware_gpio_switch(struct pl_hardware *p, int gpio, bool on);
 #endif
+
+/* General functions */
+static bool plhw_is_init(struct pl_hardware *p);
 
 /* Static initialisation */
 static bool plhw_static_init_done = false;
@@ -407,8 +404,11 @@ int pl_hardware_init(struct pl_hardware *p,
 
 	BUG_ON(!plhw_static_init_done);
 
-	if (p->init_done)
+	if (p->init_done) {
+		printk("PLHW: Already initialised");
+
 		return -EINVAL;
+	}
 
 	p->config = config;
 	printk("PLHW: I2C bus number: %d\n", p->config->i2c_bus_number);
@@ -449,9 +449,6 @@ int pl_hardware_init(struct pl_hardware *p,
 		goto err_free_all;
 	}
 
-	/* initialise to a value that temperature sensor can never indicate */
-	p->last_temperature = MIN_TEMPERATURE;
-
 	printk("PLHW: ready.\n");
 
 	p->init_done = true;
@@ -482,10 +479,13 @@ void pl_hardware_free(struct pl_hardware *p)
 }
 EXPORT_SYMBOL(pl_hardware_free);
 
-int pl_hardware_set_vcom(struct pl_hardware *p, int vcom_mv)
+int pl_hardware_set_vcom(struct pl_hardware *p, long vcom_mv)
 {
+	if (!plhw_is_init(p))
+		return -EINVAL;
+
 	if ((vcom_mv < VCOM_MIN) || (vcom_mv > VCOM_MAX)) {
-		printk("PLHW: VCOM voltage out of range: %dmV "
+		printk("PLHW: VCOM voltage out of range: %ldmV "
 		       "(range is [%dmV, %dmV]\n",
 		       vcom_mv, VCOM_MIN, VCOM_MAX);
 		return -EINVAL;
@@ -501,6 +501,17 @@ int pl_hardware_set_vcom(struct pl_hardware *p, int vcom_mv)
 }
 EXPORT_SYMBOL(pl_hardware_set_vcom);
 
+int pl_hardware_get_vcom(struct pl_hardware *p, long *vcom_mv)
+{
+	if (!plhw_is_init(p))
+		return -EINVAL;
+
+	*vcom_mv = p->vcom.ref_mv;
+
+	return 0;
+}
+EXPORT_SYMBOL(pl_hardware_get_vcom);
+
 #define STEP(cmd, msg) do {				\
 		const int stat = (cmd);			\
 		if (stat) {				\
@@ -511,10 +522,8 @@ EXPORT_SYMBOL(pl_hardware_set_vcom);
 
 int pl_hardware_enable(struct pl_hardware *p)
 {
-	if (!p->init_done) {
-		printk("PLHW: Not initialised\n");
+	if (!plhw_is_init(p))
 		return -EINVAL;
-	}
 
 	if (p->hv_on)
 		return 0;
@@ -539,10 +548,8 @@ EXPORT_SYMBOL(pl_hardware_enable);
 
 int pl_hardware_disable(struct pl_hardware *p)
 {
-	if (!p->init_done) {
-		printk("PLHW: Not initialised\n");
+	if (!plhw_is_init(p))
 		return -EINVAL;
-	}
 
 	if (!p->hv_on)
 		return 0;
@@ -571,6 +578,8 @@ EXPORT_SYMBOL(pl_hardware_disable);
 
 bool pl_hardware_is_enabled(struct pl_hardware *p)
 {
+	BUG_ON(!plhw_is_init(p));
+
 	return p->hv_on;
 }
 EXPORT_SYMBOL(pl_hardware_is_enabled);
@@ -583,7 +592,7 @@ EXPORT_SYMBOL(pl_hardware_is_enabled);
 
 /* MAX17135 HVPMIC */
 
-int pl_hardware_max17135_init(struct pl_hardware *p)
+static int pl_hardware_max17135_init(struct pl_hardware *p)
 {
 	u8 timings[MAX17135_NB_TIMINGS];
 	int stat;
@@ -623,7 +632,7 @@ int pl_hardware_max17135_init(struct pl_hardware *p)
 
 static int pl_hardware_max17135_load_timings(struct pl_hardware *p)
 {
-	__u8 reg;
+	u8 reg;
 	int i;
 
 	for (i = 0, reg = MAX17135_REG_TIMING_1;
@@ -716,7 +725,7 @@ static int pl_hardware_dac_set_power(struct pl_hardware *p, bool on)
 }
 
 #if !defined(CONFIG_MODELF_PL_Z6_Z7)
-static int pl_hardware_dac_write(struct pl_hardware *p, __u8 value)
+static int pl_hardware_dac_write(struct pl_hardware *p, u8 value)
 {
 	union dac5820_write_payload payload;
 
@@ -847,7 +856,7 @@ static int pl_hardware_adc_get_mv(struct pl_hardware *p)
 }
 
 static int pl_hardware_adc_read_mv(struct pl_hardware *p,
-				   unsigned channel, int *value)
+				   unsigned channel, long *value)
 {
 	int stat;
 
@@ -919,11 +928,11 @@ static int pl_hardware_vcomcal_set_vcom(struct pl_hardware *p)
 #else
 static int pl_hardware_vcomcal_set_vcom(struct pl_hardware *p)
 {
-	int v_in;
-	int delta_stop;
-	int delta;
-	int n;
-	int stat;
+	long v_in;
+	long delta_stop;
+	long delta;
+	long n;
+	long stat;
 
 	if (!p->vcom.dac_measured) {
 		stat = pl_hardware_vcomcal_measure_dac(p);
@@ -939,8 +948,8 @@ static int pl_hardware_vcomcal_set_vcom(struct pl_hardware *p)
 	n = 10;
 
 	do {
-		int dac_val;
-		int v_out;
+		long dac_val;
+		long v_out;
 
 		dac_val = pl_hardware_vcomcal_get_dac_value(p, v_in);
 
@@ -968,11 +977,11 @@ static int pl_hardware_vcomcal_set_vcom(struct pl_hardware *p)
 
 static int pl_hardware_vcomcal_measure_dac(struct pl_hardware *p)
 {
-	const int x1 = 85;
-	const int x2 = 170;
-	int y1;
-	int y2;
-	int vref;
+	const long x1 = 85;
+	const long x2 = 170;
+	long y1;
+	long y2;
+	long vref;
 	int stat;
 
 	stat = pl_hardware_dac_write(p, x1);
@@ -1021,7 +1030,7 @@ static int pl_hardware_vcomcal_measure_dac(struct pl_hardware *p)
 }
 
 static int pl_hardware_vcomcal_get_dac_value(struct pl_hardware *p,
-					     int vcom_mv)
+					     long vcom_mv)
 {
 	long dac_value;
 
@@ -1043,15 +1052,15 @@ static void pl_hardware_vcomcal_scale_vcom(struct pl_hardware *p)
 
 	p->vcom.target_mv = p->vcom.ref_mv * p->vcom.swing / VCOM_VGSWING;
 	p->vcom.last_v_in = p->vcom.target_mv;
-	printk("PLHW: scaled VCOM %d -> %d (swing: %d) mV\n",
+	printk("PLHW: scaled VCOM %ld -> %ld (swing: %ld) mV\n",
 	       p->vcom.ref_mv, p->vcom.target_mv, p->vcom.swing);
 }
 #endif /* !CONFIG_MODELF_PL_ROBIN */
 
 /* I2C helpers */
 
-static int pl_hardware_read_i2c_reg(struct i2c_adapter *i2c, __u8 addr,
-				    __u8 reg, void *data, size_t size)
+static int pl_hardware_read_i2c_reg(struct i2c_adapter *i2c, u8 addr, u8 reg,
+				    void *data, size_t size)
 {
 	struct i2c_msg msgs[2] = {
 		{
@@ -1064,7 +1073,7 @@ static int pl_hardware_read_i2c_reg(struct i2c_adapter *i2c, __u8 addr,
 			.addr = addr,
 			.flags = I2C_M_RD,
 			.len = size,
-			.buf = (__u8 *) data
+			.buf = (u8 *) data
 		}
 	};
 
@@ -1081,10 +1090,10 @@ static int pl_hardware_read_i2c_reg(struct i2c_adapter *i2c, __u8 addr,
 	return 0;
 }
 
-static int pl_hardware_write_i2c_reg8(struct i2c_adapter *i2c, __u8 addr,
-				   __u8 reg, __u8 value)
+static int pl_hardware_write_i2c_reg8(struct i2c_adapter *i2c, u8 addr, u8 reg,
+				      u8 value)
 {
-	__u8 w_data[2] = {reg, value};
+	u8 w_data[2] = {reg, value};
 
 	struct i2c_msg msg = {
 		.addr = addr,
@@ -1104,14 +1113,14 @@ static int pl_hardware_write_i2c_reg8(struct i2c_adapter *i2c, __u8 addr,
 	return 0;
 }
 
-static int pl_hardware_i2c_rdwr(struct i2c_adapter *i2c, __u8 addr,
-				__u16 flags, void *data, size_t size)
+static int pl_hardware_i2c_rdwr(struct i2c_adapter *i2c, u8 addr, u16 flags,
+				void *data, size_t size)
 {
 	struct i2c_msg msg = {
 		.addr = addr,
 		.flags = flags,
 		.len = size,
-		.buf = (__u8 *) data
+		.buf = (u8 *) data
 	};
 
 	const int n_xfer = i2c_transfer(i2c, &msg, 1);
@@ -1123,60 +1132,6 @@ static int pl_hardware_i2c_rdwr(struct i2c_adapter *i2c, __u8 addr,
 	}
 
 	return 0;
-}
-
-s32 pl_hardware_constrain_temperature_range(s32 temperature)
-{
-        struct temperature_set* set;
-        s32 constrained_temp;
-
-        set = get_vcom_temperature_set();
-        constrained_temp = constrain_temp_to_set(set, temperature, "VCom");
-
-        return constrained_temp;
-}
-EXPORT_SYMBOL(pl_hardware_constrain_temperature_range);
-
-int pl_hardware_set_temperature(struct pl_hardware *plhw,
-					 int temperature)
-{
-        int stat = 0;
-        struct temperature_set* set;
-
-        set = get_vcom_temperature_set();
-
-        /* assume that temperature is already constrained to a valid value */
-        if ((temperature != plhw->last_temperature)
-	    || temperature_set_changed(set)) {
-        	pr_info("Temperature now %d degrees C\n", temperature);
-
-        	stat = pl_hardware_do_set_temperature(plhw, temperature);
-	}
-
-        return stat;
-}
-EXPORT_SYMBOL(pl_hardware_set_temperature);
-
-int pl_hardware_refresh_current_vcom(struct pl_hardware *plhw)
-{
-	return pl_hardware_do_set_temperature(plhw, plhw->last_temperature);
-}
-EXPORT_SYMBOL(pl_hardware_refresh_current_vcom);
-
-static int pl_hardware_do_set_temperature(struct pl_hardware *plhw,
-					 int temperature)
-{
-        struct temperature_set* set;
-        s32 vcom_mv;
-	int ret;
-
-        set = get_vcom_temperature_set();
-        vcom_mv = temperature_set_lookup_int(set, temperature);
-
-	ret = pl_hardware_set_vcom(plhw, vcom_mv);
-	plhw->last_temperature = temperature;
-
-	return ret;
 }
 
 #ifdef CONFIG_MODELF_PL_ROBIN
@@ -1279,6 +1234,21 @@ static int pl_hardware_gpio_switch(struct pl_hardware *p, int gpio, bool on)
 	return 0;
 }
 #endif /* !CONFIG_MODELF_PL_ROBIN */
+
+static bool plhw_is_init(struct pl_hardware *p)
+{
+	if (!plhw_static_init_done) {
+		printk("PLHW: Static initialisation not done yet.\n");
+		return false;
+	}
+
+	if (!p->init_done) {
+		printk("PLHW: Not yet initialised.\n");
+		return false;
+	}
+
+	return true;
+}
 
 MODULE_AUTHOR("Guillaume Tucker <guillaume.tucker@plasticlogic.com>");
 MODULE_DESCRIPTION("Plastic Logic E-Paper hardware control");

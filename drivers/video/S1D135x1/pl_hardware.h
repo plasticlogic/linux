@@ -35,16 +35,10 @@ extern int pl_hardware_init(struct pl_hardware *plhw,
 			    const struct pl_hardware_config *config);
 extern void pl_hardware_free(struct pl_hardware *plhw);
 
-extern int pl_hardware_set_vcom(struct pl_hardware *plhw, int vcom_mv);
+extern int pl_hardware_set_vcom(struct pl_hardware *plhw, long vcom_mv);
+extern int pl_hardware_get_vcom(struct pl_hardware *plhw, long *vcom_mv);
 extern int pl_hardware_enable(struct pl_hardware *plhw);
 extern int pl_hardware_disable(struct pl_hardware *plhw);
 extern bool pl_hardware_is_enabled(struct pl_hardware *plhw);
-
-int pl_hardware_set_temperature(struct pl_hardware *plhw,
-					 int temperature);
-
-int pl_hardware_refresh_current_vcom(struct pl_hardware *plhw);
-
-s32 pl_hardware_constrain_temperature_range(s32 temperature);
 
 #endif /* INCLUDE_PL_HARDWARE_H */
