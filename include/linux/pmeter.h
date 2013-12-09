@@ -50,23 +50,24 @@ struct pmeter_record {
 		pmeter_log(buf);					\
 	} while (0)
 
-static inline void pmeter_log(const char *tag)
+static inline int pmeter_log(const char *tag)
 {
 	int fd;
 	size_t n;
+	ssize_t wr_n;
 
 	fd = open("/dev/pmeter", O_WRONLY);
 
 	if (fd < 0)
-		return;
+		return -1;
 
 	for (n = 0; (tag[n] != '\0') && (n < PMETER_TAG_SZ); ++n);
 
-	(void) write(fd, tag, n);
+	wr_n = write(fd, tag, n);
 
 	close(fd);
 
-	return;
+	return ((wr_n < 0) || (wr_n != n)) ? -1 : 0;
 }
 
 #else /* __KERNEL__ */
