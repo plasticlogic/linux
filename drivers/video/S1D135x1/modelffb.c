@@ -67,8 +67,6 @@ static const char *modelffb_sync_status_table[MODELFFB_SYNC_N] = {
      || defined(CONFIG_MODELF_PL_HARDWARE_MODULE))
 #include <linux/mutex.h>
 #include "pl_hardware.h"
-#include "vcom.h"
-#include "temperature-set.h"
 
 /* ToDo: define in board file */
 struct pl_hardware_config modelffb_pl_config = {
@@ -89,9 +87,6 @@ struct pl_hardware_config modelffb_pl_config = {
 	.hvpmic_id = PLHW_HVPMIC_MAX17135,
 #endif
 };
-
-static DEFINE_MUTEX(temperature_lock);
-
 #endif
 
 #define NON_DMA_MAX_BYTES (160 - 2)
@@ -1925,13 +1920,6 @@ static void __modelffb_clear_temperature_judge(void)
 
 static void modelffb_measure_temperature(void)
 {
-#if (defined(CONFIG_MODELF_PL_HARDWARE) \
-     || defined(CONFIG_MODELF_PL_HARDWARE_MODULE))
-	uint16_t regval;
-	int temperature;
-	int stat;
-#endif
-
 #ifdef CONFIG_MODELF_DEBUG
 	dev_info(parinfo->dev, "Measuring temperature\n");
 #endif
@@ -1965,10 +1953,6 @@ static void modelffb_measure_temperature(void)
 	}
 	__modelffb_wait_for_HRDY_ready(MODELF_TIMEOUT_MS);
 
-	if (!parinfo->opt.temperature_auto)
-		regval = __modelffb_reg_read(MODELF_REG_FAKE_TEMPERATURE);
-	else
-		regval =  __modelffb_reg_read(MODELF_REG_SENSOR_TEMPERATURE);
 #ifdef CONFIG_MODELF_DEBUG
 	__modelffb_print_reg(MODELF_REG_SENSOR_TEMPERATURE);
 #endif
@@ -1978,16 +1962,6 @@ static void modelffb_measure_temperature(void)
 		__modelffb_sleep();
 
 	modelffb_unlock();
-
-#if (defined(CONFIG_MODELF_PL_HARDWARE) \
-     || defined(CONFIG_MODELF_PL_HARDWARE_MODULE))
-	mutex_lock(&temperature_lock);
-	temperature = pl_hardware_constrain_temperature_range((int8_t)regval);
-	stat = pl_hardware_set_temperature(parinfo->pl_hardware, temperature);
-	if (stat)
-		dev_err(parinfo->dev, "Failed to set the temperature\n");
-	mutex_unlock(&temperature_lock);
-#endif
 }
 
 /* =========== frame buffer stuffs =========== */
@@ -3409,124 +3383,40 @@ static ssize_t modelffb_show_on_drawing(struct device *dev,
 
 #if (defined(CONFIG_MODELF_PL_HARDWARE) \
      || defined(CONFIG_MODELF_PL_HARDWARE_MODULE))
-static ssize_t temperature_range_show(
-	struct device *dev, struct device_attribute *attr, char *buf,
-	struct temperature_set* set,
-	int (*format_text)(const struct temperature_entry* p_range, char *tbuf,
-			   int buf_space))
-{
-	char *tbuf = buf;
-	int written;
-	const struct temperature_entry** p_range = NULL;
-	int buf_space = PAGE_SIZE;
-
-	if (!modelffb_is_init_done())
-		return -EINVAL;
-
-	if (!format_text)
-		return -EINVAL;
-
-	p_range = temperature_set_get_first_range(set);
-
-	while (buf_space >= 0 && p_range != 0) {
-		written = format_text(*p_range, tbuf, buf_space);
-
-		p_range = temperature_set_get_next_range(set, p_range);
-
-		tbuf += written;
-		buf_space -= written;
-	}
-
-	return tbuf - buf;
-}
-
-static ssize_t temperature_range_store(
-	struct device *dev, struct device_attribute *attr, const char *buf,
-	size_t count, struct temperature_set* set,
-	void (*erase_set)(struct temperature_set* set),
-	int (*read_and_store)(const char *p_range_text))
-
-{
-	int retval = -EINVAL;
-	const char *p_next_range = buf;
-
-	if (!erase_set || !read_and_store)
-		return -EINVAL;
-
-	erase_set(set);
-
-	do {
-		/* give up if invalid */
-		retval = read_and_store(p_next_range);
-
-		if (retval)
-			break;
-
-		/* locate \n at end of this range */
-		p_next_range = strchr(p_next_range, '\n');
-
-		/* then advance to the 1st char of the next range */
-		if (!p_next_range || (*++p_next_range == '\0'))
-			retval = strlen(buf);
-	} while (p_next_range != 0 && *p_next_range != '\0');
-
-	temperature_set_commit(set);
-
-	return retval;
-}
-
 static ssize_t vcom_show(struct device *dev, struct device_attribute *attr,
 			 char *buf)
 {
-	struct temperature_set *set;
+	int stat;
+	long vcom_mv;
 
 	if (!modelffb_is_init_done())
 		return -EINVAL;
 
-	set = get_vcom_temperature_set();
+	stat = pl_hardware_get_vcom(parinfo->pl_hardware, &vcom_mv);
+	if (stat)
+		return stat;
 
-	return temperature_range_show(dev, attr, buf, set,
-				      temperature_set_format_integer);
+	return scnprintf(buf, PAGE_SIZE, "%li\n", (long)vcom_mv);
 }
 
 static ssize_t vcom_store(struct device *dev, struct device_attribute *attr,
 			  const char *buf, size_t count)
 {
-	struct temperature_set *set;
-	ssize_t stat;
+	int stat;
+	long vcom_mv;
 
 	if (!modelffb_is_init_done())
 		return -EINVAL;
 
-	mutex_lock(&temperature_lock);
-
-	set = get_vcom_temperature_set();
-	if (set == NULL) {
-		stat = -EINVAL;
-		goto exit_unlock;
-	}
-
-	stat = temperature_range_store(dev, attr, buf, count, set,
-				       temperature_set_erase_ints,
-				       read_and_store_vcom);
-	if (stat < 0) {
-		goto exit_unlock;
-	} else if (stat != count) {
-		/* ToDo: tidy up error handling... */
-		stat = -EINVAL;
-		goto exit_unlock;
-	}
-
-	stat = pl_hardware_refresh_current_vcom(parinfo->pl_hardware);
+	stat = kstrtol(buf, 10, &vcom_mv);
 	if (stat)
-		goto exit_unlock;
+		return stat;
 
-	stat = count;
+	stat = pl_hardware_set_vcom(parinfo->pl_hardware, vcom_mv);
+	if (stat)
+		return stat;
 
-exit_unlock:
-	mutex_unlock(&temperature_lock);
-
-	return stat;
+	return count;
 }
 
 static ssize_t modelffb_show_temperature(
