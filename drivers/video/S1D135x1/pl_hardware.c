@@ -880,7 +880,11 @@ static int pl_hardware_adc_read_mv(struct pl_hardware *p,
 
 static int pl_hardware_vcomcal_init(struct pl_hardware *p)
 {
-	p->vcom.ref_mv = VCOM_DEFAULT;
+	if (p->config->init_vcom_mv == PLHW_INVALID_VCOM)
+		p->vcom.ref_mv = VCOM_DEFAULT;
+	else
+		p->vcom.ref_mv = p->config->init_vcom_mv;
+
 	p->vcom.dac_measured = false;
 
 	return 0;

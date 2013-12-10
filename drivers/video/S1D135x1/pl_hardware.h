@@ -12,6 +12,10 @@
 #ifndef INCLUDE_PL_HARDWARE_H
 #define INCLUDE_PL_HARDWARE_H 1
 
+#include <linux/kernel.h>
+
+#define PLHW_INVALID_VCOM INT_MAX
+
 /* Opaque instance structure */
 struct pl_hardware;
 
@@ -25,6 +29,7 @@ struct pl_hardware_config {
 	__u8 dac_i2c_address;
 	__u8 adc_i2c_address;
 	enum pl_hardware_hvpmic_id hvpmic_id;
+	int init_vcom_mv;
 };
 
 extern int pl_hardware_static_init(void);
