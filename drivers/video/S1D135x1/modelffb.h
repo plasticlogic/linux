@@ -58,8 +58,6 @@ enum modelffb_sync_status {
 
 struct modelffb_par {
 	struct fb_info *fbinfo;
-	unsigned left_border;
-	unsigned right_border;
 	uint32_t command_addr;
 	uint32_t data_addr;
 	uint32_t init_code;
@@ -108,9 +106,12 @@ struct modelffb_par {
 		u32 clear_on_init:1;
 		u32 clear_on_exit:1;
 		u32 interleaved_sources:1;
-		unsigned spi_freq_hz;
-		unsigned temperature_auto;
+		u32 temperature_auto:1;
 		int temperature;
+		unsigned left_border;
+		unsigned right_border;
+		unsigned spi_freq_hz;
+		char display_type[16];
 	} opt;
 };
 

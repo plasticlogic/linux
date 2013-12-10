@@ -86,6 +86,7 @@ struct pl_hardware_config modelffb_pl_config = {
 #else
 	.hvpmic_id = PLHW_HVPMIC_MAX17135,
 #endif
+	.init_vcom_mv = PLHW_INVALID_VCOM,
 };
 #endif
 
@@ -1090,6 +1091,9 @@ static int modelffb_chip_init(void)
 	return 0;
 
 up_sem:
+	if (parinfo->pdata->gpio_pwr_en)
+		gpio_set_value(parinfo->pdata->gpio_pwr_en, 0);
+
 	modelffb_unlock();
 err:
 	dev_err(parinfo->dev, "Failed to initialise controller\n");
@@ -1218,7 +1222,7 @@ static void __modelffb_send_image_16b(int x, int y, int width, int height)
 		__modelffb_pool_read_shaped_16bit_interleaved_image :
 		__modelffb_pool_read_shaped_16bit_image;
 	const int last_line = y + height;
-	const int ep_x = x + parinfo->left_border;
+	const int ep_x = x + parinfo->opt.left_border;
 	int line;
 
 	for (line = y; line < last_line;) {
@@ -1731,7 +1735,7 @@ static void __modelffb_cleanup_area_lut(int x, int y, int width, int height,
 	if (parinfo->opt.interleaved_sources)
 		fixup_interleaved_area(x, y, width, height);
 
-	x += parinfo->left_border;
+	x += parinfo->opt.left_border;
 
 	__modelffb_simple_command_p5(MODELF_COM_UPDATE_AREA,
 		MODELF_WAVEFORM_MODE(waveform_mode) | MODELF_UPDATE_LUT(lut),
@@ -1790,7 +1794,7 @@ static void modelffb_cleanup_area(int x, int y, int width, int height,
 	if (parinfo->opt.interleaved_sources)
 		fixup_interleaved_area(x, y, width, height);
 
-	x += parinfo->left_border;
+	x += parinfo->opt.left_border;
 
 	__modelffb_wait_for_reg_value(MODELF_REG_LUT_STATUS,
 				      MODELF_BF_LUT_IN_USE, 0,
@@ -1983,7 +1987,8 @@ static void modelffb_check_panel_resolution(void)
 		info->var.yres /= 2;
 	}
 
-	info->var.xres -= (parinfo->left_border + parinfo->right_border);
+	info->var.xres -= (parinfo->opt.left_border +
+			   parinfo->opt.right_border);
 	info->var.xres_virtual = info->var.xres;
 	info->var.yres_virtual = info->var.yres;
 
@@ -2170,8 +2175,6 @@ static int __devinit modelffb_framebuffer_alloc(struct platform_device *pdev)
 	info->fbops = &modelffb_ops;
 
 	parinfo->fbinfo = info;
-	parinfo->left_border = 0;
-	parinfo->right_border = 0;
 	parinfo->lut_queue_head = 0;
 	parinfo->lut_queue_count = 0;
 	memset(parinfo->lut_in_use, 0, MODELF_MAX_LUT_NUM);
@@ -2180,9 +2183,12 @@ static int __devinit modelffb_framebuffer_alloc(struct platform_device *pdev)
 	parinfo->opt.clear_on_init = 1;
 	parinfo->opt.clear_on_exit = 0;
 	parinfo->opt.interleaved_sources = 0;
-	parinfo->opt.spi_freq_hz = 0;
 	parinfo->opt.temperature_auto = 1;
 	parinfo->opt.temperature = 20;
+	parinfo->opt.left_border = 0;
+	parinfo->opt.right_border = 0;
+	parinfo->opt.spi_freq_hz = 0;
+	parinfo->opt.display_type[0] = '\0';
 
 	return 0;
 
@@ -2771,7 +2777,7 @@ static struct fb_deferred_io __modelffb_defio = {
 };
 #endif /* CONFIG_MODELF_DEFERRED_IO */
 
-static int __devinit modelffb_register_framebuffer(void)
+static int modelffb_register_framebuffer(void)
 {
 	struct fb_info *info = parinfo->fbinfo;
 	int retval;
@@ -2865,7 +2871,7 @@ static int modelffb_modelf_init(void)
 	stat = modelffb_chip_init();
 	if (stat) {
 		dev_err(parinfo->dev, "chip_init failed\n");
-		goto exit_now;
+		return stat;
 	}
 
 	modelffb_check_panel_resolution();
@@ -2873,13 +2879,7 @@ static int modelffb_modelf_init(void)
 	stat = modelffb_alloc_vram();
 	if (stat) {
 		dev_err(parinfo->dev, "alloc_vram failed\n");
-		goto exit_now;
-	}
-
-	stat = modelffb_register_framebuffer();
-	if (stat) {
-		dev_err(parinfo->dev, "register_framebuffer failed\n");
-		goto free_vram;
+		return stat;
 	}
 
 	stat = request_irq(parinfo->pdata->hirq, __modelffb_irq_handler,
@@ -2887,7 +2887,7 @@ static int modelffb_modelf_init(void)
 			   parinfo->dev);
 	if (stat) {
 		dev_err(parinfo->dev, "request_irq failed\n");
-		goto framebuffer_unregister;
+		goto free_vram;
 	}
 
 	stat = modelffb_regulator_init();
@@ -2904,6 +2904,12 @@ static int modelffb_modelf_init(void)
 		}
 	}
 
+	stat = modelffb_register_framebuffer();
+	if (stat) {
+		dev_err(parinfo->dev, "register_framebuffer failed\n");
+		goto free_vram;
+	}
+
 	modelffb_measure_temperature();
 	__modelffb_start_temperature_timer();
 
@@ -2918,11 +2924,8 @@ free_regulator:
 	modelffb_regulator_exit();
 free_hirq:
 	free_irq(parinfo->pdata->hirq, parinfo->dev);
-framebuffer_unregister:
-	modelffb_unregister_framebuffer();
 free_vram:
 	modelffb_free_vram();
-exit_now:
 
 	return stat;
 }
@@ -3136,98 +3139,39 @@ static int __modelffb_set_element(char *str)
 
 static void modelffb_apply_display_type(const char *disp_type)
 {
+	dev_info(parinfo->dev, "Display type: %s\n", disp_type);
+
 	if (!strcmp(disp_type, "Type16")) {
-		parinfo->left_border = 80;
+		parinfo->opt.left_border = 80;
 	} else if (!strcmp(disp_type, "Type17")) {
-		parinfo->right_border = 7;
+		parinfo->opt.right_border = 7;
 	} else if (!strcmp(disp_type, "Type19")) {
 		parinfo->opt.interleaved_sources = 1;
 	}
 
-	if (parinfo->left_border)
+	if (parinfo->opt.left_border)
 		dev_info(parinfo->dev, "Left border: %d pixels\n",
-			 parinfo->left_border);
+			 parinfo->opt.left_border);
 
-	if (parinfo->right_border)
+	if (parinfo->opt.right_border)
 		dev_info(parinfo->dev, "Right border: %d pixels\n",
-			 parinfo->right_border);
+			 parinfo->opt.right_border);
 
 	if (parinfo->opt.interleaved_sources)
 		dev_info(parinfo->dev, "Interleaved sources enabled\n");
 }
 
-static int modelffb_setopt(struct fb_info *info, char *tokbuf, size_t len)
+static bool modelffb_check_init_done(bool need_init)
 {
-	char *opt;
-	char *value;
-	long unsigned int_value;
-	bool is_int_value;
-	bool is_init;
-	int ret;
+	const bool init_done = parinfo->status & MODELF_STATUS_INIT_DONE;
 
-	opt = strsep(&tokbuf, " \t\n");
+	if (!(need_init ^ init_done))
+		return true;
 
-	if (!opt) {
-		dev_err(parinfo->dev, "No option identifier specified\n");
-		return -EINVAL;
-	}
+	dev_err(parinfo->dev,
+		need_init ? "Not yet initialised\n" : "Already initialised\n");
 
-	value = strsep(&tokbuf, " \t\n");
-
-	if (!value) {
-		dev_err(parinfo->dev, "No value specified for %s\n", opt);
-		return -EINVAL;
-	}
-
-	is_int_value = kstrtoul(value, 10, &int_value) ? false : true;
-	is_init = (parinfo->status & MODELF_STATUS_INIT_DONE) ? true : false;
-
-	ret = 0;
-
-	if (!strcmp(opt, "clear_on_exit") && is_int_value) {
-		parinfo->opt.clear_on_exit = int_value ? 1 : 0;
-	} else if (!strcmp(opt, "clear_on_init") && is_int_value) {
-		parinfo->opt.clear_on_init = int_value ? 1 : 0;
-	} else if (!strcmp(opt, "interleaved_sources") && is_int_value) {
-		if (is_init) {
-			dev_err(parinfo->dev,
-				"Controller already initialised\n");
-			ret = -EINVAL;
-		} else {
-			parinfo->opt.interleaved_sources = int_value ? 1 : 0;
-		}
-	} else if (!strcmp(opt, "spi_freq_hz") && is_int_value) {
-		parinfo->opt.spi_freq_hz = int_value;
-	} else if (!strcmp(opt, "display_type")) {
-		if (is_init) {
-			dev_err(parinfo->dev,
-				"Controller already initialised\n");
-			ret = -EINVAL;
-		} else {
-			modelffb_apply_display_type(value);
-		}
-	} else if (!strcmp(opt, "temperature_auto") && is_int_value) {
-		parinfo->opt.temperature_auto = int_value;
-		modelffb_measure_temperature();
-	} else if (!strcmp(opt, "temperature") && is_int_value) {
-		parinfo->opt.temperature = int_value;
-		modelffb_measure_temperature();
-	} else {
-		dev_err(parinfo->dev, "Invalid setopt identifier\n");
-		ret = -EINVAL;
-	}
-
-	return ret;
-}
-
-static bool modelffb_is_init_done(void)
-{
-	if (!(parinfo->status & MODELF_STATUS_INIT_DONE)) {
-		dev_err(parinfo->dev, "Not yet initialised\n");
-		return false;
-	}
-
-	return true;
+	return false;
 }
 
 static ssize_t modelffb_store_control(
@@ -3237,6 +3181,7 @@ static ssize_t modelffb_store_control(
 	char localbuf[256];
 	char *tok, *next_tok;
 	struct fb_info *info = parinfo->fbinfo;
+	int stat = 0;
 
 	strncpy(localbuf, buf, 255);
 	localbuf[255] = '\0';
@@ -3246,17 +3191,18 @@ static ssize_t modelffb_store_control(
 
 	if (!strcmp(tok, "init")) {
 	/* echo init > /sys/devices/platform/modelffb/control */
-		if (parinfo->status & MODELF_STATUS_INIT_DONE) {
-			dev_err(parinfo->dev, "Already initialised\n");
-		} else if (modelffb_modelf_init() == 0)
+		if (!modelffb_check_init_done(false))
+			return -EINVAL;
+
+		stat = modelffb_modelf_init();
+		if (!stat)
 			parinfo->status |= MODELF_STATUS_INIT_DONE;
 	} else if (!strcmp(tok, "set")) {
 	/* echo set element value > /sys/devices/platform/modelffb/control */
 		__modelffb_set_element(next_tok);
-	} else if (!strcmp(tok, "setopt")) {
-		modelffb_setopt(info, next_tok, count);
-	} else if (!modelffb_is_init_done()) {
+	} else if (!modelffb_check_init_done(true)) {
 		dev_err(parinfo->dev, "Cannot perform action\n");
+		stat = -EINVAL;
 	} else if (!strcmp(tok, "dumpmem")) {
 	/* echo dumpmem address size >
 	   /sys/devices/platform/modelffb/control */
@@ -3348,9 +3294,10 @@ static ssize_t modelffb_store_control(
 					 x, y, width, height);
 	} else {
 		dev_err(parinfo->dev, "Invalid control argument\n");
+		stat = -EINVAL;
 	}
 
-	return count;
+	return stat ? stat : count;
 }
 
 static ssize_t __modelffb_store_keycode(struct device *dev,
@@ -3362,10 +3309,17 @@ static ssize_t __modelffb_store_keycode(struct device *dev,
 	return count;
 }
 
+static ssize_t modelffb_show_init_status(struct device *dev,
+	struct device_attribute *attr, char *buf)
+{
+	return scnprintf(buf, PAGE_SIZE, "%d\n",
+			 (parinfo->status & MODELF_STATUS_INIT_DONE));
+}
+
 static ssize_t modelffb_show_on_drawing(struct device *dev,
 	struct device_attribute *attr, char *buf)
 {
-	if (!modelffb_is_init_done())
+	if (!modelffb_check_init_done(true))
 		return -EINVAL;
 
 	if (parinfo->power_mode == MODELF_POWER_RUN) {
@@ -3381,64 +3335,6 @@ static ssize_t modelffb_show_on_drawing(struct device *dev,
 	return 1;
 }
 
-#if (defined(CONFIG_MODELF_PL_HARDWARE) \
-     || defined(CONFIG_MODELF_PL_HARDWARE_MODULE))
-static ssize_t vcom_show(struct device *dev, struct device_attribute *attr,
-			 char *buf)
-{
-	int stat;
-	long vcom_mv;
-
-	if (!modelffb_is_init_done())
-		return -EINVAL;
-
-	stat = pl_hardware_get_vcom(parinfo->pl_hardware, &vcom_mv);
-	if (stat)
-		return stat;
-
-	return scnprintf(buf, PAGE_SIZE, "%li\n", (long)vcom_mv);
-}
-
-static ssize_t vcom_store(struct device *dev, struct device_attribute *attr,
-			  const char *buf, size_t count)
-{
-	int stat;
-	long vcom_mv;
-
-	if (!modelffb_is_init_done())
-		return -EINVAL;
-
-	stat = kstrtol(buf, 10, &vcom_mv);
-	if (stat)
-		return stat;
-
-	stat = pl_hardware_set_vcom(parinfo->pl_hardware, vcom_mv);
-	if (stat)
-		return stat;
-
-	return count;
-}
-
-static ssize_t modelffb_show_temperature(
-	struct device *dev, struct device_attribute *attr, char *buf)
-{
-	if (!modelffb_is_init_done())
-		return -EINVAL;
-
-	return scnprintf(buf, PAGE_SIZE, "%d\n", parinfo->opt.temperature);
-}
-
-static ssize_t modelffb_show_temperature_auto(
-	struct device *dev, struct device_attribute *attr, char *buf)
-{
-	if (!modelffb_is_init_done())
-		return -EINVAL;
-
-	return scnprintf(buf, PAGE_SIZE, "%d\n",
-			 parinfo->opt.temperature_auto);
-}
-#endif
-
 static DEVICE_ATTR(init_code, S_IFREG | S_IWUSR | S_IRUSR,
 	NULL, __modelffb_store_init_code);
 static DEVICE_ATTR(waveform, S_IFREG | S_IWUSR | S_IRUSR,
@@ -3447,25 +3343,329 @@ static DEVICE_ATTR(control, S_IFREG | S_IWUSR | S_IRUSR,
 	NULL, modelffb_store_control);
 static DEVICE_ATTR(keycode, S_IFREG | S_IWUSR | S_IRUSR,
 	NULL, __modelffb_store_keycode);
+static DEVICE_ATTR(init_done, S_IRUGO | S_IWUGO,
+	modelffb_show_init_status, NULL);
 static DEVICE_ATTR(on_drawing, S_IFREG | S_IRUSR | S_IRGRP | S_IROTH,
 	modelffb_show_on_drawing, NULL);
+
+/* --- opt attributes group --- */
+
 #if (defined(CONFIG_MODELF_PL_HARDWARE) \
      || defined(CONFIG_MODELF_PL_HARDWARE_MODULE))
-static DEVICE_ATTR(vcom, S_IRUGO | S_IWUGO, vcom_show, vcom_store);
-static DEVICE_ATTR(temperature, S_IRUGO | S_IWUGO, modelffb_show_temperature,
-	NULL);
-static DEVICE_ATTR(temperature_auto, S_IRUGO | S_IWUGO,
-	modelffb_show_temperature_auto, NULL);
+static ssize_t modelffb_show_vcom(
+	struct device *dev, struct device_attribute *attr, char *buf)
+{
+	int stat;
+	long vcom_mv;
+
+	if (!modelffb_check_init_done(true))
+		return -EINVAL;
+
+	stat = pl_hardware_get_vcom(parinfo->pl_hardware, &vcom_mv);
+	if (stat)
+		return stat;
+
+	return scnprintf(buf, PAGE_SIZE, "%li\n", vcom_mv);
+}
+
+static ssize_t modelffb_store_vcom(
+	struct device *dev, struct device_attribute *attr,
+	const char *buf, size_t count)
+{
+	int stat;
+	long vcom_mv;
+
+	stat = kstrtol(buf, 10, &vcom_mv);
+	if (stat)
+		return stat;
+
+	if (parinfo->status & MODELF_STATUS_INIT_DONE) {
+		stat = pl_hardware_set_vcom(parinfo->pl_hardware, vcom_mv);
+		if (stat)
+			return stat;
+	} else {
+		modelffb_pl_config.init_vcom_mv = vcom_mv;
+	}
+
+	return count;
+}
+#endif /* PL_HARDWARE */
+
+static ssize_t modelffb_show_temperature(
+	struct device *dev, struct device_attribute *attr, char *buf)
+{
+	return scnprintf(buf, PAGE_SIZE, "%d\n", parinfo->opt.temperature);
+}
+
+static ssize_t modelffb_store_temperature(
+	struct device *dev, struct device_attribute *attr,
+	const char *buf, size_t count)
+{
+	int stat;
+	int temperature;
+
+	stat = kstrtoint(buf, 10, &temperature);
+	if (stat)
+		return stat;
+
+	parinfo->opt.temperature = temperature;
+
+	if (parinfo->status & MODELF_STATUS_INIT_DONE)
+		modelffb_measure_temperature();
+
+	return count;
+}
+
+static ssize_t modelffb_show_temperature_auto(
+	struct device *dev, struct device_attribute *attr, char *buf)
+{
+	return scnprintf(buf, PAGE_SIZE, "%u\n",
+			 parinfo->opt.temperature_auto);
+}
+
+static ssize_t modelffb_store_temperature_auto(
+	struct device *dev, struct device_attribute *attr,
+	const char *buf, size_t count)
+{
+	int stat;
+	unsigned long auto_on;
+
+	stat = kstrtoul(buf, 10, &auto_on);
+	if (stat)
+		return stat;
+
+	parinfo->opt.temperature_auto = !!auto_on;
+
+	if (parinfo->status & MODELF_STATUS_INIT_DONE)
+		modelffb_measure_temperature();
+
+	return count;
+}
+
+static ssize_t modelffb_show_clear_on_init(
+	struct device *dev, struct device_attribute *attr, char *buf)
+{
+	return scnprintf(buf, PAGE_SIZE, "%u\n", parinfo->opt.clear_on_init);
+}
+
+static ssize_t modelffb_store_clear_on_init(
+	struct device *dev, struct device_attribute *attr,
+	const char *buf, size_t count)
+{
+	int stat;
+	unsigned long do_clear_on_init;
+
+	stat = kstrtoul(buf, 10, &do_clear_on_init);
+	if (stat)
+		return stat;
+
+	parinfo->opt.clear_on_init = !!do_clear_on_init;
+
+	return count;
+}
+
+static ssize_t modelffb_show_clear_on_exit(
+	struct device *dev, struct device_attribute *attr, char *buf)
+{
+	return scnprintf(buf, PAGE_SIZE, "%u\n", parinfo->opt.clear_on_exit);
+}
+
+static ssize_t modelffb_store_clear_on_exit(
+	struct device *dev, struct device_attribute *attr,
+	const char *buf, size_t count)
+{
+	int stat;
+	unsigned long do_clear_on_exit;
+
+	stat = kstrtoul(buf, 10, &do_clear_on_exit);
+	if (stat)
+		return stat;
+
+	parinfo->opt.clear_on_exit = !!do_clear_on_exit;
+
+	return count;
+}
+
+static ssize_t modelffb_show_display_type(
+	struct device *dev, struct device_attribute *attr, char *buf)
+{
+	return scnprintf(buf, PAGE_SIZE, "%s\n", parinfo->opt.display_type);
+}
+
+static ssize_t modelffb_store_display_type(
+	struct device *dev, struct device_attribute *attr,
+	const char *buf, size_t count)
+{
+	char tmp[sizeof(parinfo->opt.display_type) + 1];
+
+	if (!modelffb_check_init_done(false))
+		return -EINVAL;
+
+	if (count >= sizeof(tmp)) {
+		dev_err(parinfo->dev, "Display type identifier too long\n");
+		return -EINVAL;
+	}
+
+	memcpy(parinfo->opt.display_type, buf, count);
+	parinfo->opt.display_type[count] = '\0';
+	modelffb_apply_display_type(parinfo->opt.display_type);
+
+	return count;
+}
+
+static ssize_t modelffb_show_interleaved_sources(
+	struct device *dev, struct device_attribute *attr, char *buf)
+{
+	return scnprintf(buf, PAGE_SIZE, "%u\n",
+			 parinfo->opt.interleaved_sources);
+}
+
+static ssize_t modelffb_store_interleaved_sources(
+	struct device *dev, struct device_attribute *attr,
+	const char *buf, size_t count)
+{
+	int stat;
+	unsigned long do_clear_on_exit;
+
+	if (!modelffb_check_init_done(false))
+		return -EINVAL;
+
+	stat = kstrtoul(buf, 10, &do_clear_on_exit);
+	if (stat)
+		return stat;
+
+	parinfo->opt.clear_on_exit = !!do_clear_on_exit;
+
+	return count;
+}
+
+static ssize_t modelffb_show_left_border(
+	struct device *dev, struct device_attribute *attr, char *buf)
+{
+	return scnprintf(buf, PAGE_SIZE, "%u\n", parinfo->opt.left_border);
+}
+
+static ssize_t modelffb_store_left_border(
+	struct device *dev, struct device_attribute *attr,
+	const char *buf, size_t count)
+{
+	unsigned long left_border;
+	int stat;
+
+	if (!modelffb_check_init_done(false))
+		return -EINVAL;
+
+	stat = kstrtoul(buf, 10, &left_border);
+	if (stat)
+		return stat;
+
+	parinfo->opt.left_border = left_border;
+
+	return count;
+}
+
+static ssize_t modelffb_show_right_border(
+	struct device *dev, struct device_attribute *attr, char *buf)
+{
+	return scnprintf(buf, PAGE_SIZE, "%u\n", parinfo->opt.right_border);
+}
+
+static ssize_t modelffb_store_right_border(
+	struct device *dev, struct device_attribute *attr,
+	const char *buf, size_t count)
+{
+	unsigned long right_border;
+	int stat;
+
+	if (!modelffb_check_init_done(false))
+		return -EINVAL;
+
+	stat = kstrtoul(buf, 10, &right_border);
+	if (stat)
+		return stat;
+
+	parinfo->opt.right_border = right_border;
+
+	return count;
+}
+
+static ssize_t modelffb_show_spi_freq_hz(
+	struct device *dev, struct device_attribute *attr, char *buf)
+{
+	return scnprintf(buf, PAGE_SIZE, "%d\n", parinfo->opt.spi_freq_hz);
+}
+
+static ssize_t modelffb_store_spi_freq_hz(
+	struct device *dev, struct device_attribute *attr,
+	const char *buf, size_t count)
+{
+	unsigned long spi_freq_hz;
+	int stat;
+
+	stat = kstrtoul(buf, 10, &spi_freq_hz);
+	if (stat)
+		return stat;
+
+	parinfo->opt.spi_freq_hz = spi_freq_hz;
+
+	return count;
+}
+
+#if (defined(CONFIG_MODELF_PL_HARDWARE) \
+     || defined(CONFIG_MODELF_PL_HARDWARE_MODULE))
+static DEVICE_ATTR(vcom, S_IRUGO | S_IWUGO,
+	modelffb_show_vcom, modelffb_store_vcom);
 #endif
+static DEVICE_ATTR(temperature, S_IRUGO | S_IWUGO,
+	modelffb_show_temperature, modelffb_store_temperature);
+static DEVICE_ATTR(temperature_auto, S_IRUGO | S_IWUGO,
+	modelffb_show_temperature_auto, modelffb_store_temperature_auto);
+static DEVICE_ATTR(clear_on_init, S_IRUGO | S_IWUGO,
+	modelffb_show_clear_on_init, modelffb_store_clear_on_init);
+static DEVICE_ATTR(clear_on_exit, S_IRUGO | S_IWUGO,
+	modelffb_show_clear_on_exit, modelffb_store_clear_on_exit);
+static DEVICE_ATTR(display_type, S_IRUGO | S_IWUGO,
+	modelffb_show_display_type, modelffb_store_display_type);
+static DEVICE_ATTR(left_border, S_IRUGO | S_IWUGO,
+	modelffb_show_left_border, modelffb_store_left_border);
+static DEVICE_ATTR(right_border, S_IRUGO | S_IWUGO,
+	modelffb_show_right_border, modelffb_store_right_border);
+static DEVICE_ATTR(interleaved_sources, S_IRUGO | S_IWUGO,
+	modelffb_show_interleaved_sources, modelffb_store_interleaved_sources);
+static DEVICE_ATTR(spi_freq_hz, S_IRUGO | S_IWUGO,
+	modelffb_show_spi_freq_hz, modelffb_store_spi_freq_hz);
+
+
+static struct attribute *modelffb_opt_attrs[] = {
+#if (defined(CONFIG_MODELF_PL_HARDWARE) \
+     || defined(CONFIG_MODELF_PL_HARDWARE_MODULE))
+	&dev_attr_vcom.attr,
+#endif
+	&dev_attr_temperature.attr,
+	&dev_attr_temperature_auto.attr,
+	&dev_attr_clear_on_init.attr,
+	&dev_attr_clear_on_exit.attr,
+	&dev_attr_display_type.attr,
+	&dev_attr_interleaved_sources.attr,
+	&dev_attr_left_border.attr,
+	&dev_attr_right_border.attr,
+	&dev_attr_spi_freq_hz.attr,
+	NULL
+};
+
+static const struct attribute_group modelffb_opt_attr_group = {
+	.attrs = modelffb_opt_attrs,
+	.name = "opt",
+};
 
 static int modelffb_create_file(void)
 {
-	int retval = 0;
+	int retval;
 
 	retval = device_create_file(parinfo->dev, &dev_attr_init_code);
 	if (retval) {
 		dev_err(parinfo->dev, "Cannot create file \"init_code\"\n");
-		goto end;
+		goto exit_now;
 	}
 
 	retval = device_create_file(parinfo->dev, &dev_attr_waveform);
@@ -3486,44 +3686,31 @@ static int modelffb_create_file(void)
 		goto remove_control;
 	}
 
-	retval = device_create_file(parinfo->dev, &dev_attr_on_drawing);
+	retval = device_create_file(parinfo->dev, &dev_attr_init_done);
 	if (retval) {
-		dev_err(parinfo->dev, "Cannot create file \"on_drawing\"\n");
+		dev_err(parinfo->dev, "Cannot create file \"init_done\"\n");
 		goto remove_keycode;
 	}
 
-#if (defined(CONFIG_MODELF_PL_HARDWARE) \
-     || defined(CONFIG_MODELF_PL_HARDWARE_MODULE))
-	retval = device_create_file(parinfo->dev, &dev_attr_vcom);
+	retval = device_create_file(parinfo->dev, &dev_attr_on_drawing);
 	if (retval) {
-		dev_err(parinfo->dev, "Cannot create file \"vcom\"\n");
+		dev_err(parinfo->dev, "Cannot create file \"on_drawing\"\n");
+		goto remove_init_done;
+	}
+
+	retval = sysfs_create_group(&parinfo->pdev->dev.kobj,
+				    &modelffb_opt_attr_group);
+	if (retval) {
+		dev_err(parinfo->dev, "Cannot create \"opt\" group\n");
 		goto remove_on_drawing;
 	}
 
-	retval = device_create_file(parinfo->dev, &dev_attr_temperature);
-	if (retval) {
-		dev_err(parinfo->dev, "Cannot create file \"temperature\"\n");
-		goto remove_vcom;
-	}
-
-	retval = device_create_file(parinfo->dev, &dev_attr_temperature_auto);
-	if (retval) {
-		dev_err(parinfo->dev, "Cannot create file \"temperature_auto\"\n");
-		goto remove_temperature;
-	}
-#endif
-
 	return 0;
 
-#if (defined(CONFIG_MODELF_PL_HARDWARE) \
-     || defined(CONFIG_MODELF_PL_HARDWARE_MODULE))
-remove_temperature:
-	device_remove_file(parinfo->dev, &dev_attr_temperature);
-remove_vcom:
-	device_remove_file(parinfo->dev, &dev_attr_vcom);
 remove_on_drawing:
 	device_remove_file(parinfo->dev, &dev_attr_on_drawing);
-#endif
+remove_init_done:
+	device_remove_file(parinfo->dev, &dev_attr_init_done);
 remove_keycode:
 	device_remove_file(parinfo->dev, &dev_attr_keycode);
 remove_control:
@@ -3532,23 +3719,19 @@ remove_waveform:
 	device_remove_file(parinfo->dev, &dev_attr_waveform);
 remove_init_code:
 	device_remove_file(parinfo->dev, &dev_attr_init_code);
-end:
+exit_now:
 	return retval;
 }
 
 static void modelffb_remove_file(void)
 {
+	sysfs_remove_group(&parinfo->pdev->dev.kobj, &modelffb_opt_attr_group);
 	device_remove_file(parinfo->dev, &dev_attr_on_drawing);
+	device_remove_file(parinfo->dev, &dev_attr_init_done);
 	device_remove_file(parinfo->dev, &dev_attr_keycode);
 	device_remove_file(parinfo->dev, &dev_attr_control);
 	device_remove_file(parinfo->dev, &dev_attr_waveform);
 	device_remove_file(parinfo->dev, &dev_attr_init_code);
-#if (defined(CONFIG_MODELF_PL_HARDWARE) \
-     || defined(CONFIG_MODELF_PL_HARDWARE_MODULE))
-	device_remove_file(parinfo->dev, &dev_attr_vcom);
-	device_remove_file(parinfo->dev, &dev_attr_temperature);
-	device_remove_file(parinfo->dev, &dev_attr_temperature_auto);
-#endif
 }
 
 /* =========== SPI-I2C bridge support =========== */
