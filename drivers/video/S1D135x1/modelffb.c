@@ -3429,6 +3429,7 @@ static ssize_t modelffb_store_temperature_auto(
 {
 	int stat;
 	unsigned long auto_on;
+	bool prev_auto_on = parinfo->opt.temperature_auto;
 
 	stat = kstrtoul(buf, 10, &auto_on);
 	if (stat)
@@ -3436,8 +3437,21 @@ static ssize_t modelffb_store_temperature_auto(
 
 	parinfo->opt.temperature_auto = !!auto_on;
 
-	if (parinfo->status & MODELF_STATUS_INIT_DONE)
+	if (parinfo->status & MODELF_STATUS_INIT_DONE) {
+		if (parinfo->opt.temperature_auto && !prev_auto_on) {
+			/* disable manual temperature control */
+			modelffb_lock();
+			__modelffb_standby();
+			__modelffb_reg_write(MODELF_REG_FAKE_TEMPERATURE, 0);
+			if (parinfo->power_mode == MODELF_POWER_RUN)
+				__modelffb_run();
+			else if (parinfo->power_mode == MODELF_POWER_SLEEP)
+				__modelffb_sleep();
+			modelffb_unlock();
+		}
+
 		modelffb_measure_temperature();
+	}
 
 	return count;
 }
