@@ -69,7 +69,7 @@ static const char *modelffb_sync_status_table[MODELFFB_SYNC_N] = {
 #include "pl_hardware.h"
 
 /* ToDo: define in board file */
-struct pl_hardware_config modelffb_pl_config = {
+struct plhw_config modelffb_plhw_config = {
 #ifdef CONFIG_MODELF_PL_ROBIN
 	.i2c_bus_number = 4,
 #else
@@ -665,7 +665,7 @@ static inline void modelffb_sync_wait_power(const char *power_str)
 
 	SYNC_LOG("power %d %s", power_state, power_str);
 	wait_event_interruptible(parinfo->sync_update_wait,
-				 (pl_hardware_is_enabled(parinfo->pl_hardware)
+				 (plhw_is_enabled(parinfo->plhw)
 				  == power_state));
 	SYNC_LOG("power OK %d %s", power_state, power_str);
 }
@@ -1406,7 +1406,7 @@ static int modelffb_cleanup_full(int waveform_mode)
 
 #if (defined(CONFIG_MODELF_PL_HARDWARE) \
      || defined(CONFIG_MODELF_PL_HARDWARE_MODULE))
-	retval = pl_hardware_enable(parinfo->pl_hardware);
+	retval = plhw_enable(parinfo->plhw);
 	if (retval) {
 		dev_err(parinfo->dev, "Failed to enable PL hardware\n");
 		goto err_exit;
@@ -1427,7 +1427,7 @@ static int modelffb_cleanup_full(int waveform_mode)
 err_power_off:
 #if (defined(CONFIG_MODELF_PL_HARDWARE) \
      || defined(CONFIG_MODELF_PL_HARDWARE_MODULE))
-	pl_hardware_disable(parinfo->pl_hardware);
+	plhw_disable(parinfo->plhw);
 	wake_up_interruptible(&parinfo->sync_update_wait);
 err_exit:
 #endif
@@ -1463,7 +1463,7 @@ static int modelffb_update_full(int waveform_mode)
 
 #if (defined(CONFIG_MODELF_PL_HARDWARE) \
      || defined(CONFIG_MODELF_PL_HARDWARE_MODULE))
-	retval = pl_hardware_enable(parinfo->pl_hardware);
+	retval = plhw_enable(parinfo->plhw);
 	if (retval) {
 		dev_err(parinfo->dev, "Failed to enable PL hardware\n");
 		goto err_exit;
@@ -1484,7 +1484,7 @@ static int modelffb_update_full(int waveform_mode)
 err_power_off:
 #if (defined(CONFIG_MODELF_PL_HARDWARE) \
      || defined(CONFIG_MODELF_PL_HARDWARE_MODULE))
-	pl_hardware_disable(parinfo->pl_hardware);
+	plhw_disable(parinfo->plhw);
 	wake_up_interruptible(&parinfo->sync_update_wait);
 err_exit:
 #endif
@@ -1751,7 +1751,7 @@ static void modelffb_cleanup_area_lut(int x, int y, int width, int height,
 {
 #if (defined(CONFIG_MODELF_PL_HARDWARE) \
      || defined(CONFIG_MODELF_PL_HARDWARE_MODULE))
-	if (pl_hardware_enable(parinfo->pl_hardware)) {
+	if (plhw_enable(parinfo->plhw)) {
 		dev_err(parinfo->dev, "Failed to enable PL hardware\n");
 		return;
 	}
@@ -1770,7 +1770,7 @@ static void modelffb_cleanup_area_lut(int x, int y, int width, int height,
 err_power_off:
 #if (defined(CONFIG_MODELF_PL_HARDWARE) \
      || defined(CONFIG_MODELF_PL_HARDWARE_MODULE))
-	pl_hardware_disable(parinfo->pl_hardware);
+	plhw_disable(parinfo->plhw);
 	wake_up_interruptible(&parinfo->sync_update_wait);
 #endif
 	return;
@@ -1781,7 +1781,7 @@ static void modelffb_cleanup_area(int x, int y, int width, int height,
 {
 #if (defined(CONFIG_MODELF_PL_HARDWARE) \
      || defined(CONFIG_MODELF_PL_HARDWARE_MODULE))
-	if (pl_hardware_enable(parinfo->pl_hardware)) {
+	if (plhw_enable(parinfo->plhw)) {
 		dev_err(parinfo->dev, "Failed to enable PL hardware\n");
 		return;
 	}
@@ -1812,7 +1812,7 @@ static void modelffb_cleanup_area(int x, int y, int width, int height,
 err_power_off:
 #if (defined(CONFIG_MODELF_PL_HARDWARE) \
      || defined(CONFIG_MODELF_PL_HARDWARE_MODULE))
-	pl_hardware_disable(parinfo->pl_hardware);
+	plhw_disable(parinfo->plhw);
 	wake_up_interruptible(&parinfo->sync_update_wait);
 #endif
 	return;
@@ -1832,7 +1832,7 @@ static void modelffb_update_area(int x, int y, int width, int height,
 {
 #if (defined(CONFIG_MODELF_PL_HARDWARE) \
      || defined(CONFIG_MODELF_PL_HARDWARE_MODULE))
-	if (pl_hardware_enable(parinfo->pl_hardware)) {
+	if (plhw_enable(parinfo->plhw)) {
 		dev_err(parinfo->dev, "Failed to enable PL hardware\n");
 		return;
 	}
@@ -1849,7 +1849,7 @@ static void modelffb_update_area(int x, int y, int width, int height,
 err_power_off:
 #if (defined(CONFIG_MODELF_PL_HARDWARE) \
      || defined(CONFIG_MODELF_PL_HARDWARE_MODULE))
-	pl_hardware_disable(parinfo->pl_hardware);
+	plhw_disable(parinfo->plhw);
 	wake_up_interruptible(&parinfo->sync_update_wait);
 #endif
 	return;
@@ -2330,7 +2330,7 @@ static void modelffb_commit_sleep(void)
 
 #if (defined(CONFIG_MODELF_PL_HARDWARE) \
      || defined(CONFIG_MODELF_PL_HARDWARE_MODULE))
-		pl_hardware_disable(parinfo->pl_hardware);
+		plhw_disable(parinfo->plhw);
 		wake_up_interruptible(&parinfo->sync_update_wait);
 #endif
 		modelffb_sleep();
@@ -2820,13 +2820,13 @@ static int modelffb_regulator_init(void)
      || defined(CONFIG_MODELF_PL_HARDWARE_MODULE))
 	int stat;
 
-	parinfo->pl_hardware = pl_hardware_alloc();
-	if (!parinfo->pl_hardware) {
+	parinfo->plhw = plhw_alloc();
+	if (!parinfo->plhw) {
 		stat = -ENOMEM;
 		goto exit_now;
 	}
 
-	stat = pl_hardware_init(parinfo->pl_hardware, &modelffb_pl_config);
+	stat = plhw_init(parinfo->plhw, &modelffb_plhw_config);
 	if (stat) {
 		dev_err(parinfo->dev,
 			"Failed to initialize Plastic Logic hardware\n");
@@ -2836,7 +2836,7 @@ static int modelffb_regulator_init(void)
 	return 0;
 
 exit_free_plhw:
-	pl_hardware_free(parinfo->pl_hardware);
+	plhw_free(parinfo->plhw);
 exit_now:
 	return stat;
 #else
@@ -2848,9 +2848,9 @@ static void modelffb_regulator_exit(void)
 {
 #if (defined(CONFIG_MODELF_PL_HARDWARE) \
      || defined(CONFIG_MODELF_PL_HARDWARE_MODULE))
-	if (parinfo->pl_hardware)
-		pl_hardware_free(parinfo->pl_hardware);
-	pl_hardware_static_free();
+	if (parinfo->plhw)
+		plhw_free(parinfo->plhw);
+	plhw_static_free();
 #endif
 }
 
@@ -3361,7 +3361,7 @@ static ssize_t modelffb_show_vcom(
 	if (!modelffb_check_init_done(true))
 		return -EINVAL;
 
-	stat = pl_hardware_get_vcom(parinfo->pl_hardware, &vcom_mv);
+	stat = plhw_get_vcom(parinfo->plhw, &vcom_mv);
 	if (stat)
 		return stat;
 
@@ -3380,11 +3380,11 @@ static ssize_t modelffb_store_vcom(
 		return stat;
 
 	if (parinfo->status & MODELF_STATUS_INIT_DONE) {
-		stat = pl_hardware_set_vcom(parinfo->pl_hardware, vcom_mv);
+		stat = plhw_set_vcom(parinfo->plhw, vcom_mv);
 		if (stat)
 			return stat;
 	} else {
-		modelffb_pl_config.init_vcom_mv = vcom_mv;
+		modelffb_plhw_config.init_vcom_mv = vcom_mv;
 	}
 
 	return count;
@@ -3891,7 +3891,7 @@ static int __devinit modelffb_probe(struct platform_device *pdev)
 
 #if (defined(CONFIG_MODELF_PL_HARDWARE) \
      || defined(CONFIG_MODELF_PL_HARDWARE_MODULE))
-	retval = pl_hardware_static_init();
+	retval = plhw_static_init();
 	if (retval) {
 		dev_err(parinfo->dev, "PLHW static init failed\n");
 		goto exit_now;
@@ -4048,7 +4048,7 @@ exit_release_framebuffer:
 #if (defined(CONFIG_MODELF_PL_HARDWARE) \
      || defined(CONFIG_MODELF_PL_HARDWARE_MODULE))
 exit_plhw_static:
-	pl_hardware_static_free();
+	plhw_static_free();
 #endif
 exit_now:
 

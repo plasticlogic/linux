@@ -100,7 +100,7 @@ struct modelffb_par {
 	int send_waveform_wait;
 #if (defined(CONFIG_MODELF_PL_HARDWARE) \
      || defined(CONFIG_MODELF_PL_HARDWARE_MODULE))
-        struct pl_hardware *pl_hardware;
+        struct plhw *plhw;
 #endif
 	struct {
 		u32 clear_on_init:1;
