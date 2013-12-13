@@ -94,12 +94,24 @@ struct plhw_config modelffb_plhw_config = {
 
 static struct modelffb_par *parinfo;
 
-#ifdef CONFIG_I2C_SC18IS60X_SHARED_SPI
+#if defined(CONFIG_I2C_SC18IS60X_SHARED_SPI) || \
+	defined(CONFIG_I2C_SC18IS60X_SHARED_SPI_MODULE)
 /* hack to share same SPI device with sc18is60x I2C bridge driver if only 1
  * chip select is available */
 extern struct mutex sc18is60x_spi_lock;
 extern struct spi_device *sc18is60x_shared_spi;
 #endif /* CONFIG_I2C_SC18IS60X_SHARED_SPI */
+
+#if defined(CONFIG_I2C_S1D135X1) || defined(CONFIG_I2C_S1D135X1_MODULE)
+/* back-door to share same SPI device with the I2C bridge driver of the same
+ * S1D135x1 chip */
+static DEFINE_MUTEX(s1d135x1_spi_lock);
+static struct spi_device *modelffb_i2c_get_spi(void);
+static u16 modelffb_i2c_read_reg(struct spi_device *spi, u16 address);
+static void modelffb_i2c_write_reg(struct spi_device *spi, u16 address,
+				   u16 data);
+static void modelffb_i2c_put_spi(struct spi_device *spi);
+#endif
 
 static inline int modelffb_lock(void)
 {
@@ -165,6 +177,11 @@ static void __devexit modelffb_release_bus(void)
 	mutex_lock(&sc18is60x_spi_lock);
 	sc18is60x_shared_spi = NULL;
 	mutex_unlock(&sc18is60x_spi_lock);
+#endif
+#if defined(CONFIG_I2C_S1D135X1) || defined(CONFIG_I2C_S1D135X1_MODULE)
+	mutex_lock(&s1d135x1_spi_lock);
+	s1d135x1_spi.init_done = false;
+	mutex_unlock(&s1d135x1_spi_lock);
 #endif
 
 	spi_unregister_device(parinfo->spi);
@@ -966,10 +983,43 @@ static void __devinit __modelffb_reset(void)
 #define AM33XX_CONTROL_PADCONF_SPI0_D0_OFFSET		   0x0954
 #define AM33XX_CONTROL_PADCONF_SPI0_D1_OFFSET		   0x0958
 
+static int __devinit modelffb_early_init(struct platform_device *pdev)
+{
+	uint16_t regval;
+
+	__modelffb_reset();
+
+	regval = __modelffb_reg_read(MODELF_REG_PRODUCT_CODE);
+	dev_info(&pdev->dev, "Product code = 0x%04x\n", regval);
+	if (regval != MODELF_PRODUCT_CODE) {
+		dev_err(&pdev->dev, "Invalid product code\n");
+		return -EIO;
+	}
+
+#if defined(CONFIG_I2C_S1D135X1) || defined(CONFIG_I2C_S1D135X1_MODULE)
+	mutex_lock(&s1d135x1_spi_lock);
+	__modelffb_immediate_reg_write(MODELF_REG_I2C_CLOCK,
+				       parinfo->pdata->i2c_clk_divider);
+	s1d135x1_spi.get = modelffb_i2c_get_spi;
+	s1d135x1_spi.put = modelffb_i2c_put_spi;
+	s1d135x1_spi.write_reg = modelffb_i2c_write_reg;
+	s1d135x1_spi.read_reg = modelffb_i2c_read_reg;
+	s1d135x1_spi.init_done = true;
+	mutex_unlock(&s1d135x1_spi_lock);
+	dev_info(&pdev->dev, "SPI-I2C bridge initialised\n");
+#endif
+
+	return 0;
+}
+
 static int modelffb_chip_init(void)
 {
 	uint16_t readval;
 	int retval = 0;
+
+#if defined(CONFIG_I2C_S1D135X1) || defined(CONFIG_I2C_S1D135X1_MODULE)
+	mutex_lock(&s1d135x1_spi_lock);
+#endif
 
 	retval = modelffb_lock();
 	if (retval)
@@ -977,13 +1027,10 @@ static int modelffb_chip_init(void)
 
 	__modelffb_reset();
 
-	readval = __modelffb_reg_read(MODELF_REG_PRODUCT_CODE);
-	dev_info(parinfo->dev, "Product code = 0x%04x\n", readval);
-	if (readval != MODELF_PRODUCT_CODE) {
-		dev_err(parinfo->dev, "Invalid product code\n");
-		retval = -EIO;
-		goto up_sem;
-	}
+#if defined(CONFIG_I2C_S1D135X1) || defined(CONFIG_I2C_S1D135X1_MODULE)
+	__modelffb_immediate_reg_write(MODELF_REG_I2C_CLOCK,
+				       parinfo->pdata->i2c_clk_divider);
+#endif
 
 	__modelffb_reg_write(MODELF_REG_CLOCK_CONFIGURATION,
 		MODELF_INTERNAL_CLOCK_ENABLE);
@@ -1053,7 +1100,7 @@ static int modelffb_chip_init(void)
 		goto up_sem;
 	}
 
-	__modelffb_immediate_reg_write(MODELF_REG_POWER_SAVE_MODE, 
+	__modelffb_immediate_reg_write(MODELF_REG_POWER_SAVE_MODE,
 		(__modelffb_reg_read(MODELF_REG_POWER_SAVE_MODE)
 		 & ~MODELF_POWER_ACTIVE) | MODELF_POWER_ACTIVE);
 	__modelffb_simple_command(MODELF_COM_RUN);
@@ -1081,12 +1128,10 @@ static int modelffb_chip_init(void)
 	}
 #endif
 
-#if defined(CONFIG_I2C_S1D135X1) || defined(CONFIG_I2C_S1D135X1_MODULE)
-	__modelffb_immediate_reg_write(MODELF_REG_I2C_CLOCK,
-				       parinfo->pdata->i2c_clk_divider);
-#endif
-
 	modelffb_unlock();
+#if defined(CONFIG_I2C_S1D135X1) || defined(CONFIG_I2C_S1D135X1_MODULE)
+	mutex_unlock(&s1d135x1_spi_lock);
+#endif
 
 	return 0;
 
@@ -1096,6 +1141,9 @@ up_sem:
 
 	modelffb_unlock();
 err:
+#if defined(CONFIG_I2C_S1D135X1) || defined(CONFIG_I2C_S1D135X1_MODULE)
+	mutex_unlock(&s1d135x1_spi_lock);
+#endif
 	dev_err(parinfo->dev, "Failed to initialise controller\n");
 
 	return retval;
@@ -2918,6 +2966,8 @@ static int modelffb_modelf_init(void)
 	modelffb_print_reg(MODELF_REG_SENSOR_TEMPERATURE);
 #endif
 
+	dev_info(parinfo->dev, "Chip initialised OK\n");
+
 	return 0;
 
 free_regulator:
@@ -2935,15 +2985,18 @@ free_vram:
 static ssize_t __modelffb_store_init_code(struct device *dev,
 	struct device_attribute *attr, const char *buf, size_t count)
 {
-	if (count > MODELF_MAX_INITCODE_SIZE) {
+	char *ptr;
+
+	if ((parinfo->init_code_size + count) > MODELF_MAX_INITCODE_SIZE) {
 		dev_err(parinfo->dev, "MAX_INITCODE_SIZE has been reached\n");
-	}
-	else {
-		memcpy((void*)parinfo->init_code, buf, count);
-		parinfo->init_code_size += count;
+		return -EINVAL;
 	}
 
+	ptr = (char *)parinfo->init_code + parinfo->init_code_size;
+	memcpy(ptr, buf, count);
+	parinfo->init_code_size += count;
 	parinfo->status |= MODELF_STATUS_INITCODE_STORED;
+
 	return count;
 }
 
@@ -3748,31 +3801,44 @@ static void modelffb_remove_file(void)
 	device_remove_file(parinfo->dev, &dev_attr_init_code);
 }
 
-/* =========== SPI-I2C bridge support =========== */
+/* =========== SPI-I2C bridge interface =========== */
 
 #if defined(CONFIG_I2C_S1D135X1) || defined(CONFIG_I2C_S1D135X1_MODULE)
 
 static struct spi_device *modelffb_i2c_get_spi(void)
 {
-	if (modelffb_lock())
-		return NULL;
+	struct spi_device *ret;
 
-	__modelffb_run();
+	mutex_lock(&s1d135x1_spi_lock);
 
-	return parinfo->spi;
+	if (!s1d135x1_spi.init_done) {
+		ret = NULL;
+		mutex_unlock(&s1d135x1_spi_lock);
+	} else {
+		modelffb_lock();
+		__modelffb_run();
+		ret = parinfo->spi;
+	}
+
+	return ret;
 }
 
 static void modelffb_i2c_put_spi(struct spi_device *spi)
 {
+	BUG_ON(!s1d135x1_spi.init_done);
 	BUG_ON(spi != parinfo->spi);
 
-	__modelffb_queue_sleep();
+	if (parinfo->status & MODELF_STATUS_INIT_DONE)
+		__modelffb_queue_sleep();
+
 	modelffb_unlock();
+	mutex_unlock(&s1d135x1_spi_lock);
 }
 
 static void modelffb_i2c_write_reg(struct spi_device *spi, u16 address,
 				   u16 data)
 {
+	BUG_ON(!s1d135x1_spi.init_done);
 	BUG_ON(spi != parinfo->spi);
 
 	gpio_set_value(parinfo->pdata->gpio_cs, 0);
@@ -3784,6 +3850,7 @@ static u16 modelffb_i2c_read_reg(struct spi_device *spi, u16 address)
 {
 	u16 regval;
 
+	BUG_ON(!s1d135x1_spi.init_done);
 	BUG_ON(spi != parinfo->spi);
 
 	gpio_set_value(parinfo->pdata->gpio_cs, 0);
@@ -3893,18 +3960,18 @@ static int __devinit modelffb_probe(struct platform_device *pdev)
      || defined(CONFIG_MODELF_PL_HARDWARE_MODULE))
 	retval = plhw_static_init();
 	if (retval) {
-		dev_err(parinfo->dev, "PLHW static init failed\n");
+		dev_err(&pdev->dev, "PLHW static init failed\n");
 		goto exit_now;
 	}
 #endif
 
 #ifdef CONFIG_MODELF_DEBUG
-	dev_info(parinfo->dev, "Check rev: %d\n", CHECKREV);
+	dev_info(&pdev->dev, "Check rev: %d\n", CHECKREV);
 #endif
 
 	retval = modelffb_framebuffer_alloc(pdev);
 	if (retval) {
-		dev_err(parinfo->dev, "Failed to alloc frame buffer\n");
+		dev_err(&pdev->dev, "Failed to allocate frame buffer\n");
 #if (defined(CONFIG_MODELF_PL_HARDWARE) \
      || defined(CONFIG_MODELF_PL_HARDWARE_MODULE))
 		goto exit_plhw_static;
@@ -3915,7 +3982,7 @@ static int __devinit modelffb_probe(struct platform_device *pdev)
 
 	retval = modelffb_alloc_memory();
 	if (retval) {
-		dev_err(parinfo->dev, "Failed to alloc modelffb_par\n");
+		dev_err(&pdev->dev, "Failed to alloc modelffb_par\n");
 		goto exit_release_framebuffer;
 	}
 	__modelffb_bit_swap_table_init();
@@ -3926,7 +3993,7 @@ static int __devinit modelffb_probe(struct platform_device *pdev)
 
 	parinfo->workqueue = create_singlethread_workqueue("modelf_workqueue");
 	if (!parinfo->workqueue) {
-		dev_err(parinfo->dev, "Failed to create workqueue\n");
+		dev_err(&pdev->dev, "Failed to create workqueue\n");
 		retval = -ENOMEM;
 		goto exit_free_sysfs;
 	}
@@ -3936,14 +4003,14 @@ static int __devinit modelffb_probe(struct platform_device *pdev)
 		if (retval)
 			goto exit_destroy_workqueue;
 		gpio_direction_output(pdata->gpio_hdc, 1);
-		dev_info(parinfo->dev, "Using HDC on pin %d\n",
+		dev_info(&pdev->dev, "Using HDC on pin %d\n",
 			 pdata->gpio_hdc);
 	} else {
 		retval = modelffb_setup_gpio(pdata->gpio_cs, "MODELF_CS");
 		if (retval)
 			goto exit_destroy_workqueue;
 		gpio_direction_output(pdata->gpio_cs, 1);
-		dev_info(parinfo->dev, "Using SPI CS on pin %d\n",
+		dev_info(&pdev->dev, "Using SPI CS on pin %d\n",
 			 pdata->gpio_cs);
 	}
 
@@ -3952,7 +4019,7 @@ static int __devinit modelffb_probe(struct platform_device *pdev)
 		if (retval)
 			goto exit_free_gpio_hdc_cs;
 		gpio_direction_input(pdata->gpio_hrdy);
-		dev_info(parinfo->dev, "Using HRDY on pin %d\n",
+		dev_info(&pdev->dev, "Using HRDY on pin %d\n",
 			 pdata->gpio_hrdy);
 	}
 
@@ -3961,7 +4028,7 @@ static int __devinit modelffb_probe(struct platform_device *pdev)
 		if (retval)
 			goto exit_free_gpio_hrdy;
 		gpio_direction_output(pdata->gpio_pwr_en, 1);
-		dev_info(parinfo->dev, "Using power enable on pin %d\n",
+		dev_info(&pdev->dev, "Using power enable on pin %d\n",
 			 pdata->gpio_pwr_en);
 	}
 
@@ -3970,13 +4037,13 @@ static int __devinit modelffb_probe(struct platform_device *pdev)
 		if (retval)
 			goto exit_free_gpio_pwr_en;
 		gpio_direction_output(pdata->gpio_reset, 1);
-		dev_info(parinfo->dev, "Using reset on pin %d\n",
+		dev_info(&pdev->dev, "Using reset on pin %d\n",
 			 pdata->gpio_reset);
 	}
 
 	retval = spi_register_driver(&modelffb_spi_driver);
 	if (retval) {
-		dev_err(parinfo->dev, "Failed to register SPI driver\n");
+		dev_err(&pdev->dev, "Failed to register SPI driver\n");
 		goto exit_free_gpio_reset;
 	}
 
@@ -3984,13 +4051,9 @@ static int __devinit modelffb_probe(struct platform_device *pdev)
 	if (retval)
 		goto exit_unregister_spi_driver;
 
-#if defined(CONFIG_I2C_S1D135X1) || defined(CONFIG_I2C_S1D135X1_MODULE)
-	s1d135x1_spi.get = modelffb_i2c_get_spi;
-	s1d135x1_spi.put = modelffb_i2c_put_spi;
-	s1d135x1_spi.write_reg = modelffb_i2c_write_reg;
-	s1d135x1_spi.read_reg = modelffb_i2c_read_reg;
-	s1d135x1_spi.init_done = true;
-#endif
+	retval = modelffb_early_init(pdev);
+	if (retval)
+		goto exit_release_bus;
 
 	parinfo->status = 0;
 	parinfo->waveform_mode = MODELF_WAVEFORM_HIGH_QUALITY;
@@ -4015,12 +4078,14 @@ static int __devinit modelffb_probe(struct platform_device *pdev)
 	parinfo->sync_status = MODELFFB_SYNC_IDLE;
 
 #ifdef CONFIG_MODELF_DEFERRED_IO
-	dev_info(parinfo->dev, "Deferred I/O enabled\n");
+	dev_info(&pdev->dev, "Deferred I/O enabled\n");
 #endif
-	dev_info(parinfo->dev, "Ready\n");
+	dev_info(&pdev->dev, "Ready\n");
 
 	return 0;
 
+exit_release_bus:
+	modelffb_release_bus();
 exit_unregister_spi_driver:
 	spi_unregister_driver(&modelffb_spi_driver);
 exit_free_gpio_reset:
@@ -4078,10 +4143,6 @@ static void __devexit do_clear_on_exit(void)
 
 static int __devexit modelffb_remove(struct platform_device *pdev)
 {
-#if defined(CONFIG_I2C_S1D135X1) || defined(CONFIG_I2C_S1D135X1_MODULE)
-	s1d135x1_spi.init_done = false;
-#endif
-
 	del_timer_sync(&parinfo->sleep_timer);
 	del_timer_sync(&parinfo->temperature_timer);
 
@@ -4120,7 +4181,7 @@ static int __devexit modelffb_remove(struct platform_device *pdev)
 	modelffb_free_memory();
 	modelffb_framebuffer_release();
 
-	dev_info(parinfo->dev, "modelF has been removed.\n");
+	dev_info(&pdev->dev, "modelF has been removed.\n");
 
 	return 0;
 }
