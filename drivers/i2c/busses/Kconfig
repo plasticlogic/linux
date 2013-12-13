@@ -845,7 +845,6 @@ config I2C_SC18IS60X_SHARED_SPI
 
 config I2C_S1D135X1
 	tristate "Epson S1D135x1 modelF SPI to I2C bridge driver"
-        depends on FB_MODELF
         help
 	  Supports I2C over SPI via the Epson S1D135x1 modelF controller.  This
 	  registers a new general purpose I2C bus driver, although it does rely
