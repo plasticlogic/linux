@@ -70,14 +70,12 @@ static const char *modelffb_sync_status_table[MODELFFB_SYNC_N] = {
 
 /* ToDo: define in board file */
 struct plhw_config modelffb_plhw_config = {
-#ifdef CONFIG_MODELF_PL_ROBIN
-	.i2c_bus_number = 4,
-#else
 #if defined(CONFIG_I2C_S1D135X1) || defined(CONFIG_I2C_S1D135X1_MODULE)
 	.i2c_bus_number = 5,
+#elif defined(CONFIG_I2C_SC18IS60X) || defined(CONFIG_I2C_SC18IS60X_MODULE)
+	.i2c_bus_number = 4,
 #else
 	.i2c_bus_number = 3,
-#endif
 #endif
 	.dac_i2c_address = 0x39,
 	.adc_i2c_address = 0x34,
