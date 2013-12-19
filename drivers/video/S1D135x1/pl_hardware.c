@@ -1233,6 +1233,9 @@ static int plhw_gpio_switch(struct plhw *p, int gpio, bool on)
 
 static bool plhw_is_init(struct plhw *p)
 {
+	if (!p)
+		return false;
+
 	if (!plhw_static_init_done) {
 		printk("PLHW: Static initialisation not done yet.\n");
 		return false;
