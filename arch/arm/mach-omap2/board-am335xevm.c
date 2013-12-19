@@ -3777,7 +3777,11 @@ static const struct pinmux_config pldek_pin_mux[] = {
 	/* HIRQ */
 	{"xdma_event_intr1.gpio0_20", OMAP_MUX_MODE7 | AM33XX_PIN_INPUT},
 	/* SC18Is06x SPI CS driven as GPIO */
+#if defined(CONFIG_I2C_SC18IS60X) || defined(CONFIG_I2C_SC18IS60X_MODULE)
 	{"uart1_rxd.gpio0_14",     OMAP_MUX_MODE7 | AM33XX_PIN_OUTPUT},
+#else
+	{"uart1_rxd.gpio0_14",     OMAP_MUX_MODE7 | AM33XX_PIN_INPUT_PULLUP},
+#endif
 #elif defined(CONFIG_MODELF_PL_Z5)
 	/* SPI CS driven as GPIO */
 	{"mcasp0_ahclkr.gpio3_17", OMAP_MUX_MODE7 | AM33XX_PIN_OUTPUT },
