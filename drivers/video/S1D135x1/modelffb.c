@@ -978,9 +978,6 @@ static void __devinit __modelffb_reset(void)
 	__modelffb_wait_for_HRDY_ready(MODELF_TIMEOUT_MS);
 }
 
-#define AM33XX_CONTROL_PADCONF_SPI0_D0_OFFSET		   0x0954
-#define AM33XX_CONTROL_PADCONF_SPI0_D1_OFFSET		   0x0958
-
 static int __devinit modelffb_early_init(struct platform_device *pdev)
 {
 	uint16_t regval;
