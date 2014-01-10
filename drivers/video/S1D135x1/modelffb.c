@@ -996,8 +996,10 @@ static int __devinit modelffb_early_init(struct platform_device *pdev)
 
 #if defined(CONFIG_I2C_S1D135X1) || defined(CONFIG_I2C_S1D135X1_MODULE)
 	mutex_lock(&s1d135x1_spi_lock);
-	__modelffb_immediate_reg_write(MODELF_REG_I2C_CLOCK,
-				       parinfo->pdata->i2c_clk_divider);
+	__modelffb_reg_write(MODELF_REG_I2C_CLOCK,
+			     parinfo->pdata->i2c_clk_divider);
+	__modelffb_reg_write(MODELF_REG_CLOCK_CONFIGURATION,
+			     MODELF_INTERNAL_CLOCK_ENABLE);
 	s1d135x1_spi.get = modelffb_i2c_get_spi;
 	s1d135x1_spi.put = modelffb_i2c_put_spi;
 	s1d135x1_spi.write_reg = modelffb_i2c_write_reg;
