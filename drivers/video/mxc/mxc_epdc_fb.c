@@ -269,7 +269,7 @@ struct mxc_epdc_fb_data *g_fb_data;
 #if (defined(CONFIG_FB_MXC_EPDC_PL_HARDWARE) \
      || defined(CONFIG_FB_MXC_EPDC_PL_HARDWARE_MODULE))
 /* Temperature override settings */
-static bool g_temperature_override = false;
+static bool g_temperature_auto = true;
 static u32 g_temperature_override_index = DEFAULT_TEMP_INDEX;
 static u32 g_temperature = DEFAULT_TEMP;
 #endif
@@ -557,7 +557,7 @@ static inline void epdc_set_temp(u32 temp)
 #if (defined(CONFIG_FB_MXC_EPDC_PL_HARDWARE) \
      || defined(CONFIG_FB_MXC_EPDC_PL_HARDWARE_MODULE))
 	/* If the temperature override has been set, only use the override temperature */
-	if (g_temperature_override)
+	if (!g_temperature_auto)
 	{
 		temp = g_temperature_override_index;
 	}
@@ -1565,7 +1565,7 @@ int mxc_epdc_fb_set_temperature(int temperature, struct fb_info *info)
 
 #if (defined(CONFIG_FB_MXC_EPDC_PL_HARDWARE) \
      || defined(CONFIG_FB_MXC_EPDC_PL_HARDWARE_MODULE))
-	if (g_temperature_override)
+	if (!g_temperature_auto)
 		g_temperature_override_index = fb_data->temp_index;
 
 	g_temperature = temperature;
@@ -1625,13 +1625,13 @@ EXPORT_SYMBOL(mxc_epdc_fb_set_upd_scheme);
      || defined(CONFIG_FB_MXC_EPDC_PL_HARDWARE_MODULE))
 int mxc_epdc_fb_set_auto_temp_mode(u32 auto_mode, struct fb_info *info)
 {
-	g_temperature_override = auto_mode ? true : false;
+	g_temperature_auto = auto_mode ? true : false;
 	return 0;
 }
 
 int mxc_epdc_fb_get_auto_temp_mode(void)
 {
-	return g_temperature_override;
+	return g_temperature_auto;
 }
 
 int mxc_epdc_fb_get_temperature(void)
