@@ -2,6 +2,7 @@
  * modelffb.c -- FB driver for EPSON modelF EPD controller
  *
  * Copyright (C) 2012 Seiko Epson Corporation
+ * Copyright (C) 2012, 2013, 2014 Plastic Logic Limited
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2
@@ -2895,7 +2896,6 @@ static void modelffb_regulator_exit(void)
      || defined(CONFIG_MODELF_PL_HARDWARE_MODULE))
 	if (parinfo->plhw)
 		plhw_free(parinfo->plhw);
-	plhw_static_free();
 #endif
 }
 
@@ -2952,7 +2952,7 @@ static int modelffb_modelf_init(void)
 	stat = modelffb_register_framebuffer();
 	if (stat) {
 		dev_err(parinfo->dev, "register_framebuffer failed\n");
-		goto free_vram;
+		goto free_regulator;
 	}
 
 	modelffb_measure_temperature();
@@ -4140,6 +4140,8 @@ static void __devexit do_clear_on_exit(void)
 
 static int __devexit modelffb_remove(struct platform_device *pdev)
 {
+	flush_workqueue(parinfo->workqueue);
+	destroy_workqueue(parinfo->workqueue);
 	del_timer_sync(&parinfo->sleep_timer);
 	del_timer_sync(&parinfo->temperature_timer);
 
@@ -4152,9 +4154,9 @@ static int __devexit modelffb_remove(struct platform_device *pdev)
 
 		modelffb_unregister_framebuffer();
 		modelffb_free_vram();
+		modelffb_regulator_exit();
 	}
 
-	modelffb_regulator_exit();
 	modelffb_release_bus();
 	spi_unregister_driver(&modelffb_spi_driver);
 
@@ -4172,8 +4174,11 @@ static int __devexit modelffb_remove(struct platform_device *pdev)
 	else
 		gpio_free(parinfo->pdata->gpio_cs);
 
-	flush_workqueue(parinfo->workqueue);
-	destroy_workqueue(parinfo->workqueue);
+#if (defined(CONFIG_MODELF_PL_HARDWARE) \
+     || defined(CONFIG_MODELF_PL_HARDWARE_MODULE))
+	plhw_static_free();
+#endif
+
 	modelffb_remove_file();
 	modelffb_free_memory();
 	modelffb_framebuffer_release();
