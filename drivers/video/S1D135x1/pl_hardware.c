@@ -373,6 +373,9 @@ void plhw_static_free(void)
 
 	plhw_gpio_free();
 	plhw_static_init_done = false;
+#ifdef CONFIG_MODELF_PL_Z6_Z7
+	mdelay(150); /* give the time for capacitors to discharge */
+#endif
 }
 EXPORT_SYMBOL(plhw_static_free);
 
@@ -463,12 +466,8 @@ void plhw_free(struct plhw *p)
 {
 	printk("PLHW: free\n");
 
-	if (p->init_done) {
+	if (p->init_done)
 		i2c_put_adapter(p->i2c);
-#ifdef CONFIG_MODELF_PL_Z6_Z7 /* it takes time to turn the power off */
-		mdelay(150);
-#endif
-	}
 
 	kfree(p);
 }
