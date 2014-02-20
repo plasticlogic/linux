@@ -1533,8 +1533,15 @@ static int mxc_epdc_fb_get_temp_index(struct mxc_epdc_fb_data *fb_data, int temp
 	}
 
 	/* Search temperature ranges for a match */
-	for (i = 0; i < fb_data->trt_entries - 1; i++) {
-		if ((temp >= fb_data->temp_range_bounds[i])
+	for (i = 0; i < fb_data->trt_entries; i++) {
+		/* Last range has no upper bound */
+		if (i == fb_data->trt_entries - 1) {
+			if (temp >= fb_data->temp_range_bounds[i]) {
+				index = i;
+				break;
+			}
+		}
+		else if ((temp >= fb_data->temp_range_bounds[i])
 			&& (temp < fb_data->temp_range_bounds[i+1])) {
 			index = i;
 			break;
