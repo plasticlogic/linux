@@ -526,12 +526,12 @@ int mxc_epdc_pl_hardware_enable(struct mxc_epdc_pl_hardware *p)
 
 	psu = &p->psu[0];
 
+	STEP(pl_hardware_dac_set_power(p, true, psu), "DAC power on");
 	STEP(pl_hardware_cpld_switch(p, CPLD_HVEN, true), "HV ON");
 	STEP(pl_hardware_hvpmic_wait_pok(p, psu), "wait for POK");
 	STEP(pl_hardware_cpld_switch(p, CPLD_COM_SW_EN, true), "COM enable");
 	STEP(pl_hardware_cpld_switch(p, CPLD_COM_SW_CLOSE, false), "COM open");
 	STEP(pl_hardware_cpld_switch(p, CPLD_COM_PSU, true), "COM PSU on");
-	STEP(pl_hardware_dac_set_power(p, true, psu), "DAC power on");
 	STEP(pl_hardware_vcomcal_set_vcom(p, psu), "VCOM calibration");
 	STEP(pl_hardware_cpld_switch(p, CPLD_COM_SW_CLOSE, true),"COM close");
 
@@ -560,9 +560,13 @@ int mxc_epdc_pl_hardware_disable(struct mxc_epdc_pl_hardware *p)
 	psu = &p->psu[0];
 	STEP(pl_hardware_cpld_switch(p, CPLD_COM_SW_CLOSE, false),"COM open");
 	STEP(pl_hardware_cpld_switch(p, CPLD_COM_SW_EN, false), "COM disable");
-	STEP(pl_hardware_dac_set_power(p, false, psu), "DAC power off");
 	STEP(pl_hardware_cpld_switch(p, CPLD_COM_PSU, false), "COM PSU off");
 	STEP(pl_hardware_cpld_switch(p, CPLD_HVEN, false), "HV OFF");
+
+/* DAC is being left on to fix issues with TPCOM on power-down.
+ * NB: This can be re-enabled by uncommenting if power-saving is an issue 
+ *	STEP(pl_hardware_dac_set_power(p, false, psu), "DAC power off"); 
+ */
 
 	if (p->conf->psu_n == 1)
 		return 0;
