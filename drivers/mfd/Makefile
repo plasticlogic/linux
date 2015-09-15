@@ -113,6 +113,7 @@ obj-$(CONFIG_MFD_DA9063)	+= da9063.o
 
 obj-$(CONFIG_MFD_MAX14577)	+= max14577.o
 obj-$(CONFIG_MFD_MAX17135)      += max17135-core.o
+obj-$(CONFIG_MFD_TPS6518X)      += tps6518x-core.o
 obj-$(CONFIG_MFD_MAX77686)	+= max77686.o max77686-irq.o
 obj-$(CONFIG_MFD_MAX77693)	+= max77693.o max77693-irq.o
 obj-$(CONFIG_MFD_MAX8907)	+= max8907.o

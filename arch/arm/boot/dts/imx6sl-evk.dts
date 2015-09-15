@@ -376,46 +376,32 @@
 		reg = <0x1c>;
 	};
 
-	max17135@48 {
-		compatible = "maxim,max17135";
-		reg = <0x48>;
-		vneg_pwrup = <1>;
-		gvee_pwrup = <2>;
-		vpos_pwrup = <10>;
-		gvdd_pwrup = <12>;
-		gvdd_pwrdn = <1>;
-		vpos_pwrdn = <2>;
-		gvee_pwrdn = <8>;
-		vneg_pwrdn = <10>;
+	tps6518x@68 {
+		compatible = "ti,tps6518x";
+		reg = <0x68>;
+		/*
+		 * power sequencing for TPS65180/65181
+		 */
+		pwr_seq0 = <0xe1>; /* [Vddh-seq=3 | Vpos-seq=2 | Vee-seq=0 | Vneg-seq=1] */
+		pwr_seq1 = <0x30>; /* [Vneg-dly1=3 |Vee-dly0=0]  mSec */
+		pwr_seq2 = <0x33>; /* [Vddh-dly3=3 | Vpos-dly2=3] mSec */
+		/*
+		 * power sequencing for TPS65185/65186
+		 */
+		upseq0 = <0xe4>;
+		upseq1 = <0x55>;
+		dwnseq0 = <0x1e>;
+		dwnseq1 = <0xe0>;
+
 		gpio_pmic_pwrgood = <&gpio2 13 0>;
 		gpio_pmic_vcom_ctrl = <&gpio2 3 0>;
 		gpio_pmic_wakeup = <&gpio2 14 0>;
-		gpio_pmic_v3p3 = <&gpio2 7 0>;
 		gpio_pmic_intr = <&gpio2 12 0>;
+		gpio_pmic_powerup = <&gpio2 7 0>;
 
 		regulators {
 			DISPLAY_reg: DISPLAY {
 				regulator-name = "DISPLAY";
-			};
-
-			GVDD_reg: GVDD {
-				/* 20v */
-				regulator-name = "GVDD";
-			};
-
-			GVEE_reg: GVEE {
-				/* -22v */
-				regulator-name = "GVEE";
-			};
-
-			HVINN_reg: HVINN {
-				/* -22v */
-				regulator-name = "HVINN";
-			};
-
-			HVINP_reg: HVINP {
-				/* 20v */
-				regulator-name = "HVINP";
 			};
 
 			VCOM_reg: VCOM {
@@ -424,16 +410,6 @@
 				regulator-min-microvolt = <0xffbe0178>;
 				/* 2's-compliment, -500000 */
 				regulator-max-microvolt = <0xfff85ee0>;
-			};
-
-			VNEG_reg: VNEG {
-				/* -15v */
-				regulator-name = "VNEG";
-			};
-
-			VPOS_reg: VPOS {
-				/* 15v */
-				regulator-name = "VPOS";
 			};
 
 			V3P3_reg: V3P3 {

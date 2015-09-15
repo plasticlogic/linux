@@ -276,6 +276,10 @@ config REGULATOR_MAX17135
         tristate "Maxim MAX17135 Regulator Support"
         depends on MFD_MAX17135
 
+config REGULATOR_TPS6518X
+        tristate "Texas Instruments TPS6518X Regulator Support"
+        depends on MFD_TPS6518X
+
 config REGULATOR_MAX8649
 	tristate "Maxim 8649 voltage regulator"
 	depends on I2C
