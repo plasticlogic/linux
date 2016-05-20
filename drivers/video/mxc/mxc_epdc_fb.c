@@ -71,10 +71,15 @@ module_param_array_named(vcom, mxc_epdc_fb_vcom_modparam, int,
 			 &mxc_epdc_fb_vcom_n_modparam, S_IRUGO);
 MODULE_PARM_DESC(vcom, "VCOM voltages");
 
-static char *mxc_epdc_fb_panel_type_modparam = "";
+static char *mxc_epdc_fb_panel_type_modparam = "D107_T3.1";
 module_param_named(panel_type, mxc_epdc_fb_panel_type_modparam, charp,
 		   S_IRUGO);
 MODULE_PARM_DESC(panel_type, "Panel type identifier");
+
+static char* mxc_epdc_fb_waveform_modaram = "epdc_D107_T3.1.fw";
+module_param_named(waveform, mxc_epdc_fb_waveform_modaram, charp, 
+		   S_IRUGO);
+MODULE_PARM_DESC(waveform, "Waveform identifier");
 
 /*
  * Enable this define to have a default panel
@@ -874,7 +879,7 @@ void epdc_init_settings(struct mxc_epdc_fb_data *fb_data)
 	if (epdc_mode->sdclk_hold)
 		reg_val |= EPDC_TCE_SDCFG_SDCLK_HOLD;
 	__raw_writel(reg_val, EPDC_TCE_SDCFG);
-
+	//printk("SDDO_FLIP:%i, SDCLK_HOLD:%i\n",epdc_mode->sddo_flip_bits,epdc_mode->sdclk_hold);
 	/*
 	 * EPDC_TCE_GDCFG
 	 * GDRL = 1
@@ -885,7 +890,7 @@ void epdc_init_settings(struct mxc_epdc_fb_data *fb_data)
 	if (epdc_mode->gdoe_delayed_gclk)
 		reg_val |= EPDC_TCE_SDCFG_GDOE_MODE_DELAYED_GDCLK;
 	__raw_writel(reg_val, EPDC_TCE_GDCFG);
-
+	//printk("GDSP_FS:%i, GDOE_D_GCLK:%i\n",epdc_mode->gdsp_frame_sync,epdc_mode->gdoe_delayed_gclk);
 	/*
 	 * EPDC_TCE_POLARITY
 	 * SDCE_POL = ACTIVE LOW
@@ -899,7 +904,7 @@ void epdc_init_settings(struct mxc_epdc_fb_data *fb_data)
 	if (epdc_mode->gdsp_active_high)
 		reg_val |= EPDC_TCE_POLARITY_GDSP_POL_ACTIVE_HIGH;
 	__raw_writel(reg_val, EPDC_TCE_POLARITY);
-
+	//printk("GDOE_AH: %i, GDSP_AH:%i\n",epdc_mode->gdoe_active_high,epdc_mode->gdsp_active_high);
 	/* EPDC_IRQ_MASK */
 	__raw_writel(EPDC_IRQ_TCE_UNDERRUN_IRQ, EPDC_IRQ_MASK);
 
@@ -3536,7 +3541,7 @@ static void mxc_epdc_fb_fw_handler(const struct firmware *fw,
 			return;
 
 		/* Try to load default waveform */
-		dev_dbg(fb_data->dev,
+		dev_err(fb_data->dev,
 			"Can't find firmware. Trying fallback fw\n");
 		fb_data->fw_default_load = true;
 		ret = request_firmware_nowait(THIS_MODULE, FW_ACTION_HOTPLUG,
@@ -3590,7 +3595,6 @@ static void mxc_epdc_fb_fw_handler(const struct firmware *fw,
 	clk_enable(fb_data->epdc_clk_pix);
 	clk_set_rate(fb_data->epdc_clk_pix, fb_data->cur_mode->vmode->pixclock);
 	
-
 	epdc_init_sequence(fb_data);
 
 	/* Disable clocks */
@@ -3638,10 +3642,22 @@ static int mxc_epdc_fb_init_hw(struct fb_info *info)
 	 * Create fw search string based on ID string in selected videomode.
 	 * Format is "imx/epdc_[panel string].fw"
 	 */
+	/*
 	if (fb_data->cur_mode) {
 		strcat(fb_data->fw_str, "imx/epdc_");
 		strcat(fb_data->fw_str, fb_data->cur_mode->vmode->name);
 		strcat(fb_data->fw_str, ".fw");
+	}
+	*/
+	if (fb_data->cur_mode) {
+		if(strcmp(mxc_epdc_fb_waveform_modaram,"")){
+			strcpy(fb_data->fw_str, "imx/");
+			strcat(fb_data->fw_str, mxc_epdc_fb_waveform_modaram);
+		}else{
+			strcpy(fb_data->fw_str, "imx/epdc_");
+			strcat(fb_data->fw_str, fb_data->cur_mode->vmode->name);
+			strcat(fb_data->fw_str, ".fw");
+		}
 	}
 
 	fb_data->fw_default_load = false;
@@ -3698,10 +3714,12 @@ int __devinit mxc_epdc_fb_plhw_init(struct mxc_epdc_fb_data *fb_data)
 {
 	int ret;
 	int gpio_ret = 0, i;
-	bool pl_7lvl;
+	bool pl_7lvl = false;
 	
-	pl_7lvl = (!strcmp(mxc_epdc_fb_panel_type_modparam, "Type4") ||
-		   !strcmp(mxc_epdc_fb_panel_type_modparam, "Type10"));
+	// TODO: check depending on modparam paneltype
+	pl_7lvl = (!strcmp(mxc_epdc_fb_panel_type_modparam, "D107_T1.1") ||
+			   !strcmp(mxc_epdc_fb_panel_type_modparam, "Q154_T1.1") ||
+			   !strcmp(mxc_epdc_fb_panel_type_modparam, "T154_T1.1"));
 
 	/* 'Workaround' to pre-init Type11 gate driver chips by bitbashing */
 	if (!pl_7lvl)
@@ -3745,7 +3763,7 @@ int __devinit mxc_epdc_fb_plhw_init(struct mxc_epdc_fb_data *fb_data)
 	fb_data->plhw_conf.source_2bpp_conversion =
 		pl_7lvl && ((mxc_epdc_fb_vcom_n_modparam == 2));
 #endif
-
+//TODO: check depending on modparam paneltype
 	fb_data->plhw_conf.interlaced_gates =
 		strcmp(mxc_epdc_fb_panel_type_modparam, "Type10") ? false:true;
 
@@ -3784,7 +3802,7 @@ static const struct mxc_epdc_fb_mode *mxc_epdc_find_mode(
 		const struct mxc_epdc_fb_mode *mode =
 			&fb_data->pdata->epdc_mode[i];
 		const char *mode_type_str;
-
+		printk("Check VMODE: %s = %s\n",mode_str, mode->vmode->name);
 		if (strncmp(mode->vmode->name, mode_str, mode_str_len))
 			continue;
 
@@ -3829,7 +3847,6 @@ int __devinit mxc_epdc_fb_probe(struct platform_device *pdev)
 #ifdef CONFIG_FRAMEBUFFER_CONSOLE
 	struct mxcfb_update_data update;
 #endif
-
 	fb_data = (struct mxc_epdc_fb_data *)framebuffer_alloc(
 			sizeof(struct mxc_epdc_fb_data), &pdev->dev);
 	if (fb_data == NULL) {
@@ -3876,31 +3893,25 @@ int __devinit mxc_epdc_fb_probe(struct platform_device *pdev)
 
 	/* Set default (first defined mode) before searching for a match */
 	fb_data->cur_mode = &fb_data->pdata->epdc_mode[0];
-
-	if (panel_str) {
-		const struct mxc_epdc_fb_mode *found_mode =
-			mxc_epdc_find_mode(fb_data, panel_str,
-					   mxc_epdc_fb_panel_type_modparam);
-
-		if (!found_mode)
-			found_mode =
-				mxc_epdc_find_mode(fb_data, panel_str, NULL);
-
-		if (found_mode)
-			fb_data->cur_mode = found_mode;
+	dev_err(fb_data->dev,"We have to find Panel: %s\n",mxc_epdc_fb_panel_type_modparam);
+	const struct mxc_epdc_fb_mode *found_mode =
+			mxc_epdc_find_mode(fb_data, mxc_epdc_fb_panel_type_modparam,
+				   NULL);
+	
+	if(found_mode && found_mode->vmode && found_mode->vmode && found_mode->vmode->name){
+		fb_data->cur_mode = (const struct imx_epdc_fb_mode*) found_mode;
+		dev_err(fb_data->dev,"We have found Panel: %s\n", fb_data->cur_mode->vmode->name);
 	}
-
 	vmode = fb_data->cur_mode->vmode;
-
 	platform_set_drvdata(pdev, fb_data);
 	info = &fb_data->info;
 
-	/* Allocate color map for the FB */
+	/* Allocate color map for the FB */   
 	ret = fb_alloc_cmap(&info->cmap, 256, 0);
 	if (ret)
 		goto out_fbdata;
 
-	dev_dbg(&pdev->dev, "resolution %dx%d, bpp %d\n",
+	dev_info(&pdev->dev, "resolution %dx%d, bpp %d\n",
 		vmode->xres, vmode->yres, fb_data->default_bpp);
 
 	/*
@@ -4215,6 +4226,8 @@ int __devinit mxc_epdc_fb_probe(struct platform_device *pdev)
 	if (mxc_epdc_fb_panel_type_modparam[0] != '\0') {
 		dev_info(&pdev->dev, "Panel type: %s\n",
 			 mxc_epdc_fb_panel_type_modparam);
+		dev_info(&pdev->dev, "Panel mode: %s\n",
+			 fb_data->cur_mode->vmode->name);
 	}
 
 	ret = mxc_epdc_fb_plhw_init(fb_data);

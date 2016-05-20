@@ -141,15 +141,15 @@ fw-shipped-$(CONFIG_YAM) += yam/1200.bin yam/9600.bin
 fw-shipped-$(CONFIG_FB_MXC_EINK_PANEL) += imx/epdc_E60_V110.fw \
                 imx/epdc_E60_V220.fw \
                 imx/epdc_E97_V110.fw \
-                imx/epdc_PL_STD.fw \
-                imx/epdc_PL_DUAL.fw \
-                imx/epdc_PL_TILED.fw \
-                imx/epdc_PL_STD.Type4.fw \
-                imx/epdc_PL_DUAL.Type4.fw \
-                imx/epdc_PL_TILED.Type4.fw \
-                imx/epdc_PL_STD.Type10.fw \
-                imx/epdc_PL_DUAL.Type10.fw \
-                imx/epdc_PL_TILED.Type10.fw
+		imx/epdc_D107_T2.1.fw \
+		imx/epdc_T154_T2.1.fw \
+		imx/epdc_Q154_T2.1.fw \
+		imx/epdc_D107_T1.1.fw \
+		imx/epdc_T154_T1.1.fw \
+		imx/epdc_Q154_T1.1.fw \
+		imx/epdc_D107_T3.1.fw \
+		imx/epdc_T154_T3.1.fw \
+		imx/epdc_Q154_T3.1.fw
 
 fw-shipped-all := $(fw-shipped-y) $(fw-shipped-m) $(fw-shipped-)
 

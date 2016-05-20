@@ -1006,9 +1006,111 @@ static void epdc_disable_pins(void)
 	gpio_direction_output(EPDC_SDCE1, 0);
 	gpio_direction_output(EPDC_SDCE2, 0);
 }
+//*
+static struct fb_videomode s047_t2_1_mode = {
+	.name = "S047_T2.1",
+	.refresh = 50,
+	.xres = 800,
+	.yres = 450,
+	.pixclock = 12e6,
+	.left_margin = 166, 
+	.right_margin = 56, 
+	.upper_margin = 4, 
+	.lower_margin = 4, 
+	.hsync_len = 8,
+	.vsync_len = 1,
+	.sync = 0,
+	.vmode = FB_VMODE_NONINTERLACED,
+	.flag = 0,
+};
 
-static struct fb_videomode pl_std_mode = {
-	.name = "PL_STD",
+static struct fb_videomode s047_t2_1_85Hz_mode = {
+	.name = "S047_T2.1_85Hz",
+	.refresh = 50,
+	.xres = 800,
+	.yres = 450,
+	.pixclock = 12e6,
+	.left_margin = 166, 
+	.right_margin = 56, 
+	.upper_margin = 4, 
+	.lower_margin = 4, 
+	.hsync_len = 8,
+	.vsync_len = 1,
+	.sync = 0,
+	.vmode = FB_VMODE_NONINTERLACED,
+	.flag = 0,
+};
+
+static struct fb_videomode d107_t3_1_mode = {
+	.name = "D107_T3.1",
+	.refresh = 50,
+	.xres = 1280,
+	.yres = 960,
+	.pixclock = 50e6,//25e6,
+	.left_margin = 166, 
+	.right_margin = 56, 
+	.upper_margin = 4, 
+	.lower_margin = 4, 
+	.hsync_len = 8,
+	.vsync_len = 1,
+	.sync = 0,
+	.vmode = FB_VMODE_NONINTERLACED,
+	.flag = 0,
+};
+
+static struct fb_videomode d107_t3_1_85hz_mode = {
+	.name = "D107_T3.1_85Hz",
+	.refresh = 50,
+	.xres = 1280,
+	.yres = 960,
+	.pixclock = 85e6, //25e6,
+	.left_margin = 166, 
+	.right_margin = 56, 
+	.upper_margin = 4, 
+	.lower_margin = 4, 
+	.hsync_len = 8,
+	.vsync_len = 1,
+	.sync = 0,
+	.vmode = FB_VMODE_NONINTERLACED,
+	.flag = 0,
+};
+
+static struct fb_videomode t154_t3_1_mode = {
+	.name = "T154_T3.1",
+	.refresh = 50,
+	.xres = 1280,
+	.yres = 1920,
+	.pixclock = 50e6,//25e6,
+	.left_margin = 166, 
+	.right_margin = 56, 
+	.upper_margin = 4, 
+	.lower_margin = 4, 
+	.hsync_len = 8,
+	.vsync_len = 1,
+	.sync = 0,
+	.vmode = FB_VMODE_NONINTERLACED,
+	.flag = 0,
+};
+
+static struct fb_videomode q154_t3_1_mode = {
+	.name = "Q154_T3.1",
+	.refresh = 50,
+	.xres = 1280,
+	.yres = 1920,
+	.pixclock = 50e6,//25e6,
+	.left_margin = 166, 
+	.right_margin = 56, 
+	.upper_margin = 4, 
+	.lower_margin = 4, 
+	.hsync_len = 8,
+	.vsync_len = 1,
+	.sync = 0,
+	.vmode = FB_VMODE_NONINTERLACED,
+	.flag = 0,
+};
+//*/
+static struct fb_videomode d107_t2_1_mode = {
+	.name = "D107_T2.1",
 	.refresh = 50,
 	.xres = 1280,
 	.yres = 960,
@@ -1024,8 +1126,8 @@ static struct fb_videomode pl_std_mode = {
 	.flag = 0,
 };
 
-static struct fb_videomode pl_dual_mode = {
-	.name = "PL_DUAL",
+static struct fb_videomode t154_t2_1_mode = {
+	.name = "T154_T2.1",
 	.refresh = 50,
 	.xres = 1280,
 	.yres = 1920,
@@ -1041,8 +1143,8 @@ static struct fb_videomode pl_dual_mode = {
 	.flag = 0,
 };
 
-static struct fb_videomode pl_tiled_mode = {
-	.name = "PL_TILED",
+static struct fb_videomode q154_t2_1_mode = {
+	.name = "Q154_T2.1",
 	.refresh = 50,
 	.xres = 1280,
 	.yres = 1920,
@@ -1060,8 +1162,8 @@ static struct fb_videomode pl_tiled_mode = {
 
 /* <--- Deprecated Plastic Logic panel types */
 
-static struct fb_videomode pl_std_type4_mode = {
-	.name = "PL_STD.Type4",
+static struct fb_videomode d107_t1_1_mode = {
+	.name = "D107_T1.1",
 	.refresh = 50,
 	.xres = 1280,
 	.yres = 960,
@@ -1077,8 +1179,8 @@ static struct fb_videomode pl_std_type4_mode = {
 	.flag = 0,
 };
 
-static struct fb_videomode pl_dual_type4_mode = {
-	.name = "PL_DUAL.Type4",
+static struct fb_videomode t154_t1_1_mode = {
+	.name = "T154_T1.1",
 	.refresh = 50,
 	.xres = 1280,
 	.yres = 1920,
@@ -1094,8 +1196,8 @@ static struct fb_videomode pl_dual_type4_mode = {
 	.flag = 0,
 };
 
-static struct fb_videomode pl_tiled_type4_mode = {
-	.name = "PL_TILED.Type4",
+static struct fb_videomode q154_t1_1_mode = {
+	.name = "Q154_T1.1",
 	.refresh = 50,
 	.xres = 1280,
 	.yres = 1920,
@@ -1110,59 +1212,6 @@ static struct fb_videomode pl_tiled_type4_mode = {
 	.vmode = FB_VMODE_NONINTERLACED,
 	.flag = 0,
 };
-
-static struct fb_videomode pl_std_type10_mode = {
-	.name = "PL_STD.Type10",
-	.refresh = 50,
-	.xres = 1280,
-	.yres = 960,
-	.pixclock = 38e6,
-	.left_margin = 120, /* line_begin */
-	.right_margin = 4, /* line_end */
-	.upper_margin = 1, /* frame_begin */
-	.lower_margin = 10, /* frame_end */
-	.hsync_len = 60,
-	.vsync_len = 1,
-	.sync = 0,
-	.vmode = FB_VMODE_NONINTERLACED,
-	.flag = 0,
-};
-
-static struct fb_videomode pl_dual_type10_mode = {
-	.name = "PL_DUAL.Type10",
-	.refresh = 50,
-	.xres = 1280,
-	.yres = 1920,
-	.pixclock = 38e6,
-	.left_margin = 120, /* line_begin */
-	.right_margin = 4, /* line_end */
-	.upper_margin = 1, /* frame_begin */
-	.lower_margin = 10, /* frame_end */
-	.hsync_len = 60,
-	.vsync_len = 1,
-	.sync = 0,
-	.vmode = FB_VMODE_NONINTERLACED,
-	.flag = 0,
-};
-
-static struct fb_videomode pl_tiled_type10_mode = {
-	.name = "PL_TILED.Type10",
-	.refresh = 50,
-	.xres = 1280,
-	.yres = 1920,
-	.pixclock = 38e6,
-	.left_margin = 120, /* line_begin */
-	.right_margin = 4, /* line_end */
-	.upper_margin = 1, /* frame_begin */
-	.lower_margin = 10, /* frame_end */
-	.hsync_len = 60,
-	.vsync_len = 1,
-	.sync = 0,
-	.vmode = FB_VMODE_NONINTERLACED,
-	.flag = 0,
-};
-
-/* Deprecated Plastic Logic Type panel types ---> */
 
 static struct fb_videomode e60_v110_mode = {
 	.name = "E60_V110",
@@ -1216,8 +1265,171 @@ static struct fb_videomode e97_v110_mode = {
 };
 
 static struct mxc_epdc_fb_mode panel_modes[] = {
+//*
+		{
+		.vmode = &s047_t2_1_mode,
+		.vscan_holdoff = 1,
+		.sdoed_width = 6,
+		.sdoed_delay = 0,
+		.sdoez_width = 0,
+		.sdoez_delay = 0,
+		.gdclk_hp_offs = 440,
+		.gdsp_offs = 4,
+		.gdsp_frame_sync = true,
+		.gdsp_active_high = false,
+		.gdoe_offs = 4,
+		.gdoe_delayed_gclk = false,
+		.gdoe_active_high = true,
+		.gdclk_offs = 0,
+		.num_ce = 1,
+		.sddo_16_bits = 0,
+		.sddo_flip_bits = true,
+		.tft_4bpp = false,
+		.dual_scan = false,
+		.scan_dir_0_up = false,
+		.scan_dir_1_up = false,
+		.flip_top = false,
+		.sdclk_hold = false,
+		.left_border = 0,
+		.right_border = 0,
+	},
 	{
-		.vmode = &pl_std_mode,
+		.vmode = &s047_t2_1_85Hz_mode,
+		.vscan_holdoff = 1,
+		.sdoed_width = 6,
+		.sdoed_delay = 0,
+		.sdoez_width = 0,
+		.sdoez_delay = 0,
+		.gdclk_hp_offs = 440,
+		.gdsp_offs = 4,
+		.gdsp_frame_sync = true,
+		.gdsp_active_high = false,
+		.gdoe_offs = 4,
+		.gdoe_delayed_gclk = false,
+		.gdoe_active_high = true,
+		.gdclk_offs = 0,
+		.num_ce = 1,
+		.sddo_16_bits = 0,
+		.sddo_flip_bits = true,
+		.tft_4bpp = false,
+		.dual_scan = false,
+		.scan_dir_0_up = false,
+		.scan_dir_1_up = false,
+		.flip_top = false,
+		.sdclk_hold = false,
+		.left_border = 0,
+		.right_border = 0,
+	},
+	{
+		.vmode = &d107_t3_1_mode,
+		.vscan_holdoff = 1,
+		.sdoed_width = 6,
+		.sdoed_delay = 0,
+		.sdoez_width = 0,
+		.sdoez_delay = 0,
+		.gdclk_hp_offs = 470,
+		.gdsp_offs = 4,
+		.gdsp_frame_sync = true,
+		.gdsp_active_high = false,
+		.gdoe_offs = 4,
+		.gdoe_delayed_gclk = false,
+		.gdoe_active_high = true,
+		.gdclk_offs = 0,
+		.num_ce = 1,
+		.sddo_16_bits = 0,
+		.sddo_flip_bits = true,
+		.tft_4bpp = false,
+		.dual_scan = false,
+		.scan_dir_0_up = false,
+		.scan_dir_1_up = false,
+		.flip_top = false,
+		.sdclk_hold = false,
+		.left_border = 0,
+		.right_border = 0,
+	},
+	{
+		.vmode = &d107_t3_1_85hz_mode,
+		.vscan_holdoff = 1,
+		.sdoed_width = 6,
+		.sdoed_delay = 0,
+		.sdoez_width = 0,
+		.sdoez_delay = 0,
+		.gdclk_hp_offs = 470,
+		.gdsp_offs = 4 ,
+		.gdsp_frame_sync = true,
+		.gdsp_active_high = false,
+		.gdoe_offs = 4,
+		.gdoe_delayed_gclk = false,
+		.gdoe_active_high = true,
+		.gdclk_offs = 0,
+		.num_ce = 1,
+		.sddo_16_bits = 0,
+		.sddo_flip_bits = true,
+		.tft_4bpp = false,
+		.dual_scan = false,
+		.scan_dir_0_up = false,
+		.scan_dir_1_up = false,
+		.flip_top = false,
+		.sdclk_hold = false,
+		.left_border = 0,
+		.right_border = 0,
+	},
+	{
+		.vmode = &t154_t3_1_mode,
+		.vscan_holdoff = 1,
+		.sdoed_width = 6,
+		.sdoed_delay = 0,
+		.sdoez_width = 0,
+		.sdoez_delay = 0,
+		.gdclk_hp_offs = 470,
+		.gdsp_offs = 4 ,
+		.gdsp_frame_sync = true,
+		.gdsp_active_high = false,
+		.gdoe_offs = 4,
+		.gdoe_delayed_gclk = false,
+		.gdoe_active_high = true,
+		.gdclk_offs = 0,
+		.num_ce = 1,
+		.sddo_16_bits = 0,
+		.sddo_flip_bits = true,
+		.tft_4bpp = false,
+		.dual_scan = true,
+		.scan_dir_0_up = false,
+		.scan_dir_1_up = false,
+		.flip_top = false,
+		.sdclk_hold = false,
+		.left_border = 0,
+		.right_border = 0,
+	},
+	{
+		.vmode = &q154_t3_1_mode,
+		.vscan_holdoff = 1,
+		.sdoed_width = 6,
+		.sdoed_delay = 0,
+		.sdoez_width = 0,
+		.sdoez_delay = 0,
+		.gdclk_hp_offs = 470,
+		.gdsp_offs = 4 ,
+		.gdsp_frame_sync = true,
+		.gdsp_active_high = false,
+		.gdoe_offs = 4,
+		.gdoe_delayed_gclk = false,
+		.gdoe_active_high = true,
+		.gdclk_offs = 0,
+		.num_ce = 1,
+		.sddo_16_bits = 0,
+		.sddo_flip_bits = true,
+		.tft_4bpp = false,
+		.dual_scan = true,
+		.scan_dir_0_up = true,
+		.scan_dir_1_up = false,
+		.flip_top = true,
+		.sdclk_hold = false,
+		.left_border = 0,
+		.right_border = 0,
+	},//*/
+	{
+		.vmode = &d107_t2_1_mode,
 		.vscan_holdoff = 4,
 		.sdoed_width = 10,
 		.sdoed_delay = 20,
@@ -1244,7 +1456,7 @@ static struct mxc_epdc_fb_mode panel_modes[] = {
 		.right_border = 80,
 	},
 	{
-		.vmode = &pl_dual_mode,
+		.vmode = &t154_t2_1_mode,
 		.vscan_holdoff = 2,
 		.sdoed_width = 10,
 		.sdoed_delay = 20,
@@ -1271,7 +1483,7 @@ static struct mxc_epdc_fb_mode panel_modes[] = {
 		.right_border = 80,
 	},
 	{
-		.vmode = &pl_tiled_mode,
+		.vmode = &q154_t2_1_mode,
 		.vscan_holdoff = 2,
 		.sdoed_width = 10,
 		.sdoed_delay = 20,
@@ -1299,7 +1511,7 @@ static struct mxc_epdc_fb_mode panel_modes[] = {
 	},
 	/* <--- Deprecated Plastic Logic panel types */
 	{
-		.vmode = &pl_std_type4_mode,
+		.vmode = &d107_t1_1_mode,
 		.vscan_holdoff = 4,
 		.sdoed_width = 10,
 		.sdoed_delay = 20,
@@ -1324,7 +1536,7 @@ static struct mxc_epdc_fb_mode panel_modes[] = {
 		.sdclk_hold = false,
 	},
 	{
-		.vmode = &pl_dual_type4_mode,
+		.vmode = &t154_t1_1_mode,
 		.vscan_holdoff = 2,
 		.sdoed_width = 10,
 		.sdoed_delay = 20,
@@ -1349,7 +1561,7 @@ static struct mxc_epdc_fb_mode panel_modes[] = {
 		.sdclk_hold = false,
 	},
 	{
-		.vmode = &pl_tiled_type4_mode,
+		.vmode = &q154_t1_1_mode,
 		.vscan_holdoff = 2,
 		.sdoed_width = 10,
 		.sdoed_delay = 20,
@@ -1373,7 +1585,8 @@ static struct mxc_epdc_fb_mode panel_modes[] = {
 		.flip_top = true,
 		.sdclk_hold = false,
 	},
-	{
+/*
+ 	{
 		.vmode = &pl_std_type10_mode,
 		.vscan_holdoff = 4,
 		.sdoed_width = 10,
@@ -1448,6 +1661,7 @@ static struct mxc_epdc_fb_mode panel_modes[] = {
 		.flip_top = true,
 		.sdclk_hold = false,
 	},
+//*/ 
 	/* Deprecated Plastic Logic panel types ---> */
 	{
 		.vmode = &e60_v110_mode,
