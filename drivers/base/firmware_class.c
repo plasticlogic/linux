@@ -1087,7 +1087,7 @@ _request_firmware(const struct firmware **firmware_p, const char *name,
 	struct firmware *fw;
 	long timeout;
 	int ret;
-
+	dev_warn(device, "Try to load Firmware %s", name);
 	if (!firmware_p)
 		return -EINVAL;
 

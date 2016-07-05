@@ -45,7 +45,7 @@
 #include <linux/pxp_dma.h>
 #include <linux/pm_runtime.h>
 #include <linux/mxcfb.h>
-#include <linux/mxcfb_epdc.h>
+#include <linux/mxcfb_epdc_v2.h>
 #include <linux/gpio.h>
 #include <linux/of_gpio.h>
 #include <linux/mfd/syscon.h>

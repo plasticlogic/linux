@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2010-2015 Freescale Semiconductor, Inc.
+ * Copyright (C) 2010-2014 Freescale Semiconductor, Inc.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -20,10 +20,11 @@
  * Based on STMP378X LCDIF
  * Copyright 2008 Embedded Alley Solutions, Inc All Rights Reserved.
  */
-
 #include <linux/busfreq-imx.h>
+#include <linux/busfreq-imx6.h>
 #include <linux/module.h>
 #include <linux/kernel.h>
+//#define DEBUG
 #include <linux/device.h>
 #include <linux/platform_device.h>
 #include <linux/input.h>
@@ -46,6 +47,10 @@
 #include <linux/pm_runtime.h>
 #include <linux/mxcfb.h>
 #include <linux/mxcfb_epdc.h>
+#if (defined(CONFIG_FB_MXC_EPDC_PL_HARDWARE) \
+     || defined(CONFIG_FB_MXC_EPDC_PL_HARDWARE_MODULE))
+#include <linux/mxc_epdc_pl_hardware.h>
+#endif
 #include <linux/gpio.h>
 #include <linux/regulator/driver.h>
 #include <linux/fsl_devices.h>
@@ -56,13 +61,143 @@
 
 #include "epdc_regs.h"
 
+/* Maximum size of the DMA memory allocated by this driver */
+#define MXCFB_MAX_DMA_ALLOC ((unsigned long)88e6)
+
+/* module parameters */
+#ifndef CONFIG_FB_MXC_EPDC_MAX_UPDATES
+#define CONFIG_FB_MXC_EPDC_MAX_UPDATES 20
+#endif
+
+
+
+#define MXC_FB_INVALID_VCOM INT_MAX
+#define MXC_FB_MAX_VCOM_N 2
+static int mxc_epdc_fb_vcom_modparam[MXC_FB_MAX_VCOM_N] = {
+	[0 ... (MXC_FB_MAX_VCOM_N - 1)] = MXC_FB_INVALID_VCOM };
+static size_t mxc_epdc_fb_vcom_n_modparam = 0;
+module_param_array_named(vcom, mxc_epdc_fb_vcom_modparam, int,
+			 &mxc_epdc_fb_vcom_n_modparam, S_IRUGO);
+MODULE_PARM_DESC(vcom, "VCOM voltages");
+
+static char *mxc_epdc_fb_panel_type_modparam = "D107_T3.1";
+module_param_named(panel_type, mxc_epdc_fb_panel_type_modparam, charp,
+		   S_IRUGO);
+MODULE_PARM_DESC(panel_type, "Panel type identifier");
+
+static int mxc_epdc_fb_use_cfa_modparam = 0;
+module_param_named(use_cfa, mxc_epdc_fb_use_cfa_modparam, int,
+		S_IRUGO);
+/*		
+static char *mxc_epdc_fb_panel_size_modparam = NULL;
+module_param_named(panel_size, mxc_epdc_fb_panel_size_modparam, charp,
+		   S_IRUGO);
+MODULE_PARM_DESC(panel_size, "Panel size identifier");
+*/
+
+static char* mxc_epdc_fb_waveform_modaram = "";
+module_param_named(waveform, mxc_epdc_fb_waveform_modaram, charp, 
+		   S_IRUGO);
+MODULE_PARM_DESC(waveform, "Waveform identifier");
+		   
+static int *mxc_epdc_fb_have_minimal_cpld_image_modparam = 0;
+module_param_named(minimal_cpld_image, mxc_epdc_fb_have_minimal_cpld_image_modparam, int, S_IRUGO);
+MODULE_PARM_DESC(minimal_cpld_image, "Use a minimal PL_CPLD image instead of the standard one - single display only");
+
+static int *mxc_epdc_fb_dithering_modparam = 0;
+module_param_named(use_dithering, mxc_epdc_fb_dithering_modparam, int,
+		   S_IRUGO);
+MODULE_PARM_DESC(use_dithering, "Process all Content with Dithering algorithm and Mono waveform");
+
+static char *vmode_name_modparam = "S047_Tx.y";
+static int vmode_refresh_modparam = 50;
+static int vmode_xres_modparam = 800;
+static int vmode_yres_modparam = 450;
+static long vmode_pixclock_modparam = 14424000;
+static int vmode_left_margin_modparam = 27; /* line_begin */
+static int vmode_right_margin_modparam = 88; /* line_end */
+static int vmode_upper_margin_modparam = 4; /* frame_begin */
+static int vmode_lower_margin_modparam = 4; /* frame_end */
+static int vmode_hsync_len_modparam = 11;
+static int vmode_vsync_len_modparam = 1;
+static int vmode_sync_modparam = 0;
+static int vmode_vmode_modparam = FB_VMODE_NONINTERLACED;
+static int vmode_flag_modparam = 0;
+
+static int ptype_vscan_holdoff_modparam = 1;
+static int ptype_sdoed_width_modparam = 10;
+static int ptype_sdoed_delay_modparam = 0;
+static int ptype_sdoez_width_modparam = 10;
+static int ptype_sdoez_delay_modparam = 20;
+static int ptype_gdclk_hp_offs_modparam = 740;
+static int ptype_gdsp_offs_modparam = 2;
+static int ptype_gdsp_frame_sync_modparam = 0;
+static int ptype_gdsp_active_high_modparam = 0;
+static int ptype_gdoe_offs_modparam = 24;
+static int ptype_gdoe_delayed_gclk_modparam = 1;
+static int ptype_gdoe_active_high_modparam = 1;
+static int ptype_gdclk_offs_modparam = 4;
+static int ptype_num_ce_modparam = 1;
+static int ptype_sddo_16_bits_modparam = 0;
+static int ptype_sddo_flip_bits_modparam = 0;
+static int ptype_tft_4bpp_modparam = 0;
+static int ptype_dual_scan_modparam = 0;
+static int ptype_scan_dir_0_up_modparam = 0;
+static int ptype_scan_dir_1_up_modparam = 0;
+static int ptype_flip_top_modparam = 0;
+static int ptype_sdclk_hold_modparam = 0;
+static int ptype_left_border_modparam = 0;
+static int ptype_right_border_modparam = 0;
+
+module_param_named(vmode_name, vmode_name_modparam, charp, S_IRUGO); 						//"PL_STD047",
+module_param_named(vmode_refresh, vmode_refresh_modparam, int, S_IRUGO); 					//50,
+module_param_named(vmode_xres, vmode_xres_modparam, int, S_IRUGO); 							//800,
+module_param_named(vmode_yres, vmode_yres_modparam, int, S_IRUGO); 							//450,
+module_param_named(vmode_pixclock, vmode_pixclock_modparam, int, S_IRUGO); 					//14424000,
+module_param_named(vmode_left_margin, vmode_left_margin_modparam, int, S_IRUGO); 			//27, /* line_begin */
+module_param_named(vmode_right_margin, vmode_right_margin_modparam, int, S_IRUGO);	 		//88, /* line_end */
+module_param_named(vmode_upper_margin, vmode_upper_margin_modparam, int, S_IRUGO); 			//4, /* frame_begin */
+module_param_named(vmode_lower_margin, vmode_lower_margin_modparam, int, S_IRUGO); 			//4, /* frame_end */
+module_param_named(vmode_hsync_len, vmode_hsync_len_modparam, int, S_IRUGO); 				//11,
+module_param_named(vmode_vsync_len, vmode_vsync_len_modparam, int, S_IRUGO); 				//1,
+module_param_named(vmode_sync, vmode_sync_modparam, int, S_IRUGO); 							//0,
+module_param_named(vmode_vmode, vmode_vmode_modparam, int, S_IRUGO); 						//FB_VMODE_NONINTERLACED,
+module_param_named(vmode_flag, vmode_flag_modparam, int, S_IRUGO); 							//0,
+
+module_param_named(ptype_vscan_holdoff, ptype_vscan_holdoff_modparam, int, S_IRUGO);		//1,
+module_param_named(ptype_sdoed_width, ptype_sdoed_width_modparam, int, S_IRUGO); 			//10,
+module_param_named(ptype_sdoed_delay, ptype_sdoed_delay_modparam, int, S_IRUGO); 			//0,
+module_param_named(ptype_sdoez_width, ptype_sdoez_width_modparam, int, S_IRUGO); 			//10,
+module_param_named(ptype_sdoez_delay, ptype_sdoez_delay_modparam, int, S_IRUGO); 			//20,
+module_param_named(ptype_gdclk_hp_offs, ptype_gdclk_hp_offs_modparam, int, S_IRUGO); 		//740,
+module_param_named(ptype_gdsp_offs, ptype_gdsp_offs_modparam, int, S_IRUGO); 				//2,
+module_param_named(ptype_gdsp_frame_sync, ptype_gdsp_frame_sync_modparam, bool, S_IRUGO); 	//false,
+module_param_named(ptype_gdsp_active_high, ptype_gdsp_active_high_modparam, bool, S_IRUGO); //false,
+module_param_named(ptype_gdoe_offs, ptype_gdoe_offs_modparam, int, S_IRUGO); 				//24,
+module_param_named(ptype_gdoe_delayed_gclk, ptype_gdoe_delayed_gclk_modparam, bool, S_IRUGO); //true,
+module_param_named(ptype_gdoe_active_high, ptype_gdoe_active_high_modparam, bool, S_IRUGO); //true,
+module_param_named(ptype_gdclk_offs, ptype_gdclk_offs_modparam, int, S_IRUGO); 				//4,
+module_param_named(ptype_num_ce, ptype_num_ce_modparam, int, S_IRUGO); 						//1,
+module_param_named(ptype_sddo_16_bits, ptype_sddo_16_bits_modparam, int, S_IRUGO); 			//0,
+module_param_named(ptype_sddo_flip_bits, ptype_sddo_flip_bits_modparam, bool, S_IRUGO); 	//false,
+module_param_named(ptype_tft_4bpp, ptype_tft_4bpp_modparam, int, S_IRUGO); 					//false,
+module_param_named(ptype_dual_scan, ptype_dual_scan_modparam, int, S_IRUGO); 					//false,
+module_param_named(ptype_scan_dir_0_up, ptype_scan_dir_0_up_modparam, bool, S_IRUGO); 		//false,
+module_param_named(ptype_scan_dir_1_up, ptype_scan_dir_1_up_modparam, bool, S_IRUGO); 		//false,
+module_param_named(ptype_flip_top, ptype_flip_top_modparam, bool, S_IRUGO); 				//false,
+module_param_named(ptype_sdclk_hold, ptype_sdclk_hold_modparam, bool, S_IRUGO); 			//false,
+module_param_named(ptype_left_border, ptype_left_border_modparam, int, S_IRUGO); 			//0,
+module_param_named(ptype_right_border, ptype_right_border_modparam, int, S_IRUGO); 			//0,
+
+static int use_pedantic_conf_modparam = 0;
+module_param_named(use_pedantic_conf, use_pedantic_conf_modparam, int, S_IRUGO);
 /*
  * Enable this define to have a default panel
  * loaded during driver initialization
  */
-/*#define DEFAULT_PANEL_HW_INIT*/
+#define DEFAULT_PANEL_HW_INIT
 
-#define NUM_SCREENS_MIN	2
+#define NUM_SCREENS_MIN	20
 
 #define EPDC_V1_NUM_LUTS	16
 #define EPDC_V1_MAX_NUM_UPDATES 20
@@ -90,9 +225,10 @@
 #define MERGE_BLOCK	2
 
 static unsigned long default_bpp = 16;
-static DEFINE_MUTEX(hard_lock);
+DEFINE_MUTEX(hard_lock);
 
 struct update_marker_data {
+	struct list_head aw_list;
 	struct list_head full_list;
 	struct list_head upd_list;
 	u32 update_marker;
@@ -131,7 +267,7 @@ struct mxc_epdc_fb_data {
 	u32 pseudo_palette[16];
 	char fw_str[24];
 	struct list_head list;
-	struct imx_epdc_fb_mode *cur_mode;
+	const struct imx_epdc_fb_mode *cur_mode;
 	struct imx_epdc_fb_platform_data *pdata;
 	int blank;
 	u32 max_pix_size;
@@ -141,7 +277,9 @@ struct mxc_epdc_fb_data {
 	int default_bpp;
 	int native_width;
 	int native_height;
+	int epdc_xres;
 	int num_screens;
+	int use_cfa;
 	int epdc_irq;
 	struct device *dev;
 	int power_state;
@@ -149,9 +287,16 @@ struct mxc_epdc_fb_data {
 	struct completion powerdown_compl;
 	struct clk *epdc_clk_axi;
 	struct clk *epdc_clk_pix;
+#if (defined(CONFIG_FB_MXC_EPDC_PL_HARDWARE) \
+     || defined(CONFIG_FB_MXC_EPDC_PL_HARDWARE_MODULE))
+	struct pinctrl *pinctrl;
+	struct mxc_epdc_pl_hardware *pl_hardware;
+	struct mxc_epdc_plhw_config *plhw_conf;
+#else
 	struct regulator *display_regulator;
 	struct regulator *vcom_regulator;
 	struct regulator *v3p3_regulator;
+#endif
 	bool fw_default_load;
 	int rev;
 
@@ -161,6 +306,7 @@ struct mxc_epdc_fb_data {
 	bool in_init;
 	bool hw_ready;
 	bool hw_initializing;
+	struct completion init_completion;
 	bool waiting_for_idle;
 	u32 auto_mode;
 	u32 upd_scheme;
@@ -181,6 +327,7 @@ struct mxc_epdc_fb_data {
 	u32 *working_buffer_virt;
 	u32 working_buffer_phys;
 	u32 working_buffer_size;
+	u32 max_updates;
 	dma_addr_t *phys_addr_updbuf;
 	void **virt_addr_updbuf;
 	u32 upd_buffer_num;
@@ -189,6 +336,7 @@ struct mxc_epdc_fb_data {
 	void *virt_addr_copybuf;	/* Used for PxP SW workaround */
 	u32 order_cnt;
 	struct list_head full_marker_list;
+	struct list_head awaiting_marker_list;
 	u32 *lut_update_order;		/* Array size = number of luts */
 	u64 epdc_colliding_luts;
 	u64 luts_complete_wb;
@@ -253,7 +401,180 @@ struct mxcfb_waveform_data_file {
 	struct waveform_data_header wdh;
 	u32 *data;	/* Temperature Range Table + Waveform Data */
 };
+//*
+#if (defined(CONFIG_FB_MXC_EPDC_PL_HARDWARE) \
+     || defined(CONFIG_FB_MXC_EPDC_PL_HARDWARE_MODULE))
+static struct fb_videomode s047_t1_1_mode = {
+	.name = "S047_T1.1",
+	.refresh = 50,
+	.xres = 800,
+	.yres = 450,
+	.pixclock = 12e6,
+	.left_margin = 27, /* line_begin */
+	.right_margin = 88, /* line_end */
+	.upper_margin = 8, /* frame_begin */
+	.lower_margin = 4, /* frame_end */
+	.hsync_len = 11,
+	.vsync_len = 1,
+	.sync = 0,
+	.vmode = FB_VMODE_NONINTERLACED,
+	.flag = 0,
+};
+static struct fb_videomode d107_t3_1_mode = {
+	.name = "D107_T3.1",
+	.refresh = 50,
+	.xres = 1280,
+	.yres = 960,
+	.pixclock = 50e6, //25e6,
+	.left_margin = 166, 
+	.right_margin = 56, 
+	.upper_margin = 4, 
+	.lower_margin = 4, 
+	.hsync_len = 8,
+	.vsync_len = 1,
+	.sync = 0,
+	.vmode = FB_VMODE_NONINTERLACED,
+	.flag = 0,
+};
 
+static struct fb_videomode t154_t3_1_mode = {
+	.name = "T154_T3.1",
+	.refresh = 50,
+	.xres = 1280,
+	.yres = 1920,
+	.pixclock = 50e6, //25e6,
+	.left_margin = 166, 
+	.right_margin = 56, 
+	.upper_margin = 4, 
+	.lower_margin = 4, 
+	.hsync_len = 8,
+	.vsync_len = 1,
+	.sync = 0,
+	.vmode = FB_VMODE_NONINTERLACED,
+	.flag = 0,
+};
+
+static struct fb_videomode q154_t3_1_mode = {
+	.name = "Q154_T3.1",
+	.refresh = 50,
+	.xres = 1280,
+	.yres = 1920,
+	.pixclock = 50e6, //25e6,
+	.left_margin = 166, 
+	.right_margin = 56, 
+	.upper_margin = 4, 
+	.lower_margin = 4, 
+	.hsync_len = 8,
+	.vsync_len = 1,
+	.sync = 0,
+	.vmode = FB_VMODE_NONINTERLACED,
+	.flag = 0,
+};
+//*/
+static struct fb_videomode d107_t2_1_mode = {
+	.name = "D107_T2.1",
+	.refresh = 50,
+	.xres = 1280,
+	.yres = 960,
+	.pixclock = 46e6,
+	.left_margin = 176, /* line_begin */
+	.right_margin = 4, /* line_end */
+	.upper_margin = 1, /* frame_begin */
+	.lower_margin = 10, /* frame_end */
+	.hsync_len = 60,
+	.vsync_len = 1,
+	.sync = 0,
+	.vmode = FB_VMODE_NONINTERLACED,
+	.flag = 0,
+};
+
+static struct fb_videomode t154_t2_1_mode = {
+	.name = "T154_T2.1",
+	.refresh = 50,
+	.xres = 1280,
+	.yres = 1920,
+	.pixclock = 46e6,
+	.left_margin = 176, /* line_begin */
+	.right_margin = 4, /* line_end */
+	.upper_margin = 1, /* frame_begin */
+	.lower_margin = 10, /* frame_end */
+	.hsync_len = 60,
+	.vsync_len = 1,
+	.sync = 0,
+	.vmode = FB_VMODE_NONINTERLACED,
+	.flag = 0,
+};
+
+static struct fb_videomode q154_t2_1_mode = {
+	.name = "Q154_T2.1",
+	.refresh = 50,
+	.xres = 1280,
+	.yres = 1920,
+	.pixclock = 46e6,
+	.left_margin = 176, /* line_begin */
+	.right_margin = 4, /* line_end */
+	.upper_margin = 1, /* frame_begin */
+	.lower_margin = 10, /* frame_end */
+	.hsync_len = 60,
+	.vsync_len = 1,
+	.sync = 0,
+	.vmode = FB_VMODE_NONINTERLACED,
+	.flag = 0,
+};
+
+/* <--- Deprecated Plastic Logic panel types */
+
+static struct fb_videomode d107_t1_1_mode = {
+	.name = "D107_T1.1",
+	.refresh = 50,
+	.xres = 1280,
+	.yres = 960,
+	.pixclock = 38e6,
+	.left_margin = 120, /* line_begin */
+	.right_margin = 4, /* line_end */
+	.upper_margin = 1, /* frame_begin */
+	.lower_margin = 10, /* frame_end */
+	.hsync_len = 60,
+	.vsync_len = 1,
+	.sync = 0,
+	.vmode = FB_VMODE_NONINTERLACED,
+	.flag = 0,
+};
+
+static struct fb_videomode t154_t1_1_mode = {
+	.name = "T154_T1.1",
+	.refresh = 50,
+	.xres = 1280,
+	.yres = 1920,
+	.pixclock = 38e6,
+	.left_margin = 120, /* line_begin */
+	.right_margin = 4, /* line_end */
+	.upper_margin = 1, /* frame_begin */
+	.lower_margin = 10, /* frame_end */
+	.hsync_len = 60,
+	.vsync_len = 1,
+	.sync = 0,
+	.vmode = FB_VMODE_NONINTERLACED,
+	.flag = 0,
+};
+
+static struct fb_videomode q154_t1_1_mode = {
+	.name = "Q154_T1.1",
+	.refresh = 50,
+	.xres = 1280,
+	.yres = 1920,
+	.pixclock = 38e6,
+	.left_margin = 120, /* line_begin */
+	.right_margin = 4, /* line_end */
+	.upper_margin = 1, /* frame_begin */
+	.lower_margin = 10, /* frame_end */
+	.hsync_len = 60,
+	.vsync_len = 1,
+	.sync = 0,
+	.vmode = FB_VMODE_NONINTERLACED,
+	.flag = 0,
+};
+#endif
 static struct fb_videomode e60_v110_mode = {
 	.name = "E60_V110",
 	.refresh = 50,
@@ -374,12 +695,299 @@ static struct imx_epdc_fb_mode panel_modes[] = {
 		0,      /* gdoe_offs */
 		1,      /* gdclk_offs */
 		3,      /* num_ce */
-	}
+	},
+#if (defined(CONFIG_FB_MXC_EPDC_PL_HARDWARE) \
+     || defined(CONFIG_FB_MXC_EPDC_PL_HARDWARE_MODULE))	
+	{
+		.vmode = &s047_t1_1_mode,
+		.vscan_holdoff = 1,
+		.sdoed_width = 6,
+		.sdoed_delay = 0,
+		.sdoez_width = 0,
+		.sdoez_delay = 0,
+		.gdclk_hp_offs = 440,
+		.gdsp_offs = 4,
+		.gdsp_frame_sync = false,
+		.gdsp_active_high = false,
+		.gdoe_offs = 4,
+		.gdoe_delayed_gclk = false,
+		.gdoe_active_high = true,
+		.gdclk_offs = 0,
+		.num_ce = 1,
+		.sddo_16_bits = 0,
+		.sddo_flip_bits = true,
+		.tft_4bpp = false,
+		.dual_scan = false,
+		.scan_dir_0_up = false,
+		.scan_dir_1_up = false,
+		.flip_top = false,
+		.sdclk_hold = false,
+		.left_border = 0,
+		.right_border = 0,
+	},
+	{
+		.vmode = &d107_t3_1_mode,
+		.vscan_holdoff = 1,
+		.sdoed_width = 6,
+		.sdoed_delay = 0,
+		.sdoez_width = 0,
+		.sdoez_delay = 0,
+		.gdclk_hp_offs = 470,
+		.gdsp_offs = 4 ,
+		.gdsp_frame_sync = false,
+		.gdsp_active_high = false,
+		.gdoe_offs = 4,
+		.gdoe_delayed_gclk = false,
+		.gdoe_active_high = true,
+		.gdclk_offs = 0,
+		.num_ce = 1,
+		.sddo_16_bits = 0,
+		.sddo_flip_bits = true,
+		.tft_4bpp = false,
+		.dual_scan = false,
+		.scan_dir_0_up = false,
+		.scan_dir_1_up = false,
+		.flip_top = false,
+		.sdclk_hold = false,
+		.left_border = 0,
+		.right_border = 0,
+	},
+	{
+		.vmode = &t154_t3_1_mode,
+		.vscan_holdoff = 1,
+		.sdoed_width = 6,
+		.sdoed_delay = 0,
+		.sdoez_width = 0,
+		.sdoez_delay = 0,
+		.gdclk_hp_offs = 470,
+		.gdsp_offs = 4 ,
+		.gdsp_frame_sync = false,
+		.gdsp_active_high = false,
+		.gdoe_offs = 4,
+		.gdoe_delayed_gclk = false,
+		.gdoe_active_high = true,
+		.gdclk_offs = 0,
+		.num_ce = 1,
+		.sddo_16_bits = 0,
+		.sddo_flip_bits = true,
+		.tft_4bpp = false,
+		.dual_scan = true,
+		.scan_dir_0_up = false,
+		.scan_dir_1_up = false,
+		.flip_top = false,
+		.sdclk_hold = false,
+		.left_border = 0,
+		.right_border = 0,
+	},
+	{
+		.vmode = &q154_t3_1_mode,
+		.vscan_holdoff = 1,
+		.sdoed_width = 6,
+		.sdoed_delay = 0,
+		.sdoez_width = 0,
+		.sdoez_delay = 0,
+		.gdclk_hp_offs = 470,
+		.gdsp_offs = 4 ,
+		.gdsp_frame_sync = false,
+		.gdsp_active_high = false,
+		.gdoe_offs = 4,
+		.gdoe_delayed_gclk = false,
+		.gdoe_active_high = true,
+		.gdclk_offs = 0,
+		.num_ce = 1,
+		.sddo_16_bits = 0,
+		.sddo_flip_bits = true,
+		.tft_4bpp = false,
+		.dual_scan = true,
+		.scan_dir_0_up = true,
+		.scan_dir_1_up = false,
+		.flip_top = true,
+		.sdclk_hold = false,
+		.left_border = 0,
+		.right_border = 0,
+	},//*/
+	{
+		.vmode = &d107_t2_1_mode,
+		.vscan_holdoff = 4,
+		.sdoed_width = 10,
+		.sdoed_delay = 20,
+		.sdoez_width = 10,
+		.sdoez_delay = 20,
+		.gdclk_hp_offs = 740,
+		.gdsp_offs = 0,
+		.gdsp_frame_sync = false,
+		.gdsp_active_high = true,
+		.gdoe_offs = 94,
+		.gdoe_delayed_gclk = true,
+		.gdoe_active_high = false,
+		.gdclk_offs = 40,
+		.num_ce = 1,
+		.sddo_16_bits = 0,
+		.sddo_flip_bits = false,
+		.tft_4bpp = false,
+		.dual_scan = false,
+		.scan_dir_0_up = false,
+		.scan_dir_1_up = false,
+		.flip_top = false,
+		.sdclk_hold = false,
+		.left_border = 80,
+		.right_border = 80,
+	},
+	{
+		.vmode = &t154_t2_1_mode,
+		.vscan_holdoff = 2,
+		.sdoed_width = 10,
+		.sdoed_delay = 20,
+		.sdoez_width = 10,
+		.sdoez_delay = 20,
+		.gdclk_hp_offs = 740,
+		.gdsp_offs = 0,
+		.gdsp_frame_sync = false,
+		.gdsp_active_high = true,
+		.gdoe_offs = 94,
+		.gdoe_delayed_gclk = true,
+		.gdoe_active_high = false,
+		.gdclk_offs = 40,
+		.num_ce = 1,
+		.sddo_16_bits = false,
+		.sddo_flip_bits = false,
+		.tft_4bpp = false,
+		.dual_scan = true,
+		.scan_dir_0_up = false,
+		.scan_dir_1_up = false,
+		.flip_top = false,
+		.sdclk_hold = false,
+		.left_border = 80,
+		.right_border = 80,
+	},
+	{
+		.vmode = &q154_t2_1_mode,
+		.vscan_holdoff = 2,
+		.sdoed_width = 10,
+		.sdoed_delay = 20,
+		.sdoez_width = 10,
+		.sdoez_delay = 20,
+		.gdclk_hp_offs = 740,
+		.gdsp_offs = 0,
+		.gdsp_frame_sync = false,
+		.gdsp_active_high = true,
+		.gdoe_offs = 94,
+		.gdoe_delayed_gclk = true,
+		.gdoe_active_high = false,
+		.gdclk_offs = 40,
+		.num_ce = 1,
+		.sddo_16_bits = false,
+		.sddo_flip_bits = false,
+		.tft_4bpp = false,
+		.dual_scan = true,
+		.scan_dir_0_up = true,
+		.scan_dir_1_up = false,
+		.flip_top = true,
+		.sdclk_hold = false,
+		.left_border = 80,
+		.right_border = 80,
+	},
+	/* <--- Deprecated Plastic Logic panel types */
+	{
+		.vmode = &d107_t1_1_mode,
+		.vscan_holdoff = 4,
+		.sdoed_width = 10,
+		.sdoed_delay = 20,
+		.sdoez_width = 10,
+		.sdoez_delay = 20,
+		.gdclk_hp_offs = 560,
+		.gdsp_offs = 0,
+		.gdsp_frame_sync = false,
+		.gdsp_active_high = true,
+		.gdoe_offs = 80,
+		.gdoe_delayed_gclk = true,
+		.gdoe_active_high = false,
+		.gdclk_offs = 40,
+		.num_ce = 1,
+		.sddo_16_bits = 1,
+		.sddo_flip_bits = false,
+		.tft_4bpp = true,
+		.dual_scan = false,
+		.scan_dir_0_up = false,
+		.scan_dir_1_up = false,
+		.flip_top = false,
+		.sdclk_hold = false,
+	},
+	{
+		.vmode = &t154_t1_1_mode,
+		.vscan_holdoff = 2,
+		.sdoed_width = 10,
+		.sdoed_delay = 20,
+		.sdoez_width = 10,
+		.sdoez_delay = 20,
+		.gdclk_hp_offs = 560,
+		.gdsp_offs = 0,
+		.gdsp_frame_sync = false,
+		.gdsp_active_high = true,
+		.gdoe_offs = 80,
+		.gdoe_delayed_gclk = true,
+		.gdoe_active_high = false,
+		.gdclk_offs = 40,
+		.num_ce = 1,
+		.sddo_16_bits = false,
+		.sddo_flip_bits = false,
+		.tft_4bpp = false,
+		.dual_scan = true,
+		.scan_dir_0_up = false,
+		.scan_dir_1_up = false,
+		.flip_top = false,
+		.sdclk_hold = false,
+	},
+	{
+		.vmode = &q154_t1_1_mode,
+		.vscan_holdoff = 2,
+		.sdoed_width = 10,
+		.sdoed_delay = 20,
+		.sdoez_width = 10,
+		.sdoez_delay = 20,
+		.gdclk_hp_offs = 560,
+		.gdsp_offs = 0,
+		.gdsp_frame_sync = false,
+		.gdsp_active_high = true,
+		.gdoe_offs = 80,
+		.gdoe_delayed_gclk = true,
+		.gdoe_active_high = false,
+		.gdclk_offs = 40,
+		.num_ce = 1,
+		.sddo_16_bits = false,
+		.sddo_flip_bits = false,
+		.tft_4bpp = false,
+		.dual_scan = true,
+		.scan_dir_0_up = true,
+		.scan_dir_1_up = false,
+		.flip_top = true,
+		.sdclk_hold = false,
+	},
+#endif
 };
+#if (defined(CONFIG_FB_MXC_EPDC_PL_HARDWARE) \
+     || defined(CONFIG_FB_MXC_EPDC_PL_HARDWARE_MODULE))
+static struct mxc_epdc_plhw_pdata epdc_plhw_pdata = {
+	.i2c_bus_number = 0, 
+	.dac_i2c_address = 0x39,
+	.adc_i2c_address = 0x34,
+	.fast_gpio = {
+		[MXC_EPDC_PL_HARDWARE_FAST_D0]  = PL_HARDWARE_FAST_D0,
+		[MXC_EPDC_PL_HARDWARE_FAST_D1]  = PL_HARDWARE_FAST_D1,
+		[MXC_EPDC_PL_HARDWARE_FAST_D2]  = PL_HARDWARE_FAST_D2,
+		[MXC_EPDC_PL_HARDWARE_FAST_CLK] = PL_HARDWARE_FAST_CLK,
+		[MXC_EPDC_PL_HARDWARE_FAST_EN]  = PL_HARDWARE_FAST_EN,
+	},
+};
+#endif
 
 static struct imx_epdc_fb_platform_data epdc_data = {
 	.epdc_mode = panel_modes,
 	.num_modes = ARRAY_SIZE(panel_modes),
+#if (defined(CONFIG_FB_MXC_EPDC_PL_HARDWARE) \
+     || defined(CONFIG_FB_MXC_EPDC_PL_HARDWARE_MODULE))
+	.plhw_pdata = &epdc_plhw_pdata,
+#endif
 };
 
 void __iomem *epdc_base;
@@ -397,6 +1005,11 @@ static int pxp_process_update(struct mxc_epdc_fb_data *fb_data,
 			      struct mxcfb_rect *update_region);
 static int pxp_complete_update(struct mxc_epdc_fb_data *fb_data, u32 *hist_stat);
 
+static int cfa_process_update(struct mxc_epdc_fb_data *fb_data,
+			      u32 src_width, u32 src_height,
+			      void *src_buf_virt, void *dst_buf_virt,
+			      struct mxcfb_rect *src_update_region);
+
 static void draw_mode0(struct mxc_epdc_fb_data *fb_data);
 static bool is_free_list_full(struct mxc_epdc_fb_data *fb_data);
 
@@ -410,8 +1023,59 @@ static void do_dithering_processing_Y4_v1_0(
 		struct mxcfb_rect *update_region,
 		unsigned long update_region_stride,
 		int *err_dist);
-
+static void do_ordered_dithering_processing(
+		unsigned char *update_region_ptr,
+		struct mxcfb_rect *update_region,
+		unsigned long update_region_stride,
+		int *err_dist);
 #ifdef DEBUG
+static void dump_fb_mode(struct mxc_epdc_fb_data *fb_data)
+{
+	
+	printk("***** DUMP FB MODE *****\n\n");
+	printk("");
+	printk("struct fb_videomode *vmode: %p\n",fb_data->cur_mode->vmode);
+	printk("struct fb_videomode *vmode.name: %s\n",fb_data->cur_mode->vmode->name);
+	printk("struct fb_videomode *vmode.refresh: %i\n",fb_data->cur_mode->vmode->refresh);
+	printk("struct fb_videomode *vmode.xres: %i\n",fb_data->cur_mode->vmode->xres);
+	printk("struct fb_videomode *vmode.yres: %i\n",fb_data->cur_mode->vmode->yres);
+	printk("struct fb_videomode *vmode.pixclock: %i\n",fb_data->cur_mode->vmode->pixclock);
+	printk("struct fb_videomode *vmode.left_margin: %i\n",fb_data->cur_mode->vmode->left_margin);
+	printk("struct fb_videomode *vmode.right_margin: %i\n",fb_data->cur_mode->vmode->right_margin);
+	printk("struct fb_videomode *vmode.upper_margin: %i\n",fb_data->cur_mode->vmode->upper_margin);
+	printk("struct fb_videomode *vmode.lower_margin: %i\n",fb_data->cur_mode->vmode->lower_margin);
+	printk("struct fb_videomode *vmode.hsync_len: %i\n",fb_data->cur_mode->vmode->hsync_len);
+	printk("struct fb_videomode *vmode.vsync_len: %i\n",fb_data->cur_mode->vmode->vsync_len);
+	printk("struct fb_videomode *vmode.sync: %i\n",fb_data->cur_mode->vmode->sync);
+	printk("struct fb_videomode *vmode.vmode: %i\n",fb_data->cur_mode->vmode->vmode);
+	printk("struct fb_videomode *vmode.flag: %i\n",fb_data->cur_mode->vmode->flag);
+    printk("int vscan_holdoff: %i\n",fb_data->cur_mode->vscan_holdoff);
+    printk("int sdoed_width: %i\n",fb_data->cur_mode->sdoed_width);
+    printk("int sdoed_delay: %i\n",fb_data->cur_mode->sdoed_delay);
+    printk("int sdoez_width: %i\n",fb_data->cur_mode->sdoez_width);
+    printk("int sdoez_delay: %i\n",fb_data->cur_mode->sdoez_delay);
+    printk("int gdclk_hp_offs: %i\n",fb_data->cur_mode->gdclk_hp_offs);
+    printk("int gdsp_offs: %i\n",fb_data->cur_mode->gdsp_offs);
+    printk("bool gdsp_frame_sync: %i\n",fb_data->cur_mode->gdsp_frame_sync);
+    printk("bool gdsp_active_high: %i\n",fb_data->cur_mode->gdsp_active_high);
+    printk("int gdoe_offs: %i\n",fb_data->cur_mode->gdoe_offs);
+    printk("bool gdoe_delayed_gclk: %i\n",fb_data->cur_mode->gdoe_delayed_gclk);
+    printk("bool gdoe_active_high: %i\n",fb_data->cur_mode->gdoe_active_high);
+    printk("int gdclk_offs: %i\n",fb_data->cur_mode->gdclk_offs);
+    printk("int num_ce: %i\n",fb_data->cur_mode->num_ce);
+    printk("bool sddo_16_bits: %i\n",fb_data->cur_mode->sddo_16_bits);
+    printk("bool sddo_flip_bits: %i\n",fb_data->cur_mode->sddo_flip_bits);
+    printk("bool tft_4bpp: %i\n",fb_data->cur_mode->tft_4bpp);
+    printk("bool dual_scan: %i\n",fb_data->cur_mode->dual_scan);
+    printk("bool scan_dir_0_up: %i\n",fb_data->cur_mode->scan_dir_0_up);
+    printk("bool scan_dir_1_up: %i\n",fb_data->cur_mode->scan_dir_1_up);
+    printk("bool flip_top: %i\n",fb_data->cur_mode->flip_top);
+    printk("bool sdclk_hold: %i\n",fb_data->cur_mode->sdclk_hold);
+    printk("int left_border: %i\n",fb_data->cur_mode->left_border);
+    printk("int right_border: %i\n",fb_data->cur_mode->right_border);
+}
+	
+
 static void dump_pxp_config(struct mxc_epdc_fb_data *fb_data,
 			    struct pxp_config_data *pxp_conf)
 {
@@ -471,62 +1135,62 @@ static void dump_pxp_config(struct mxc_epdc_fb_data *fb_data,
 
 static void dump_epdc_reg(void)
 {
-	printk(KERN_DEBUG "\n\n");
-	printk(KERN_DEBUG "EPDC_CTRL 0x%x\n", __raw_readl(EPDC_CTRL));
-	printk(KERN_DEBUG "EPDC_WVADDR 0x%x\n", __raw_readl(EPDC_WVADDR));
-	printk(KERN_DEBUG "EPDC_WB_ADDR 0x%x\n", __raw_readl(EPDC_WB_ADDR));
-	printk(KERN_DEBUG "EPDC_RES 0x%x\n", __raw_readl(EPDC_RES));
-	printk(KERN_DEBUG "EPDC_FORMAT 0x%x\n", __raw_readl(EPDC_FORMAT));
-	printk(KERN_DEBUG "EPDC_FIFOCTRL 0x%x\n", __raw_readl(EPDC_FIFOCTRL));
-	printk(KERN_DEBUG "EPDC_UPD_ADDR 0x%x\n", __raw_readl(EPDC_UPD_ADDR));
-	printk(KERN_DEBUG "EPDC_UPD_STRIDE 0x%x\n", __raw_readl(EPDC_UPD_STRIDE));
-	printk(KERN_DEBUG "EPDC_UPD_FIXED 0x%x\n", __raw_readl(EPDC_UPD_FIXED));
-	printk(KERN_DEBUG "EPDC_UPD_CORD 0x%x\n", __raw_readl(EPDC_UPD_CORD));
-	printk(KERN_DEBUG "EPDC_UPD_SIZE 0x%x\n", __raw_readl(EPDC_UPD_SIZE));
-	printk(KERN_DEBUG "EPDC_UPD_CTRL 0x%x\n", __raw_readl(EPDC_UPD_CTRL));
-	printk(KERN_DEBUG "EPDC_TEMP 0x%x\n", __raw_readl(EPDC_TEMP));
-	printk(KERN_DEBUG "EPDC_AUTOWV_LUT 0x%x\n", __raw_readl(EPDC_AUTOWV_LUT));
-	printk(KERN_DEBUG "EPDC_TCE_CTRL 0x%x\n", __raw_readl(EPDC_TCE_CTRL));
-	printk(KERN_DEBUG "EPDC_TCE_SDCFG 0x%x\n", __raw_readl(EPDC_TCE_SDCFG));
-	printk(KERN_DEBUG "EPDC_TCE_GDCFG 0x%x\n", __raw_readl(EPDC_TCE_GDCFG));
-	printk(KERN_DEBUG "EPDC_TCE_HSCAN1 0x%x\n", __raw_readl(EPDC_TCE_HSCAN1));
-	printk(KERN_DEBUG "EPDC_TCE_HSCAN2 0x%x\n", __raw_readl(EPDC_TCE_HSCAN2));
-	printk(KERN_DEBUG "EPDC_TCE_VSCAN 0x%x\n", __raw_readl(EPDC_TCE_VSCAN));
-	printk(KERN_DEBUG "EPDC_TCE_OE 0x%x\n", __raw_readl(EPDC_TCE_OE));
-	printk(KERN_DEBUG "EPDC_TCE_POLARITY 0x%x\n", __raw_readl(EPDC_TCE_POLARITY));
-	printk(KERN_DEBUG "EPDC_TCE_TIMING1 0x%x\n", __raw_readl(EPDC_TCE_TIMING1));
-	printk(KERN_DEBUG "EPDC_TCE_TIMING2 0x%x\n", __raw_readl(EPDC_TCE_TIMING2));
-	printk(KERN_DEBUG "EPDC_TCE_TIMING3 0x%x\n", __raw_readl(EPDC_TCE_TIMING3));
-	printk(KERN_DEBUG "EPDC_PIGEON_CTRL0 0x%x\n", __raw_readl(EPDC_PIGEON_CTRL0));
-	printk(KERN_DEBUG "EPDC_PIGEON_CTRL1 0x%x\n", __raw_readl(EPDC_PIGEON_CTRL1));
-	printk(KERN_DEBUG "EPDC_IRQ_MASK1 0x%x\n", __raw_readl(EPDC_IRQ_MASK1));
-	printk(KERN_DEBUG "EPDC_IRQ_MASK2 0x%x\n", __raw_readl(EPDC_IRQ_MASK2));
-	printk(KERN_DEBUG "EPDC_IRQ1 0x%x\n", __raw_readl(EPDC_IRQ1));
-	printk(KERN_DEBUG "EPDC_IRQ2 0x%x\n", __raw_readl(EPDC_IRQ2));
-	printk(KERN_DEBUG "EPDC_IRQ_MASK 0x%x\n", __raw_readl(EPDC_IRQ_MASK));
-	printk(KERN_DEBUG "EPDC_IRQ 0x%x\n", __raw_readl(EPDC_IRQ));
-	printk(KERN_DEBUG "EPDC_STATUS_LUTS 0x%x\n", __raw_readl(EPDC_STATUS_LUTS));
-	printk(KERN_DEBUG "EPDC_STATUS_LUTS2 0x%x\n", __raw_readl(EPDC_STATUS_LUTS2));
-	printk(KERN_DEBUG "EPDC_STATUS_NEXTLUT 0x%x\n", __raw_readl(EPDC_STATUS_NEXTLUT));
-	printk(KERN_DEBUG "EPDC_STATUS_COL1 0x%x\n", __raw_readl(EPDC_STATUS_COL));
-	printk(KERN_DEBUG "EPDC_STATUS_COL2 0x%x\n", __raw_readl(EPDC_STATUS_COL2));
-	printk(KERN_DEBUG "EPDC_STATUS 0x%x\n", __raw_readl(EPDC_STATUS));
-	printk(KERN_DEBUG "EPDC_UPD_COL_CORD 0x%x\n", __raw_readl(EPDC_UPD_COL_CORD));
-	printk(KERN_DEBUG "EPDC_UPD_COL_SIZE 0x%x\n", __raw_readl(EPDC_UPD_COL_SIZE));
-	printk(KERN_DEBUG "EPDC_DEBUG 0x%x\n", __raw_readl(EPDC_DEBUG));
-	printk(KERN_DEBUG "EPDC_DEBUG_LUT 0x%x\n", __raw_readl(EPDC_DEBUG_LUT));
-	printk(KERN_DEBUG "EPDC_HIST1_PARAM 0x%x\n", __raw_readl(EPDC_HIST1_PARAM));
-	printk(KERN_DEBUG "EPDC_HIST2_PARAM 0x%x\n", __raw_readl(EPDC_HIST2_PARAM));
-	printk(KERN_DEBUG "EPDC_HIST4_PARAM 0x%x\n", __raw_readl(EPDC_HIST4_PARAM));
-	printk(KERN_DEBUG "EPDC_HIST8_PARAM0 0x%x\n", __raw_readl(EPDC_HIST8_PARAM0));
-	printk(KERN_DEBUG "EPDC_HIST8_PARAM1 0x%x\n", __raw_readl(EPDC_HIST8_PARAM1));
-	printk(KERN_DEBUG "EPDC_HIST16_PARAM0 0x%x\n", __raw_readl(EPDC_HIST16_PARAM0));
-	printk(KERN_DEBUG "EPDC_HIST16_PARAM1 0x%x\n", __raw_readl(EPDC_HIST16_PARAM1));
-	printk(KERN_DEBUG "EPDC_HIST16_PARAM2 0x%x\n", __raw_readl(EPDC_HIST16_PARAM2));
-	printk(KERN_DEBUG "EPDC_HIST16_PARAM3 0x%x\n", __raw_readl(EPDC_HIST16_PARAM3));
-	printk(KERN_DEBUG "EPDC_GPIO 0x%x\n", __raw_readl(EPDC_GPIO));
-	printk(KERN_DEBUG "EPDC_VERSION 0x%x\n", __raw_readl(EPDC_VERSION));
-	printk(KERN_DEBUG "\n\n");
+	printk(/*KERN_DEBUG*/ "\n\n");
+	printk(/*KERN_DEBUG*/ "EPDC_CTRL 0x%x\n", __raw_readl(EPDC_CTRL));
+	printk(/*KERN_DEBUG*/ "EPDC_WVADDR 0x%x\n", __raw_readl(EPDC_WVADDR));
+	printk(/*KERN_DEBUG*/ "EPDC_WB_ADDR 0x%x\n", __raw_readl(EPDC_WB_ADDR));
+	printk(/*KERN_DEBUG*/ "EPDC_RES 0x%x\n", __raw_readl(EPDC_RES));
+	printk(/*KERN_DEBUG*/ "EPDC_FORMAT 0x%x\n", __raw_readl(EPDC_FORMAT));
+	printk(/*KERN_DEBUG*/ "EPDC_FIFOCTRL 0x%x\n", __raw_readl(EPDC_FIFOCTRL));
+	printk(/*KERN_DEBUG*/ "EPDC_UPD_ADDR 0x%x\n", __raw_readl(EPDC_UPD_ADDR));
+	printk(/*KERN_DEBUG*/ "EPDC_UPD_STRIDE 0x%x\n", __raw_readl(EPDC_UPD_STRIDE));
+	printk(/*KERN_DEBUG*/ "EPDC_UPD_FIXED 0x%x\n", __raw_readl(EPDC_UPD_FIXED));
+	printk(/*KERN_DEBUG*/ "EPDC_UPD_CORD 0x%x\n", __raw_readl(EPDC_UPD_CORD));
+	printk(/*KERN_DEBUG*/ "EPDC_UPD_SIZE 0x%x\n", __raw_readl(EPDC_UPD_SIZE));
+	printk(/*KERN_DEBUG*/ "EPDC_UPD_CTRL 0x%x\n", __raw_readl(EPDC_UPD_CTRL));
+	printk(/*KERN_DEBUG*/ "EPDC_TEMP 0x%x\n", __raw_readl(EPDC_TEMP));
+	printk(/*KERN_DEBUG*/ "EPDC_AUTOWV_LUT 0x%x\n", __raw_readl(EPDC_AUTOWV_LUT));
+	printk(/*KERN_DEBUG*/ "EPDC_TCE_CTRL 0x%x\n", __raw_readl(EPDC_TCE_CTRL));
+	printk(/*KERN_DEBUG*/ "EPDC_TCE_SDCFG 0x%x\n", __raw_readl(EPDC_TCE_SDCFG));
+	printk(/*KERN_DEBUG*/ "EPDC_TCE_GDCFG 0x%x\n", __raw_readl(EPDC_TCE_GDCFG));
+	printk(/*KERN_DEBUG*/ "EPDC_TCE_HSCAN1 0x%x\n", __raw_readl(EPDC_TCE_HSCAN1));
+	printk(/*KERN_DEBUG*/ "EPDC_TCE_HSCAN2 0x%x\n", __raw_readl(EPDC_TCE_HSCAN2));
+	printk(/*KERN_DEBUG*/ "EPDC_TCE_VSCAN 0x%x\n", __raw_readl(EPDC_TCE_VSCAN));
+	printk(/*KERN_DEBUG*/ "EPDC_TCE_OE 0x%x\n", __raw_readl(EPDC_TCE_OE));
+	printk(/*KERN_DEBUG*/ "EPDC_TCE_POLARITY 0x%x\n", __raw_readl(EPDC_TCE_POLARITY));
+	printk(/*KERN_DEBUG*/ "EPDC_TCE_TIMING1 0x%x\n", __raw_readl(EPDC_TCE_TIMING1));
+	printk(/*KERN_DEBUG*/ "EPDC_TCE_TIMING2 0x%x\n", __raw_readl(EPDC_TCE_TIMING2));
+	printk(/*KERN_DEBUG*/ "EPDC_TCE_TIMING3 0x%x\n", __raw_readl(EPDC_TCE_TIMING3));
+	printk(/*KERN_DEBUG*/ "EPDC_PIGEON_CTRL0 0x%x\n", __raw_readl(EPDC_PIGEON_CTRL0));
+	printk(/*KERN_DEBUG*/ "EPDC_PIGEON_CTRL1 0x%x\n", __raw_readl(EPDC_PIGEON_CTRL1));
+	printk(/*KERN_DEBUG*/ "EPDC_IRQ_MASK1 0x%x\n", __raw_readl(EPDC_IRQ_MASK1));
+	printk(/*KERN_DEBUG*/ "EPDC_IRQ_MASK2 0x%x\n", __raw_readl(EPDC_IRQ_MASK2));
+	printk(/*KERN_DEBUG*/ "EPDC_IRQ1 0x%x\n", __raw_readl(EPDC_IRQ1));
+	printk(/*KERN_DEBUG*/ "EPDC_IRQ2 0x%x\n", __raw_readl(EPDC_IRQ2));
+	printk(/*KERN_DEBUG*/ "EPDC_IRQ_MASK 0x%x\n", __raw_readl(EPDC_IRQ_MASK));
+	printk(/*KERN_DEBUG*/ "EPDC_IRQ 0x%x\n", __raw_readl(EPDC_IRQ));
+	printk(/*KERN_DEBUG*/ "EPDC_STATUS_LUTS 0x%x\n", __raw_readl(EPDC_STATUS_LUTS));
+	printk(/*KERN_DEBUG*/ "EPDC_STATUS_LUTS2 0x%x\n", __raw_readl(EPDC_STATUS_LUTS2));
+	printk(/*KERN_DEBUG*/ "EPDC_STATUS_NEXTLUT 0x%x\n", __raw_readl(EPDC_STATUS_NEXTLUT));
+	printk(/*KERN_DEBUG*/ "EPDC_STATUS_COL1 0x%x\n", __raw_readl(EPDC_STATUS_COL));
+	printk(/*KERN_DEBUG*/ "EPDC_STATUS_COL2 0x%x\n", __raw_readl(EPDC_STATUS_COL2));
+	printk(/*KERN_DEBUG*/ "EPDC_STATUS 0x%x\n", __raw_readl(EPDC_STATUS));
+	printk(/*KERN_DEBUG*/ "EPDC_UPD_COL_CORD 0x%x\n", __raw_readl(EPDC_UPD_COL_CORD));
+	printk(/*KERN_DEBUG*/ "EPDC_UPD_COL_SIZE 0x%x\n", __raw_readl(EPDC_UPD_COL_SIZE));
+	printk(/*KERN_DEBUG*/ "EPDC_DEBUG 0x%x\n", __raw_readl(EPDC_DEBUG));
+	printk(/*KERN_DEBUG*/ "EPDC_DEBUG_LUT 0x%x\n", __raw_readl(EPDC_DEBUG_LUT));
+	printk(/*KERN_DEBUG*/ "EPDC_HIST1_PARAM 0x%x\n", __raw_readl(EPDC_HIST1_PARAM));
+	printk(/*KERN_DEBUG*/ "EPDC_HIST2_PARAM 0x%x\n", __raw_readl(EPDC_HIST2_PARAM));
+	printk(/*KERN_DEBUG*/ "EPDC_HIST4_PARAM 0x%x\n", __raw_readl(EPDC_HIST4_PARAM));
+	printk(/*KERN_DEBUG*/ "EPDC_HIST8_PARAM0 0x%x\n", __raw_readl(EPDC_HIST8_PARAM0));
+	printk(/*KERN_DEBUG*/ "EPDC_HIST8_PARAM1 0x%x\n", __raw_readl(EPDC_HIST8_PARAM1));
+	printk(/*KERN_DEBUG*/ "EPDC_HIST16_PARAM0 0x%x\n", __raw_readl(EPDC_HIST16_PARAM0));
+	printk(/*KERN_DEBUG*/ "EPDC_HIST16_PARAM1 0x%x\n", __raw_readl(EPDC_HIST16_PARAM1));
+	printk(/*KERN_DEBUG*/ "EPDC_HIST16_PARAM2 0x%x\n", __raw_readl(EPDC_HIST16_PARAM2));
+	printk(/*KERN_DEBUG*/ "EPDC_HIST16_PARAM3 0x%x\n", __raw_readl(EPDC_HIST16_PARAM3));
+	printk(/*KERN_DEBUG*/ "EPDC_GPIO 0x%x\n", __raw_readl(EPDC_GPIO));
+	printk(/*KERN_DEBUG*/ "EPDC_VERSION 0x%x\n", __raw_readl(EPDC_VERSION));
+	printk(/*KERN_DEBUG*/ "\n\n");
 }
 
 static void dump_update_data(struct device *dev,
@@ -621,6 +1285,199 @@ static void dump_all_updates(struct mxc_epdc_fb_data *fb_data)
 	else
 		dump_update_data(fb_data->dev, fb_data->cur_update);
 }
+/*
+static void dump_fb_data(struct mxc_epdc_fb_data *fb_data){
+	int i=0;
+	printk(" *********** FB_DATA ************************\n\n");
+	printk(" mxc_epdc_fb_data\tstruct fb_info info %p\n", fb_data->info );
+	printk(" mxc_epdc_fb_data\tstruct fb_var_screeninfo epdc_fb_var %p\n", fb_data->epdc_fb_var );
+	printk(" mxc_epdc_fb_data\tu32 pseudo_palette[16] %p\n", fb_data->pseudo_palette );
+	printk(" mxc_epdc_fb_data\tchar fw_str[24] %s\n", fb_data->fw_str );
+	printk(" mxc_epdc_fb_data\tstruct list_head list %p\n", fb_data->list );
+	printk(" mxc_epdc_fb_data\tconst struct imx_epdc_fb_mode *cur_mode %p\n", fb_data->cur_mode );
+	printk(" mxc_epdc_fb_data\tstruct imx_epdc_fb_platform_data *pdata %p\n", fb_data->pdata );
+	printk(" mxc_epdc_fb_data\tint blank %i\n", fb_data->blank );
+	printk(" mxc_epdc_fb_data\tu32 max_pix_size %i\n", fb_data->max_pix_size );
+	printk(" mxc_epdc_fb_data\tssize_t map_size %i\n", fb_data->map_size );
+	printk(" mxc_epdc_fb_data\tdma_addr_t phys_start %p\n", fb_data->phys_start );
+	printk(" mxc_epdc_fb_data\tu32 fb_offset %i\n", fb_data->fb_offset );
+	printk(" mxc_epdc_fb_data\tint default_bpp %i\n", fb_data->default_bpp );
+	printk(" mxc_epdc_fb_data\tint native_width %i\n", fb_data->native_width );
+	printk(" mxc_epdc_fb_data\tint native_height %i\n", fb_data->native_height );
+	printk(" mxc_epdc_fb_data\tint epdc_xres %i\n", fb_data->epdc_xres );
+	printk(" mxc_epdc_fb_data\tint num_screens %i\n", fb_data->num_screens );
+	printk(" mxc_epdc_fb_data\tint use_cfa %i\n", fb_data->use_cfa );
+	printk(" mxc_epdc_fb_data\tint epdc_irq %i\n", fb_data->epdc_irq );
+	printk(" mxc_epdc_fb_data\tstruct device *dev %p\n", fb_data->dev );
+	printk(" mxc_epdc_fb_data\tint power_state %i\n", fb_data->power_state );
+	printk(" mxc_epdc_fb_data\tint wait_for_powerdown %i\n", fb_data->wait_for_powerdown );
+	printk(" mxc_epdc_fb_data\tstruct completion powerdown_compl %p\n", fb_data->powerdown_compl );
+	printk(" mxc_epdc_fb_data\tstruct clk *epdc_clk_axi %p\n", fb_data->epdc_clk_axi );
+	printk(" mxc_epdc_fb_data\tstruct clk *epdc_clk_pix %p\n", fb_data->epdc_clk_pix );
+	
+#if (defined(CONFIG_FB_MXC_EPDC_PL_HARDWARE) \
+     || defined(CONFIG_FB_MXC_EPDC_PL_HARDWARE_MODULE))
+	printk(" mxc_epdc_fb_data\tstruct pinctrl *pinctrl %p\n", fb_data->pinctrl );
+	printk(" mxc_epdc_fb_data\tstruct mxc_epdc_pl_hardware *pl_hardware %p\n", fb_data->pl_hardware );
+	if(fb_data->pl_hardware){
+		struct mxc_epdc_pl_hardware *pl_hw = fb_data->pl_hardware;
+		printk(" mxc_epdc_fb_data\t\tstruct mxc_epdc_pl_hardware->bool init_done; %i\n", pl_hw->init_done);
+		printk(" mxc_epdc_fb_data\t\tstruct mxc_epdc_pl_hardware->const struct mxc_epdc_plhw_pdata *pdata %p\n",pl_hw->pdata);
+		if(pl_hw->pdata){
+			struct mxc_epdc_plhw_pdata *pd = pl_hw->pdata;
+			printk(" mxc_epdc_fb_data\t\t\tstruct mxc_epdc_pl_hardware->const struct mxc_epdc_plhw_pdata->int i2c_bus_number %i\n", pd->i2c_bus_number);
+			printk(" mxc_epdc_fb_data\t\t\tstruct mxc_epdc_pl_hardware->const struct mxc_epdc_plhw_pdata->__u8 dac_i2c_address%i\n", pd->dac_i2c_address);
+			printk(" mxc_epdc_fb_data\t\t\tstruct mxc_epdc_pl_hardware->const struct mxc_epdc_plhw_pdata->__u8 adc_i2c_address%i\n", pd->adc_i2c_address);
+			for(i=0;i>MXC_EPDC_PL_HARDWARE_GPIO_N;i++){
+				printk(" mxc_epdc_fb_data\t\t\tstruct mxc_epdc_pl_hardware->const struct mxc_epdc_plhw_pdata->int fast_gpio[%i] %i\n", i, pd->fast_gpio[i]);
+			}
+		}
+		printk(" mxc_epdc_fb_data\t\tstruct mxc_epdc_pl_hardware->const struct mxc_epdc_plhw_config *conf %p\n", pl_hw->conf);
+		if(pl_hw->conf){
+			struct mxc_epdc_plhw_config *cfg = pl_hw->conf;
+			printk(" mxc_epdc_fb_data\t\t\tstruct mxc_epdc_pl_hardware->const struct mxc_epdc_plhw_config-> int psu_n; %i\n", cfg->psu_n );
+			printk(" mxc_epdc_fb_data\t\t\tstruct mxc_epdc_pl_hardware->const struct mxc_epdc_plhw_config-> bool source_2bpp_conversion; %i\n", cfg->source_2bpp_conversion );//* convert bpp data for 4bp display *
+			printk(" mxc_epdc_fb_data\t\t\tstruct mxc_epdc_pl_hardware->const struct mxc_epdc_plhw_config-> bool interlaced_gates; %i\n", cfg->interlaced_gates );//* gate lines are interlaced odd/even *
+			printk(" mxc_epdc_fb_data\t\t\tstruct mxc_epdc_pl_hardware->const struct mxc_epdc_plhw_config-> bool source_cs_logic; %i\n", cfg->source_cs_logic );//* generate CS signals (no cascading) *
+			printk(" mxc_epdc_fb_data\t\t\tstruct mxc_epdc_pl_hardware->const struct mxc_epdc_plhw_config-> enum mxc_epdc_plhw_power_seq power_seq;  %i\n", cfg->power_seq );/* power sequence identifier *
+		}
+		printk(" mxc_epdc_fb_data\t\tstruct mxc_epdc_pl_hardware->struct i2c_adapter *i2c %p\n", pl_hw->i2c);
+		printk(" mxc_epdc_fb_data\t\tstruct mxc_epdc_pl_hardware->union pl_hardware_cpld cpld %p\n", pl_hw->cpld);
+		printk(" mxc_epdc_fb_data\t\tstruct mxc_epdc_pl_hardware->struct pl_hardware_cpld_fast_data fast_cpld %p\n", pl_hw->fast_cpld);
+		for(i=0;i<2;i++){
+			int j=0;
+			printk(" mxc_epdc_fb_data\t\tstruct mxc_epdc_pl_hardware->struct pl_hardware_psu psu[%i] %p\n",i, pl_hw->psu[i]);
+			struct pl_hardware_psu *psu_ = &pl_hw->psu[i];
+			if(psu_){
+				printk(" mxc_epdc_fb_data\t\t\tstruct mxc_epdc_pl_hardware->struct pl_hardware_psu psu[%i]->int i2c_sel_id%p\n",i,psu_->i2c_sel_id);
+				printk(" mxc_epdc_fb_data\t\t\tstruct mxc_epdc_pl_hardware->struct pl_hardware_psu psu[%i]->struct pl_hardware_hvpmic hvpmic %p\n",i,psu_->hvpmic);
+				struct pl_hardware_hvpmic *pmic = &psu_->hvpmic;
+				if(pmic){
+					printk(" mxc_epdc_fb_data\t\t\t\t\tstruct mxc_epdc_pl_hardware->struct pl_hardware_psu psu[%i]->struct pl_hardware_hvpmic->__u8 prod_id %i\n",i, pmic->prod_id);
+					printk(" mxc_epdc_fb_data\t\t\t\t\tstruct mxc_epdc_pl_hardware->struct pl_hardware_psu psu[%i]->struct pl_hardware_hvpmic->__u8 prod_rev %i\n",i, pmic->prod_rev);
+					for(j=0; j<8;j++){
+						printk(" mxc_epdc_fb_data\t\t\t\t\tstruct mxc_epdc_pl_hardware->struct pl_hardware_psu psu[%i]->struct pl_hardware_hvpmic->__u8 timings[%i] %i\n",i,j, pmic->timings[j]);
+					}
+				}
+				printk(" mxc_epdc_fb_data\t\t\tstruct mxc_epdc_pl_hardware->struct pl_hardware_psu psu[%i]->struct pl_hardware_dac dac %p\n",i,psu_->dac);
+				struct pl_hardware_dac *psudac = &psu_->dac;
+				if(psudac){
+					printk(" mxc_epdc_fb_data\t\t\tstruct mxc_epdc_pl_hardware->struct pl_hardware_psu psu[%i]->struct pl_hardware_dac->__u8 i2c_address %i\n",i,psudac->i2c_address);
+				}
+				printk(" mxc_epdc_fb_data\t\t\tstruct mxc_epdc_pl_hardware->struct pl_hardware_psu psu[%i]->struct pl_hardware_adc adc %p\n",i,psu_->adc);
+				struct pl_hardware_adc *psuadc = &psu_->adc;
+				if(psuadc){
+					printk(" mxc_epdc_fb_data\t\t\t\tstruct mxc_epdc_pl_hardware->struct pl_hardware_psu psu[%i]->struct pl_hardware_adc->__u8 i2c_address %i\n",i,psuadc->i2c_address);
+					printk(" mxc_epdc_fb_data\t\t\t\tstruct mxc_epdc_pl_hardware->struct pl_hardware_psu psu[%i]->struct pl_hardware_adc->union adc11607_setup_config cmd %p\n",i,psuadc->cmd);
+					printk(" mxc_epdc_fb_data\t\t\t\tstruct mxc_epdc_pl_hardware->struct pl_hardware_psu psu[%i]->struct pl_hardware_adc->unsigned nb_channels %i\n",i,psuadc->nb_channels);
+					printk(" mxc_epdc_fb_data\t\t\t\tstruct mxc_epdc_pl_hardware->struct pl_hardware_psu psu[%i]->struct pl_hardware_adc->unsigned ref_mv %i\n",i,psuadc->ref_mv);
+					printk(" mxc_epdc_fb_data\t\t\t\tstruct mxc_epdc_pl_hardware->struct pl_hardware_psu psu[%i]->struct pl_hardware_adc->int current_channel %i\n",i,psuadc->current_channel);
+					for(j=0; j<4;j++){
+						printk(" mxc_epdc_fb_data\t\t\t\tstruct mxc_epdc_pl_hardware->struct pl_hardware_psu psu[%i]->struct pl_hardware_adc->unsigned results[%i] %i\n",i,psuadc->results[j]);
+					}
+				}
+				printk(" mxc_epdc_fb_data\t\t\tstruct mxc_epdc_pl_hardware->struct pl_hardware_psu psu[%i]->struct pl_hardware_vcom vcom %p\n",i,psu_->vcom);
+				struct pl_hardware_vcom *psuvcom = &psu_->vcom;
+				if(psuvcom){
+					printk(" mxc_epdc_fb_data\t\t\t\tstruct mxc_epdc_pl_hardware->struct pl_hardware_psu psu[%i]->struct pl_hardware_vcom-> int reference_mv %i\n" ,i,psuvcom->reference_mv ); 
+					printk(" mxc_epdc_fb_data\t\t\t\tstruct mxc_epdc_pl_hardware->struct pl_hardware_psu psu[%i]->struct pl_hardware_vcom-> int target_mv %i\n",i, psuvcom->target_mv); 
+					printk(" mxc_epdc_fb_data\t\t\t\tstruct mxc_epdc_pl_hardware->struct pl_hardware_psu psu[%i]->struct pl_hardware_vcom-> int vref_mv %i\n" ,i, psuvcom->vref_mv); 
+					printk(" mxc_epdc_fb_data\t\t\t\tstruct mxc_epdc_pl_hardware->struct pl_hardware_psu psu[%i]->struct pl_hardware_vcom-> int last_v_in %i\n" ,i, psuvcom->last_v_in); 
+					printk(" mxc_epdc_fb_data\t\t\t\tstruct mxc_epdc_pl_hardware->struct pl_hardware_psu psu[%i]->struct pl_hardware_vcom-> bool dac_measured %i\n" ,i, psuvcom->dac_measured); 
+					printk(" mxc_epdc_fb_data\t\t\t\tstruct mxc_epdc_pl_hardware->struct pl_hardware_psu psu[%i]->struct pl_hardware_vcom-> int dac_offset %i\n" ,i, psuvcom->dac_offset); 
+					printk(" mxc_epdc_fb_data\t\t\t\tstruct mxc_epdc_pl_hardware->struct pl_hardware_psu psu[%i]->struct pl_hardware_vcom-> int dac_dx %i\n" ,i, psuvcom->dac_dx); 
+					printk(" mxc_epdc_fb_data\t\t\t\tstruct mxc_epdc_pl_hardware->struct pl_hardware_psu psu[%i]->struct pl_hardware_vcom-> int dac_dy %i\n" ,i, psuvcom->dac_dy); 
+					printk(" mxc_epdc_fb_data\t\t\t\tstruct mxc_epdc_pl_hardware->struct pl_hardware_psu psu[%i]->struct pl_hardware_vcom-> int dac_step_mv %i\n" ,i, psuvcom->dac_step_mv); 
+				}
+			}
+		}
+	}
+	printk(" mxc_epdc_fb_data\tstruct mxc_epdc_plhw_config plhw_conf %p\n", fb_data->plhw_conf );
+	struct mxc_epdc_plhw_config *cfg = fb_data->plhw_conf;
+	if(cfg){
+		printk(" mxc_epdc_fb_data\t\tstruct mxc_epdc_plhw_config-> int psu_n; %i\n", cfg->psu_n );
+		printk(" mxc_epdc_fb_data\t\tstruct mxc_epdc_plhw_config-> bool source_2bpp_conversion; %i\n", cfg->source_2bpp_conversion );//* convert bpp data for 4bp display *
+		printk(" mxc_epdc_fb_data\t\tstruct mxc_epdc_plhw_config-> bool interlaced_gates; %i\n", cfg->interlaced_gates );//* gate lines are interlaced odd/even *
+		printk(" mxc_epdc_fb_data\t\tstruct mxc_epdc_plhw_config-> bool source_cs_logic; %i\n", cfg->source_cs_logic );//* generate CS signals (no cascading) *
+		printk(" mxc_epdc_fb_data\t\tstruct mxc_epdc_plhw_config-> enum mxc_epdc_plhw_power_seq power_seq;  %i\n", cfg->power_seq );//* power sequence identifier *
+	}
+#else
+	printk(" mxc_epdc_fb_data\tstruct regulator *display_regulator %p\n", fb_data->display_regulator );
+	printk(" mxc_epdc_fb_data\tstruct regulator *vcom_regulator %p\n", fb_data->vcom_regulator );
+	printk(" mxc_epdc_fb_data\tstruct regulator *v3p3_regulator %p\n", fb_data->v3p3_regulator);
+#endif
+	printk(" mxc_epdc_fb_data\tbool fw_default_load %i\n", fb_data->fw_default_load );
+	printk(" mxc_epdc_fb_data\tint rev %i\n", fb_data->rev );
+	//* FB elements related to EPDC updates *
+	printk(" mxc_epdc_fb_data\tint num_luts %i\n", fb_data->num_luts );
+	printk(" mxc_epdc_fb_data\tint max_num_updates %i\n", fb_data->max_num_updates );
+	printk(" mxc_epdc_fb_data\tbool in_init %i\n", fb_data->in_init );
+	printk(" mxc_epdc_fb_data\tbool hw_ready %i\n", fb_data->hw_ready );
+	printk(" mxc_epdc_fb_data\tbool hw_initializing %i\n", fb_data->hw_initializing );
+	printk(" mxc_epdc_fb_data\tstruct completion init_completion %p\n", fb_data->init_completion );
+	printk(" mxc_epdc_fb_data\tbool waiting_for_idle %i\n", fb_data->waiting_for_idle );
+	printk(" mxc_epdc_fb_data\tu32 auto_mode %i\n", fb_data->auto_mode );
+	printk(" mxc_epdc_fb_data\tu32 upd_scheme %i\n", fb_data->upd_scheme );
+	printk(" mxc_epdc_fb_data\tstruct list_head upd_pending_list %p\n", fb_data->upd_pending_list );
+	printk(" mxc_epdc_fb_data\tstruct list_head upd_buf_queue %p\n", fb_data->upd_buf_queue );
+	printk(" mxc_epdc_fb_data\tstruct list_head upd_buf_free_list %p\n", fb_data->upd_buf_free_list );
+	printk(" mxc_epdc_fb_data\tstruct list_head upd_buf_collision_list %p\n", fb_data->upd_buf_collision_list );
+	printk(" mxc_epdc_fb_data\tstruct update_data_list *cur_update %p\n", fb_data->cur_update);
+	printk(" mxc_epdc_fb_data\tstruct mutex queue_mutex %p\n", fb_data->queue_mutex );
+	printk(" mxc_epdc_fb_data\tint trt_entries %i\n", fb_data->trt_entries );
+	printk(" mxc_epdc_fb_data\tint temp_index %i\n", fb_data->temp_index );
+	printk(" mxc_epdc_fb_data\tu8 *temp_range_bounds %i\n", fb_data->temp_range_bounds );
+	printk(" mxc_epdc_fb_data\tstruct mxcfb_waveform_modes wv_modes %p\n", fb_data->wv_modes );
+	printk(" mxc_epdc_fb_data\tbool wv_modes_update %i\n", fb_data->wv_modes_update );
+	printk(" mxc_epdc_fb_data\tu32 *waveform_buffer_virt %i\n", fb_data->waveform_buffer_virt);
+	printk(" mxc_epdc_fb_data\tu32 waveform_buffer_phys %i\n", fb_data->waveform_buffer_phys );
+	printk(" mxc_epdc_fb_data\tu32 waveform_buffer_size %i\n", fb_data->waveform_buffer_size );
+	printk(" mxc_epdc_fb_data\tu32 *working_buffer_virt %i\n", fb_data->working_buffer_virt );
+	printk(" mxc_epdc_fb_data\tu32 working_buffer_phys %i\n", fb_data->working_buffer_phys );
+	printk(" mxc_epdc_fb_data\tu32 working_buffer_size %i\n", fb_data->working_buffer_size );
+	printk(" mxc_epdc_fb_data\tu32 max_updates %i\n", fb_data->max_updates );
+	printk(" mxc_epdc_fb_data\tdma_addr_t *phys_addr_updbuf %p\n", fb_data->phys_addr_updbuf );
+	printk(" mxc_epdc_fb_data\tvoid **virt_addr_updbuf %i\n", fb_data->virt_addr_updbuf );
+	printk(" mxc_epdc_fb_data\tu32 upd_buffer_num %i\n", fb_data->upd_buffer_num );
+	printk(" mxc_epdc_fb_data\tu32 max_num_buffers %i\n", fb_data->max_num_buffers );
+	printk(" mxc_epdc_fb_data\tdma_addr_t phys_addr_copybuf %p\n", fb_data->phys_addr_copybuf );
+	printk(" mxc_epdc_fb_data\tvoid *virt_addr_copybuf %p\n", fb_data->virt_addr_copybuf );
+	printk(" mxc_epdc_fb_data\tu32 order_cnt %i\n", fb_data->order_cnt );
+	printk(" mxc_epdc_fb_data\tstruct list_head full_marker_list %p\n", fb_data->full_marker_list );
+	printk(" mxc_epdc_fb_data\tstruct list_head awaiting_marker_list %p\n", fb_data->awaiting_marker_list );
+	printk(" mxc_epdc_fb_data\tu32 *lut_update_order %i\n", fb_data->lut_update_order );
+	printk(" mxc_epdc_fb_data\tu64 epdc_colliding_luts %i\n", fb_data->epdc_colliding_luts);
+	printk(" mxc_epdc_fb_data\tu64 luts_complete_wb %i\n", fb_data->luts_complete_wb );
+	printk(" mxc_epdc_fb_data\tstruct completion updates_done %p\n", fb_data->updates_done );
+	printk(" mxc_epdc_fb_data\tstruct delayed_work epdc_done_work %p\n", fb_data->epdc_done_work );
+	printk(" mxc_epdc_fb_data\tstruct workqueue_struct *epdc_submit_workqueue %p\n", fb_data->epdc_submit_workqueue );
+	printk(" mxc_epdc_fb_data\tstruct work_struct epdc_submit_work %i\n", fb_data->epdc_submit_work );
+	printk(" mxc_epdc_fb_data\tstruct workqueue_struct *epdc_intr_workqueue %p\n", fb_data->epdc_intr_workqueue );
+	printk(" mxc_epdc_fb_data\tstruct work_struct epdc_intr_work %p\n", fb_data->epdc_intr_work );
+	printk(" mxc_epdc_fb_data\tbool waiting_for_wb %i\n", fb_data->waiting_for_wb );
+	printk(" mxc_epdc_fb_data\tbool waiting_for_lut %i\n", fb_data->waiting_for_lut );
+	printk(" mxc_epdc_fb_data\tbool waiting_for_lut15 %i\n", fb_data->waiting_for_lut15 );
+	printk(" mxc_epdc_fb_data\tstruct completion update_res_free %p\n", fb_data->update_res_free);
+	printk(" mxc_epdc_fb_data\tstruct completion lut15_free %p\n", fb_data->lut15_free );
+	printk(" mxc_epdc_fb_data\tstruct completion eof_event %p\n", fb_data->eof_event );
+	printk(" mxc_epdc_fb_data\tint eof_sync_period %i\n", fb_data->eof_sync_period );
+	printk(" mxc_epdc_fb_data\tstruct mutex power_mutex %p\n", fb_data->power_mutex );
+	printk(" mxc_epdc_fb_data\tbool powering_down %i\n", fb_data->powering_down );
+	printk(" mxc_epdc_fb_data\tbool updates_active %i\n", fb_data->updates_active );
+	printk(" mxc_epdc_fb_data\tint pwrdown_delay %i\n", fb_data->pwrdown_delay );
+	printk(" mxc_epdc_fb_data\tunsigned long tce_prevent %i\n", fb_data->tce_prevent );
+	printk(" mxc_epdc_fb_data\tbool restrict_width %i\n", fb_data->restrict_width );
+	printk(" mxc_epdc_fb_data\tstruct completion pxp_tx_cmpl %p\n", fb_data->pxp_tx_cmpl );
+	printk(" mxc_epdc_fb_data\tstruct pxp_channel *pxp_chan %p\n", fb_data->pxp_chan );
+	printk(" mxc_epdc_fb_data\tstruct pxp_config_data pxp_conf %p\n", fb_data->pxp_conf );
+	printk(" mxc_epdc_fb_data\tstruct dma_async_tx_descriptor *txd %p\n", fb_data->txd );
+	printk(" mxc_epdc_fb_data\tdma_cookie_t cookie %p\n", fb_data->cookie );
+	printk(" mxc_epdc_fb_data\tstruct scatterlist sg[2] %p\n", fb_data->sg );
+	printk(" mxc_epdc_fb_data\tstruct mutex pxp_mutex %p\n", fb_data->pxp_mutex );
+
+	
+}
+//*/
 #else
 static inline void dump_pxp_config(struct mxc_epdc_fb_data *fb_data,
 				   struct pxp_config_data *pxp_conf) {}
@@ -728,7 +1585,7 @@ static inline void epdc_set_update_dimensions(u32 width, u32 height)
 static void epdc_set_update_waveform(struct mxcfb_waveform_modes *wv_modes)
 {
 	u32 val;
-
+	printk("epdc_set_update_waveform\n");
 	/* Configure the auto-waveform look-up table based on waveform modes */
 
 	/* Entry 1 = DU, 2 = GC4, 3 = GC8, etc. */
@@ -998,27 +1855,27 @@ static void epdc_set_vertical_timing(u32 vert_start, u32 vert_end,
 
 static void epdc_init_settings(struct mxc_epdc_fb_data *fb_data)
 {
-	struct imx_epdc_fb_mode *epdc_mode = fb_data->cur_mode;
+	const struct imx_epdc_fb_mode *epdc_mode = fb_data->cur_mode;
 	struct fb_var_screeninfo *screeninfo = &fb_data->epdc_fb_var;
 	u32 reg_val;
 	int num_ce;
 	int i;
-
+	dev_dbg(fb_data->dev, "Enable clocks to access EPDC regs\n");
 	/* Enable clocks to access EPDC regs */
 	clk_prepare_enable(fb_data->epdc_clk_axi);
 	clk_prepare_enable(fb_data->epdc_clk_pix);
-
+	dev_dbg(fb_data->dev, "Reset\n");
 	/* Reset */
 	__raw_writel(EPDC_CTRL_SFTRST, EPDC_CTRL_SET);
 	while (!(__raw_readl(EPDC_CTRL) & EPDC_CTRL_CLKGATE))
 		;
 	__raw_writel(EPDC_CTRL_SFTRST, EPDC_CTRL_CLEAR);
-
+	dev_dbg(fb_data->dev, "Enable clock gating (clear to enable)\n");
 	/* Enable clock gating (clear to enable) */
 	__raw_writel(EPDC_CTRL_CLKGATE, EPDC_CTRL_CLEAR);
 	while (__raw_readl(EPDC_CTRL) & (EPDC_CTRL_SFTRST | EPDC_CTRL_CLKGATE))
 		;
-
+	dev_dbg(fb_data->dev, "EPDC_CTRL\n");
 	/* EPDC_CTRL */
 	reg_val = __raw_readl(EPDC_CTRL);
 	reg_val &= ~EPDC_CTRL_UPD_DATA_SWIZZLE_MASK;
@@ -1026,14 +1883,17 @@ static void epdc_init_settings(struct mxc_epdc_fb_data *fb_data)
 	reg_val &= ~EPDC_CTRL_LUT_DATA_SWIZZLE_MASK;
 	reg_val |= EPDC_CTRL_LUT_DATA_SWIZZLE_NO_SWAP;
 	__raw_writel(reg_val, EPDC_CTRL_SET);
-
-	/* EPDC_FORMAT - 2bit TFT and 4bit Buf pixel format */
-	reg_val = EPDC_FORMAT_TFT_PIXEL_FORMAT_2BIT
-	    | EPDC_FORMAT_BUF_PIXEL_FORMAT_P4N
+	dev_dbg(fb_data->dev, "EPDC_FORMAT - 4bit Buf pixel format\n");
+	/* EPDC_FORMAT - 4bit Buf pixel format */
+	reg_val = EPDC_FORMAT_BUF_PIXEL_FORMAT_P4N
 	    | ((0x0 << EPDC_FORMAT_DEFAULT_TFT_PIXEL_OFFSET) &
 	       EPDC_FORMAT_DEFAULT_TFT_PIXEL_MASK);
+	if (epdc_mode->tft_4bpp)
+		reg_val |= EPDC_FORMAT_TFT_PIXEL_FORMAT_4BIT;
+	else
+		reg_val |= EPDC_FORMAT_TFT_PIXEL_FORMAT_2BIT;
 	__raw_writel(reg_val, EPDC_FORMAT);
-
+	dev_dbg(fb_data->dev, "EPDC_FIFOCTRL (disabled)\n");
 	/* EPDC_FIFOCTRL (disabled) */
 	reg_val =
 	    ((100 << EPDC_FIFOCTRL_FIFO_INIT_LEVEL_OFFSET) &
@@ -1043,13 +1903,13 @@ static void epdc_init_settings(struct mxc_epdc_fb_data *fb_data)
 	    | ((100 << EPDC_FIFOCTRL_FIFO_L_LEVEL_OFFSET) &
 	       EPDC_FIFOCTRL_FIFO_L_LEVEL_MASK);
 	__raw_writel(reg_val, EPDC_FIFOCTRL);
-
+	dev_dbg(fb_data->dev, "EPDC_TEMP - Use default temp to get index\n");
 	/* EPDC_TEMP - Use default temp to get index */
 	epdc_set_temp(mxc_epdc_fb_get_temp_index(fb_data, DEFAULT_TEMP));
-
+	dev_dbg(fb_data->dev, "EPDC_RES\n");
 	/* EPDC_RES */
-	epdc_set_screen_res(epdc_mode->vmode->xres, epdc_mode->vmode->yres);
-
+	epdc_set_screen_res(fb_data->epdc_xres, epdc_mode->vmode->yres);
+	dev_dbg(fb_data->dev, "Initialize all auto-wavefrom look-up values to 2 - GC16\n");
 	/* EPDC_AUTOWV_LUT */
 	/* Initialize all auto-wavefrom look-up values to 2 - GC16 */
 	for (i = 0; i < 8; i++)
@@ -1064,27 +1924,33 @@ static void epdc_init_settings(struct mxc_epdc_fb_data *fb_data)
 	 * DDR_MODE = DISABLED
 	 * LVDS_MODE_CE = DISABLED
 	 * LVDS_MODE = DISABLED
-	 * DUAL_SCAN = DISABLED
-	 * SDDO_WIDTH = 8bit
 	 * PIXELS_PER_SDCLK = 4
 	 */
 	reg_val =
 	    ((epdc_mode->vscan_holdoff << EPDC_TCE_CTRL_VSCAN_HOLDOFF_OFFSET) &
 	     EPDC_TCE_CTRL_VSCAN_HOLDOFF_MASK)
 	    | EPDC_TCE_CTRL_PIXELS_PER_SDCLK_4;
+	if (epdc_mode->sddo_16_bits)
+		reg_val |= EPDC_TCE_CTRL_SDDO_WIDTH_16BIT;
+	if (epdc_mode->dual_scan)
+		reg_val |= EPDC_TCE_CTRL_DUAL_SCAN_ENABLE;
+	if (epdc_mode->scan_dir_0_up)
+		reg_val |= EPDC_TCE_CTRL_SCAN_DIR_0_UP;
+	if (epdc_mode->scan_dir_1_up)
+		reg_val |= EPDC_TCE_CTRL_SCAN_DIR_1_UP;
 	__raw_writel(reg_val, EPDC_TCE_CTRL);
-
+	dev_dbg(fb_data->dev, "EPDC_TCE_HSCAN\n");
 	/* EPDC_TCE_HSCAN */
 	epdc_set_horizontal_timing(screeninfo->left_margin,
 				   screeninfo->right_margin,
 				   screeninfo->hsync_len,
 				   screeninfo->hsync_len);
-
+	dev_dbg(fb_data->dev, "EPDC_TCE_VSCAN\n");
 	/* EPDC_TCE_VSCAN */
 	epdc_set_vertical_timing(screeninfo->upper_margin,
 				 screeninfo->lower_margin,
 				 screeninfo->vsync_len);
-
+	dev_dbg(fb_data->dev, "EPDC_TCE_OE\n");
 	/* EPDC_TCE_OE */
 	reg_val =
 	    ((epdc_mode->sdoed_width << EPDC_TCE_OE_SDOED_WIDTH_OFFSET) &
@@ -1096,10 +1962,10 @@ static void epdc_init_settings(struct mxc_epdc_fb_data *fb_data)
 	    | ((epdc_mode->sdoez_delay << EPDC_TCE_OE_SDOEZ_DLY_OFFSET) &
 	       EPDC_TCE_OE_SDOEZ_DLY_MASK);
 	__raw_writel(reg_val, EPDC_TCE_OE);
-
+	dev_dbg(fb_data->dev, "EPDC_TCE_TIMING1\n");
 	/* EPDC_TCE_TIMING1 */
 	__raw_writel(0x0, EPDC_TCE_TIMING1);
-
+	dev_dbg(fb_data->dev, "EPDC_TCE_TIMING2\n");
 	/* EPDC_TCE_TIMING2 */
 	reg_val =
 	    ((epdc_mode->gdclk_hp_offs << EPDC_TCE_TIMING2_GDCLK_HP_OFFSET) &
@@ -1107,7 +1973,7 @@ static void epdc_init_settings(struct mxc_epdc_fb_data *fb_data)
 	    | ((epdc_mode->gdsp_offs << EPDC_TCE_TIMING2_GDSP_OFFSET_OFFSET) &
 	       EPDC_TCE_TIMING2_GDSP_OFFSET_MASK);
 	__raw_writel(reg_val, EPDC_TCE_TIMING2);
-
+	dev_dbg(fb_data->dev, "EPDC_TCE_TIMING3\n");
 	/* EPDC_TCE_TIMING3 */
 	reg_val =
 	    ((epdc_mode->gdoe_offs << EPDC_TCE_TIMING3_GDOE_OFFSET_OFFSET) &
@@ -1118,7 +1984,7 @@ static void epdc_init_settings(struct mxc_epdc_fb_data *fb_data)
 
 	/*
 	 * EPDC_TCE_SDCFG
-	 * SDCLK_HOLD = 1
+	 * SDCLK_HOLD = epdc_mode->sdclk_hold
 	 * SDSHR = 1
 	 * NUM_CE = 1
 	 * SDDO_REFORMAT = FLIP_PIXELS
@@ -1128,21 +1994,26 @@ static void epdc_init_settings(struct mxc_epdc_fb_data *fb_data)
 	num_ce = epdc_mode->num_ce;
 	if (num_ce == 0)
 		num_ce = 1;
-	reg_val = EPDC_TCE_SDCFG_SDCLK_HOLD | EPDC_TCE_SDCFG_SDSHR
+	reg_val = EPDC_TCE_SDCFG_SDSHR
 	    | ((num_ce << EPDC_TCE_SDCFG_NUM_CE_OFFSET) &
 	       EPDC_TCE_SDCFG_NUM_CE_MASK)
-	    | EPDC_TCE_SDCFG_SDDO_REFORMAT_FLIP_PIXELS
-	    | ((epdc_mode->vmode->xres/num_ce << EPDC_TCE_SDCFG_PIXELS_PER_CE_OFFSET) &
+	    | ((fb_data->epdc_xres/num_ce << EPDC_TCE_SDCFG_PIXELS_PER_CE_OFFSET) &
 	       EPDC_TCE_SDCFG_PIXELS_PER_CE_MASK);
+	if (epdc_mode->sddo_flip_bits)
+		reg_val |= EPDC_TCE_SDCFG_SDDO_REFORMAT_FLIP_PIXELS;
+	if (epdc_mode->sdclk_hold)
+		reg_val |= EPDC_TCE_SDCFG_SDCLK_HOLD;
 	__raw_writel(reg_val, EPDC_TCE_SDCFG);
 
 	/*
 	 * EPDC_TCE_GDCFG
 	 * GDRL = 1
-	 * GDOE_MODE = 0;
-	 * GDSP_MODE = 0;
 	 */
 	reg_val = EPDC_TCE_SDCFG_GDRL;
+	if (epdc_mode->gdsp_frame_sync)
+		reg_val |= EPDC_TCE_SDCFG_GDSP_MODE_FRAME_SYNC;
+	if (epdc_mode->gdoe_delayed_gclk)
+		reg_val |= EPDC_TCE_SDCFG_GDOE_MODE_DELAYED_GDCLK;
 	__raw_writel(reg_val, EPDC_TCE_GDCFG);
 
 	/*
@@ -1150,12 +2021,13 @@ static void epdc_init_settings(struct mxc_epdc_fb_data *fb_data)
 	 * SDCE_POL = ACTIVE LOW
 	 * SDLE_POL = ACTIVE HIGH
 	 * SDOE_POL = ACTIVE HIGH
-	 * GDOE_POL = ACTIVE HIGH
-	 * GDSP_POL = ACTIVE LOW
 	 */
 	reg_val = EPDC_TCE_POLARITY_SDLE_POL_ACTIVE_HIGH
-	    | EPDC_TCE_POLARITY_SDOE_POL_ACTIVE_HIGH
-	    | EPDC_TCE_POLARITY_GDOE_POL_ACTIVE_HIGH;
+	    | EPDC_TCE_POLARITY_SDOE_POL_ACTIVE_HIGH;
+	if (epdc_mode->gdoe_active_high)
+		reg_val |= EPDC_TCE_POLARITY_GDOE_POL_ACTIVE_HIGH;
+	if (epdc_mode->gdsp_active_high)
+		reg_val |= EPDC_TCE_POLARITY_GDSP_POL_ACTIVE_HIGH;
 	__raw_writel(reg_val, EPDC_TCE_POLARITY);
 
 	/* EPDC_IRQ_MASK */
@@ -1174,17 +2046,20 @@ static void epdc_init_settings(struct mxc_epdc_fb_data *fb_data)
 	__raw_writel(fb_data->waveform_buffer_phys, EPDC_WVADDR);
 	__raw_writel(fb_data->working_buffer_phys, EPDC_WB_ADDR);
 	__raw_writel(fb_data->working_buffer_phys, EPDC_WB_ADDR_TCE);
-
+	dev_dbg(fb_data->dev, "Disable clock\n");
 	/* Disable clock */
 	clk_disable_unprepare(fb_data->epdc_clk_axi);
 	clk_disable_unprepare(fb_data->epdc_clk_pix);
+#ifdef DEBUG
+//	dump_fb_mode(fb_data);
+#endif
 }
 
 static void epdc_powerup(struct mxc_epdc_fb_data *fb_data)
 {
 	int ret = 0;
 	mutex_lock(&fb_data->power_mutex);
-
+	//printk("epdc_powerup:start\n");
 	/*
 	 * If power down request is pending, clear
 	 * powering_down to cancel the request.
@@ -1193,7 +2068,8 @@ static void epdc_powerup(struct mxc_epdc_fb_data *fb_data)
 		fb_data->powering_down = false;
 
 	if (fb_data->power_state == POWER_STATE_ON) {
-		mutex_unlock(&fb_data->power_mutex);
+		mutex_unlock(&fb_data->power_mutex);	
+		//printk("epdc_powerup:return: power was on - nothing to do");
 		return;
 	}
 
@@ -1201,7 +2077,9 @@ static void epdc_powerup(struct mxc_epdc_fb_data *fb_data)
 
 	fb_data->updates_active = true;
 
-	/* Enable the v3p3 regulator */
+#if !(defined(CONFIG_FB_MXC_EPDC_PL_HARDWARE) \
+     || defined(CONFIG_FB_MXC_EPDC_PL_HARDWARE_MODULE))
+	//printk("/* Enable the v3p3 regulator */\n");
 	ret = regulator_enable(fb_data->v3p3_regulator);
 	if (IS_ERR((void *)ret)) {
 		dev_err(fb_data->dev, "Unable to enable V3P3 regulator."
@@ -1211,33 +2089,43 @@ static void epdc_powerup(struct mxc_epdc_fb_data *fb_data)
 	}
 
 	msleep(1);
+#endif
 
 	pm_runtime_get_sync(fb_data->dev);
 
-	/* Enable clocks to EPDC */
+	//printk("/* Enable clocks to EPDC */\n");
 	clk_prepare_enable(fb_data->epdc_clk_axi);
 	clk_prepare_enable(fb_data->epdc_clk_pix);
 
 	__raw_writel(EPDC_CTRL_CLKGATE, EPDC_CTRL_CLEAR);
 
-	/* Enable power to the EPD panel */
+	//printk("/* Enable power to the EPD panel */\n");
+#if (defined(CONFIG_FB_MXC_EPDC_PL_HARDWARE) \
+     || defined(CONFIG_FB_MXC_EPDC_PL_HARDWARE_MODULE))
+	ret = mxc_epdc_pl_hardware_enable(fb_data->pl_hardware);
+	if (ret) {
+		dev_err(fb_data->dev, "Failed to enable PL hardware\n");
+		goto err_exit;
+	}
+#else
 	ret = regulator_enable(fb_data->display_regulator);
 	if (IS_ERR((void *)ret)) {
 		dev_err(fb_data->dev, "Unable to enable DISPLAY regulator."
 			"err = 0x%x\n", ret);
-		mutex_unlock(&fb_data->power_mutex);
-		return;
+		goto err_exit;
 	}
 	ret = regulator_enable(fb_data->vcom_regulator);
 	if (IS_ERR((void *)ret)) {
 		dev_err(fb_data->dev, "Unable to enable VCOM regulator."
 			"err = 0x%x\n", ret);
 		mutex_unlock(&fb_data->power_mutex);
-		return;
+		goto err_exit;
 	}
+#endif
 
 	fb_data->power_state = POWER_STATE_ON;
 
+err_exit:
 	mutex_unlock(&fb_data->power_mutex);
 }
 
@@ -1257,8 +2145,13 @@ static void epdc_powerdown(struct mxc_epdc_fb_data *fb_data)
 	dev_dbg(fb_data->dev, "EPDC Powerdown\n");
 
 	/* Disable power to the EPD panel */
+#if (defined(CONFIG_FB_MXC_EPDC_PL_HARDWARE) \
+     || defined(CONFIG_FB_MXC_EPDC_PL_HARDWARE_MODULE))
+	mxc_epdc_pl_hardware_disable(fb_data->pl_hardware);
+#else
 	regulator_disable(fb_data->vcom_regulator);
 	regulator_disable(fb_data->display_regulator);
+#endif
 
 	/* Disable clocks to EPDC */
 	__raw_writel(EPDC_CTRL_CLKGATE, EPDC_CTRL_SET);
@@ -1267,8 +2160,11 @@ static void epdc_powerdown(struct mxc_epdc_fb_data *fb_data)
 
 	pm_runtime_put_sync_suspend(fb_data->dev);
 
+#if !(defined(CONFIG_FB_MXC_EPDC_PL_HARDWARE) \
+     || defined(CONFIG_FB_MXC_EPDC_PL_HARDWARE_MODULE))
 	/* turn off the V3p3 */
 	regulator_disable(fb_data->v3p3_regulator);
+#endif
 
 	fb_data->power_state = POWER_STATE_OFF;
 	fb_data->powering_down = false;
@@ -1277,7 +2173,7 @@ static void epdc_powerdown(struct mxc_epdc_fb_data *fb_data)
 		fb_data->wait_for_powerdown = false;
 		complete(&fb_data->powerdown_compl);
 	}
-
+	//printk("epdc_powerup:end\n");
 	mutex_unlock(&fb_data->power_mutex);
 }
 
@@ -1375,7 +2271,6 @@ static int mxc_epdc_fb_setcmap(struct fb_cmap *cmap, struct fb_info *info)
 	u16 trans = 0xffff;
 	struct mxc_epdc_fb_data *fb_data = (struct mxc_epdc_fb_data *)info;
 	int i;
-
 	dev_dbg(fb_data->dev, "setcmap\n");
 
 	if (info->fix.visual == FB_VISUAL_STATIC_PSEUDOCOLOR) {
@@ -1419,9 +2314,13 @@ static int mxc_epdc_fb_setcmap(struct fb_cmap *cmap, struct fb_info *info)
 	return 0;
 }
 
-static void adjust_coordinates(u32 xres, u32 yres, u32 rotation,
+static void adjust_coordinates(u32 xres, u32 yres, u32 rotation, int flipped,
 	struct mxcfb_rect *update_region, struct mxcfb_rect *adj_update_region)
 {
+	const u32 flipped_left = 
+		(flipped && (update_region->top < (yres / 2)))
+		? xres - update_region->left - update_region->width
+		: update_region->left; 
 	u32 temp;
 
 	/* If adj_update_region == NULL, pass result back in update_region */
@@ -1430,12 +2329,12 @@ static void adjust_coordinates(u32 xres, u32 yres, u32 rotation,
 		switch (rotation) {
 		case FB_ROTATE_UR:
 			adj_update_region->top = update_region->top;
-			adj_update_region->left = update_region->left;
+			adj_update_region->left = flipped_left;
 			adj_update_region->width = update_region->width;
 			adj_update_region->height = update_region->height;
 			break;
 		case FB_ROTATE_CW:
-			adj_update_region->top = update_region->left;
+			adj_update_region->top = flipped_left;
 			adj_update_region->left = yres -
 				(update_region->top + update_region->height);
 			adj_update_region->width = update_region->height;
@@ -1447,12 +2346,12 @@ static void adjust_coordinates(u32 xres, u32 yres, u32 rotation,
 			adj_update_region->top = yres -
 				(update_region->top + update_region->height);
 			adj_update_region->left = xres -
-				(update_region->left + update_region->width);
+				(flipped_left + update_region->width);
 			break;
 		case FB_ROTATE_CCW:
 			adj_update_region->left = update_region->top;
 			adj_update_region->top = xres -
-				(update_region->left + update_region->width);
+				(flipped_left + update_region->width);
 			adj_update_region->width = update_region->height;
 			adj_update_region->height = update_region->width;
 			break;
@@ -1460,11 +2359,11 @@ static void adjust_coordinates(u32 xres, u32 yres, u32 rotation,
 	else
 		switch (rotation) {
 		case FB_ROTATE_UR:
-			/* No adjustment needed */
+			update_region->left = flipped_left;
 			break;
 		case FB_ROTATE_CW:
 			temp = update_region->top;
-			update_region->top = update_region->left;
+			update_region->top = flipped_left;
 			update_region->left = yres -
 				(temp + update_region->height);
 			temp = update_region->width;
@@ -1475,10 +2374,10 @@ static void adjust_coordinates(u32 xres, u32 yres, u32 rotation,
 			update_region->top = yres -
 				(update_region->top + update_region->height);
 			update_region->left = xres -
-				(update_region->left + update_region->width);
+				(flipped_left + update_region->width);
 			break;
 		case FB_ROTATE_CCW:
-			temp = update_region->left;
+			temp = flipped_left;
 			update_region->left = update_region->top;
 			update_region->top = xres -
 				(temp + update_region->width);
@@ -1600,11 +2499,14 @@ static int mxc_epdc_fb_set_par(struct fb_info *info)
 	 * Output is Y-only greyscale
 	 * Output width/height will vary based on update region size
 	 */
-	pxp_conf->out_param.width = screeninfo->xres;
+	pxp_conf->out_param.width = fb_data->epdc_xres;
 	pxp_conf->out_param.height = screeninfo->yres;
 	pxp_conf->out_param.pixel_fmt = PXP_PIX_FMT_GREY;
 
 	mutex_unlock(&fb_data->pxp_mutex);
+
+	if (!fb_data->hw_ready && fb_data->hw_initializing)
+		wait_for_completion_timeout(&fb_data->init_completion, HZ *10);
 
 	/*
 	 * If HW not yet initialized, check to see if we are being sent
@@ -1623,6 +2525,11 @@ static int mxc_epdc_fb_set_par(struct fb_info *info)
 			xres_temp = mode.xres;
 			mode.xres = mode.yres;
 			mode.yres = xres_temp;
+		}
+
+		if (fb_data->use_cfa) {
+			mode.xres *= 2;
+			mode.yres *= 2;
 		}
 
 		/*
@@ -1693,6 +2600,7 @@ static int mxc_epdc_fb_check_var(struct fb_var_screeninfo *var,
 				 struct fb_info *info)
 {
 	struct mxc_epdc_fb_data *fb_data = (struct mxc_epdc_fb_data *)info;
+	int cfa_scale = fb_data->use_cfa ? 2 : 1;
 
 	if (!var->xres)
 		var->xres = 1;
@@ -1705,7 +2613,8 @@ static int mxc_epdc_fb_check_var(struct fb_var_screeninfo *var,
 		var->yres_virtual = var->yoffset + var->yres;
 
 	if ((var->bits_per_pixel != 32) && (var->bits_per_pixel != 24) &&
-	    (var->bits_per_pixel != 16) && (var->bits_per_pixel != 8))
+	    (var->bits_per_pixel != 16) && (var->bits_per_pixel != 8) ||
+	    fb_data->use_cfa)
 		var->bits_per_pixel = default_bpp;
 
 	switch (var->bits_per_pixel) {
@@ -1804,13 +2713,13 @@ static int mxc_epdc_fb_check_var(struct fb_var_screeninfo *var,
 	switch (var->rotate) {
 	case FB_ROTATE_UR:
 	case FB_ROTATE_UD:
-		var->xres = fb_data->native_width;
-		var->yres = fb_data->native_height;
+		var->xres = fb_data->native_width / cfa_scale;
+		var->yres = fb_data->native_height / cfa_scale;
 		break;
 	case FB_ROTATE_CW:
 	case FB_ROTATE_CCW:
-		var->xres = fb_data->native_height;
-		var->yres = fb_data->native_width;
+		var->xres = fb_data->native_height / cfa_scale;
+		var->yres = fb_data->native_width / cfa_scale;
 		break;
 	default:
 		/* Invalid rotation value */
@@ -1852,13 +2761,17 @@ static int mxc_epdc_fb_get_temp_index(struct mxc_epdc_fb_data *fb_data, int temp
 	int index = -1;
 
 	if (fb_data->trt_entries == 0) {
-		dev_err(fb_data->dev,
-			"No TRT exists...using default temp index\n");
+		//dev_err(fb_data->dev,
+		//	"No TRT exists...using default temp index %i\n", DEFAULT_TEMP_INDEX);
 		return DEFAULT_TEMP_INDEX;
 	}
 
 	/* Search temperature ranges for a match */
 	for (i = 0; i < fb_data->trt_entries - 1; i++) {
+		dev_dbg(fb_data->dev, "Check temperature range %i: from %i to %i", 
+			fb_data->trt_entries, 
+			fb_data->temp_range_bounds[i], 
+			fb_data->temp_range_bounds[i+1]);
 		if ((temp >= fb_data->temp_range_bounds[i])
 			&& (temp < fb_data->temp_range_bounds[i+1])) {
 			index = i;
@@ -1867,8 +2780,8 @@ static int mxc_epdc_fb_get_temp_index(struct mxc_epdc_fb_data *fb_data, int temp
 	}
 
 	if (index < 0) {
-		dev_err(fb_data->dev,
-			"No TRT index match...using default temp index\n");
+		//dev_info(fb_data->dev,
+		//	"No TRT index match for %i...using default temp index\n", temp);
 		return DEFAULT_TEMP_INDEX;
 	}
 
@@ -1915,8 +2828,8 @@ int mxc_epdc_fb_set_upd_scheme(u32 upd_scheme, struct fb_info *info)
 	struct mxc_epdc_fb_data *fb_data = info ?
 		(struct mxc_epdc_fb_data *)info:g_fb_data;
 
-	dev_dbg(fb_data->dev, "Setting optimization level to %d\n", upd_scheme);
-
+	dev_err(fb_data->dev, "Setting optimization level to %d\n", upd_scheme);
+	
 	/*
 	 * Can't change the scheme until current updates have completed.
 	 * This function returns when all active updates are done.
@@ -1936,9 +2849,30 @@ int mxc_epdc_fb_set_upd_scheme(u32 upd_scheme, struct fb_info *info)
 }
 EXPORT_SYMBOL(mxc_epdc_fb_set_upd_scheme);
 
+typedef void(reverse_t)(void *dst, const void *src, size_t n);
+
+static inline void reverse8(uint8_t *dst, const uint8_t *src, size_t n)
+{
+	while (n--)
+		*dst++ = *src--;
+}
+
+static inline void reverse16(uint16_t *dst, const uint16_t *src, size_t n)
+{
+	while (n--)
+		*dst++ = *src--;
+}
+
+static inline void reverse32(uint32_t *dst, const uint32_t *src, size_t n)
+{
+	while (n--)
+		*dst++ = *src--;
+}
+
 static void copy_before_process(struct mxc_epdc_fb_data *fb_data,
 	struct update_data_list *upd_data_list)
 {
+	const struct imx_epdc_fb_mode *epdc_mode = fb_data->cur_mode;
 	struct mxcfb_update_data *upd_data =
 		&upd_data_list->update_desc->upd_data;
 	int i;
@@ -1951,6 +2885,9 @@ static void copy_before_process(struct mxc_epdc_fb_data *fb_data,
 	int left_offs, right_offs;
 	int x_trailing_bytes, y_trailing_bytes;
 	int alt_buf_offset;
+	int flip_ymax;
+	size_t line_offset;
+	reverse_t *reverse;
 
 	/* Set source buf pointer based on input source, panning, etc. */
 	if (upd_data->flags & EPDC_FLAG_USE_ALT_BUFFER) {
@@ -1974,10 +2911,29 @@ static void copy_before_process(struct mxc_epdc_fb_data *fb_data,
 	x_trailing_bytes = (ALIGN(src_upd_region->width, 8)
 		- src_upd_region->width) * bpp/8;
 
+	if (bpp == 16)
+		reverse = (reverse_t *)reverse16;
+	else if (bpp == 32)
+		reverse = (reverse_t *)reverse32;
+	else
+		reverse = (reverse_t *)reverse8;
+
+	flip_ymax = (fb_data->epdc_fb_var.yres / 2) - src_upd_region->top;
+	flip_ymax = max(0, flip_ymax);
+	line_offset = (src_upd_region->width - 1) * (bpp / 8);
+
 	for (i = 0; i < src_upd_region->height; i++) {
 		/* Copy the full line */
-		memcpy(temp_buf_ptr, src_ptr + left_offs,
-			src_upd_region->width * bpp/8);
+		if (!epdc_mode->flip_top || (i >= flip_ymax)) {
+			memcpy(temp_buf_ptr, src_ptr + left_offs,
+			       src_upd_region->width * bpp/8);
+		} else {
+			/* This relies on the scan direction to be inverted in
+			 * order to complete the 180 degrees rotation */
+			const u8 *src = src_ptr + left_offs + line_offset;
+
+			reverse(temp_buf_ptr, src, src_upd_region->width);
+		}
 
 		/* Clear any unwanted pixels at the end of each line */
 		if (src_upd_region->width & 0x7) {
@@ -2040,6 +2996,42 @@ static int epdc_process_update(struct update_data_list *upd_data_list,
 
 	bytes_per_pixel = fb_data->epdc_fb_var.bits_per_pixel/8;
 
+	if (fb_data->use_cfa) {
+		void *src_buf_virt, *dst_buf_virt;
+
+		if (upd_desc_list->upd_data.flags & EPDC_FLAG_USE_ALT_BUFFER) {
+			src_buf_virt = fb_data->info.screen_base +
+				(upd_desc_list->upd_data.alt_buffer_data.phys_addr -
+				 fb_data->phys_start);
+		} else {
+			src_buf_virt = fb_data->info.screen_base + fb_data->fb_offset;
+		}
+
+		dst_buf_virt = upd_data_list->virt_addr;
+
+		/* Use software conversion to CFA pixel format (2x2 RGBW8888) instead */
+		cfa_process_update(fb_data, src_width, src_height,
+				src_buf_virt, dst_buf_virt, src_upd_region);
+
+		switch (fb_data->epdc_fb_var.rotate) {
+		case FB_ROTATE_UR:
+		case FB_ROTATE_UD:
+			upd_desc_list->epdc_stride = src_upd_region->width;
+			break;
+		case FB_ROTATE_CW:
+		case FB_ROTATE_CCW:
+			upd_desc_list->epdc_stride = src_upd_region->height;
+			break;
+		}
+
+		if ((fb_data->power_state == POWER_STATE_OFF)
+				|| fb_data->powering_down) {
+			epdc_powerup(fb_data);
+		}
+
+		return 0;
+	}
+
 	/*
 	 * SW workaround for PxP limitation (for pre-v2.0 HW)
 	 *
@@ -2088,7 +3080,7 @@ static int epdc_process_update(struct update_data_list *upd_data_list,
 
 	if (((((width_unaligned || height_unaligned || input_unaligned) &&
 		(upd_desc_list->upd_data.waveform_mode == WAVEFORM_MODE_AUTO))
-		|| line_overflow) && (fb_data->rev < 20)) ||
+		|| line_overflow || fb_data->cur_mode->flip_top) && (fb_data->rev < 20)) ||
 		fb_data->restrict_width) {
 		dev_dbg(fb_data->dev, "Copying update before processing.\n");
 
@@ -2299,6 +3291,7 @@ static int epdc_submit_merge(struct update_desc_list *upd_desc_list,
 	struct mxcfb_update_data *a, *b;
 	struct mxcfb_rect *arect, *brect;
 	struct mxcfb_rect combine;
+	const int mid_y = fb_data->epdc_fb_var.yres / 2;
 	bool use_flags = false;
 
 	a = &upd_desc_list->upd_data;
@@ -2310,6 +3303,15 @@ static int epdc_submit_merge(struct update_desc_list *upd_desc_list,
 	if ((a->flags & EPDC_FLAG_TEST_COLLISION) ||
 		(b->flags & EPDC_FLAG_TEST_COLLISION))
 		return MERGE_BLOCK;
+
+	/* If display 1 flip option is enabled, don't merge update areas across
+	 * the mid-height as it needs to be kept in 2 separate rectangles since
+	 * top part is rotated.
+	 */
+	if (fb_data->cur_mode->flip_top &&
+	    (((arect->top < mid_y) && (brect->top >= mid_y))
+	     || ((brect->top < mid_y) && (arect->top >= mid_y))))
+		return MERGE_FAIL;
 
 	/*
 	 * Updates with different flags must be executed sequentially.
@@ -2328,6 +3330,10 @@ static int epdc_submit_merge(struct update_desc_list *upd_desc_list,
 
 		use_flags = true;
 	}
+
+	if ((a->flags == b->flags) && (a->flags & EPDC_FLAG_USE_ALT_BUFFER)
+		&& (a->alt_buffer_data.phys_addr != b->alt_buffer_data.phys_addr))
+		return MERGE_FAIL;
 
 	if (a->update_mode != b->update_mode)
 		a->update_mode = UPDATE_MODE_FULL;
@@ -2398,6 +3404,7 @@ static void epdc_submit_work_func(struct work_struct *work)
 	u32 update_addr;
 	int *err_dist;
 	int ret;
+	int cfa_scale;
 
 	/* Protect access to buffer queues and to update HW */
 	mutex_lock(&fb_data->queue_mutex);
@@ -2604,11 +3611,19 @@ static void epdc_submit_work_func(struct work_struct *work)
 				+ upd_data_list->update_desc->epdc_offs;
 	}
 
+	cfa_scale = fb_data->use_cfa ? 2 : 1;
 	/* Get rotation-adjusted coordinates */
 	adjust_coordinates(fb_data->epdc_fb_var.xres,
 		fb_data->epdc_fb_var.yres, fb_data->epdc_fb_var.rotate,
-		&upd_data_list->update_desc->upd_data.update_region,
+		fb_data->cur_mode->flip_top, &upd_data_list->update_desc->upd_data.update_region,
 		&adj_update_region);
+
+	adj_update_region.left *= cfa_scale;
+	adj_update_region.top *= cfa_scale;
+	adj_update_region.width *= cfa_scale;
+	adj_update_region.height *= cfa_scale;
+
+	adj_update_region.left += fb_data->cur_mode->left_border;
 
 	/*
 	 * Is the working buffer idle?
@@ -2765,7 +3780,7 @@ static void epdc_submit_work_func(struct work_struct *work)
 	epdc_set_update_dimensions(adj_update_region.width,
 				   adj_update_region.height);
 	if (fb_data->rev > 20)
-		epdc_set_update_stride(upd_data_list->update_desc->epdc_stride);
+		epdc_set_update_stride(upd_data_list->update_desc->epdc_stride * cfa_scale);
 	if (fb_data->wv_modes_update &&
 		(upd_data_list->update_desc->upd_data.waveform_mode
 			== WAVEFORM_MODE_AUTO)) {
@@ -2791,10 +3806,12 @@ static int mxc_epdc_fb_send_single_update(struct mxcfb_update_data *upd_data,
 		(struct mxc_epdc_fb_data *)info:g_fb_data;
 	struct update_data_list *upd_data_list = NULL;
 	struct mxcfb_rect *screen_upd_region; /* Region on screen to update */
+	struct mxcfb_rect adj_update_region;
 	int temp_index;
 	int ret;
 	struct update_desc_list *upd_desc;
 	struct update_marker_data *marker_data, *next_marker, *temp_marker;
+	int cfa_scale;
 
 	/* Has EPDC HW been initialized? */
 	if (!fb_data->hw_ready) {
@@ -2996,10 +4013,19 @@ static int mxc_epdc_fb_send_single_update(struct mxcfb_update_data *upd_data,
 	/* Pass selected waveform mode back to user */
 	upd_data->waveform_mode = upd_desc->upd_data.waveform_mode;
 
+	cfa_scale = fb_data->use_cfa ? 2 : 1;
 	/* Get rotation-adjusted coordinates */
 	adjust_coordinates(fb_data->epdc_fb_var.xres,
 		fb_data->epdc_fb_var.yres, fb_data->epdc_fb_var.rotate,
-		&upd_desc->upd_data.update_region, NULL);
+		fb_data->cur_mode->flip_top,
+		&upd_desc->upd_data.update_region, &adj_update_region);
+
+	adj_update_region.left *= cfa_scale;
+	adj_update_region.top *= cfa_scale;
+	adj_update_region.width *= cfa_scale;
+	adj_update_region.height *= cfa_scale;
+
+	adj_update_region.left += fb_data->cur_mode->left_border;
 
 	/* Grab lock for queue manipulation and update submission */
 	mutex_lock(&fb_data->queue_mutex);
@@ -3057,11 +4083,11 @@ static int mxc_epdc_fb_send_single_update(struct mxcfb_update_data *upd_data,
 
 	/* Program EPDC update to process buffer */
 	epdc_set_update_addr(upd_data_list->phys_addr + upd_desc->epdc_offs);
-	epdc_set_update_coord(screen_upd_region->left, screen_upd_region->top);
-	epdc_set_update_dimensions(screen_upd_region->width,
-		screen_upd_region->height);
+	epdc_set_update_coord(adj_update_region.left, adj_update_region.top);
+	epdc_set_update_dimensions(adj_update_region.width,
+		adj_update_region.height);
 	if (fb_data->rev > 20)
-		epdc_set_update_stride(upd_desc->epdc_stride);
+		epdc_set_update_stride(upd_desc->epdc_stride * cfa_scale);
 	if (upd_desc->upd_data.temp != TEMP_USE_AMBIENT) {
 		temp_index = mxc_epdc_fb_get_temp_index(fb_data,
 			upd_desc->upd_data.temp);
@@ -3085,7 +4111,7 @@ static int mxc_epdc_fb_send_single_update(struct mxcfb_update_data *upd_data,
 	return 0;
 }
 
-int mxc_epdc_fb_send_update(struct mxcfb_update_data *upd_data,
+static int mxc_epdc_fb_do_send_update(struct mxcfb_update_data *upd_data,
 				   struct fb_info *info)
 {
 	struct mxc_epdc_fb_data *fb_data = info ?
@@ -3141,14 +4167,58 @@ int mxc_epdc_fb_send_update(struct mxcfb_update_data *upd_data,
 		return mxc_epdc_fb_send_single_update(upd_data, info);
 	}
 }
+
+int mxc_epdc_fb_send_update(struct mxcfb_update_data *upd_data,
+				   struct fb_info *info)
+{
+	struct mxc_epdc_fb_data *fb_data = info ?
+		(struct mxc_epdc_fb_data *)info : g_fb_data;
+	const int mid_y = fb_data->epdc_fb_var.yres / 2;
+	struct mxcfb_update_data upd_flip_data;
+
+	/* If update crosses the mid-height and first display is flipped for a
+	 * dual tiled configuration, split into 2 update requests as half of
+	 * the pixels will be rotated.
+	 *
+	 * Note: No need to split if update region is centered horizontally,
+	 * which is what the last test is for.
+	 */
+	if (fb_data->cur_mode->flip_top
+	    && (upd_data->update_region.top < mid_y)
+	    && ((upd_data->update_region.top + upd_data->update_region.height)
+		> mid_y)
+	    && (((upd_data->update_region.left * 2)
+		 + upd_data->update_region.width)
+		!= fb_data->epdc_fb_var.xres)) {
+		const int height_diff =
+			upd_data->update_region.top +
+			upd_data->update_region.height - mid_y;
+		int stat;
+
+		memcpy(&upd_flip_data, upd_data, sizeof upd_flip_data);
+		upd_flip_data.update_region.height -= height_diff;
+		stat = mxc_epdc_fb_do_send_update(&upd_flip_data, info);
+		if (stat)
+			return stat;
+
+		memcpy(&upd_flip_data, upd_data, sizeof upd_flip_data);
+		upd_flip_data.update_region.top = mid_y;
+		upd_flip_data.update_region.height = height_diff;
+
+		return mxc_epdc_fb_do_send_update(&upd_flip_data, info);
+	}
+
+	return mxc_epdc_fb_do_send_update(upd_data, info);
+}
 EXPORT_SYMBOL(mxc_epdc_fb_send_update);
 
 int mxc_epdc_fb_wait_update_complete(struct mxcfb_update_marker_data *marker_data,
-						struct fb_info *info)
+						struct fb_info *info, bool async)
 {
 	struct mxc_epdc_fb_data *fb_data = info ?
 		(struct mxc_epdc_fb_data *)info:g_fb_data;
 	struct update_marker_data *next_marker;
+	struct update_marker_data *found_marker;
 	struct update_marker_data *temp;
 	bool marker_found = false;
 	int ret = 0;
@@ -3177,6 +4247,20 @@ int mxc_epdc_fb_wait_update_complete(struct mxcfb_update_marker_data *marker_dat
 		}
 	}
 
+	if (!marker_found) {
+		/* Search in the completed markers queue, we need to cleanup marker */
+		list_for_each_entry_safe(next_marker, temp,
+			&fb_data->awaiting_marker_list, aw_list) {
+			if (next_marker->update_marker == marker_data->update_marker) {
+				dev_dbg(fb_data->dev, "Completed marker found %d\n",
+						marker_data->update_marker);
+				marker_found = true;
+				list_del_init(&next_marker->aw_list);
+				break;
+			}
+		}
+	}
+
 	mutex_unlock(&fb_data->queue_mutex);
 
 	/*
@@ -3186,18 +4270,39 @@ int mxc_epdc_fb_wait_update_complete(struct mxcfb_update_marker_data *marker_dat
 	if (!marker_found)
 		return ret;
 
-	ret = wait_for_completion_timeout(&next_marker->update_completion,
-						msecs_to_jiffies(5000));
-	if (!ret) {
-		dev_err(fb_data->dev,
-			"Timed out waiting for update completion\n");
-		return -ETIMEDOUT;
+	found_marker = next_marker;
+
+	if (async) {
+		ret = try_wait_for_completion(&next_marker->update_completion);
+		if (!ret)
+			return -EBUSY;
+	} else {
+		ret = wait_for_completion_timeout(&next_marker->update_completion,
+				msecs_to_jiffies(10000));
+		if (!ret) {
+			dev_err(fb_data->dev,
+					"Timed out waiting for update completion\n");
+			return -ETIMEDOUT;
+		}
 	}
 
 	marker_data->collision_test = next_marker->collision_test;
 
+	/* Delete marker from awaiting list if it was added to it after list searching
+	 * but before {try,wait}_for_completion() call
+	 */
+	mutex_lock(&fb_data->queue_mutex);
+	list_for_each_entry_safe(next_marker, temp,
+		&fb_data->awaiting_marker_list, aw_list) {
+		if (next_marker == found_marker) {
+			list_del_init(&next_marker->aw_list);
+			break;
+		}
+	}
+	mutex_unlock(&fb_data->queue_mutex);
+
 	/* Free update marker object */
-	kfree(next_marker);
+	kfree(found_marker);
 
 	return ret;
 }
@@ -3271,8 +4376,16 @@ static int mxc_epdc_fb_ioctl(struct fb_info *info, unsigned int cmd,
 			if (mutex_lock_interruptible(&hard_lock) < 0)
 				return -ERESTARTSYS;
 
+			flush_cache_all();
+			outer_flush_all();
+
 			if (!copy_from_user(&upd_data, argp,
 				sizeof(upd_data))) {
+					
+				if(mxc_epdc_fb_dithering_modparam){
+					upd_data.flags |= EPDC_FLAG_USE_DITHERING_Y1;
+				}
+					
 				ret = mxc_epdc_fb_send_update(&upd_data, info);
 				if (ret == 0 && copy_to_user(argp, &upd_data,
 					sizeof(upd_data)))
@@ -3291,7 +4404,24 @@ static int mxc_epdc_fb_ioctl(struct fb_info *info, unsigned int cmd,
 			if (!copy_from_user(&upd_marker_data, argp,
 				sizeof(upd_marker_data))) {
 				ret = mxc_epdc_fb_wait_update_complete(
-					&upd_marker_data, info);
+					&upd_marker_data, info, false);
+				if (copy_to_user(argp, &upd_marker_data,
+					sizeof(upd_marker_data)))
+					ret = -EFAULT;
+			} else {
+				ret = -EFAULT;
+			}
+
+			break;
+		}
+
+	case MXCFB_CHECK_FOR_UPDATE_COMPLETE:
+		{
+			struct mxcfb_update_marker_data upd_marker_data;
+			if (!copy_from_user(&upd_marker_data, argp,
+				sizeof(upd_marker_data))) {
+				ret = mxc_epdc_fb_wait_update_complete(
+					&upd_marker_data, info, true);
 				if (copy_to_user(argp, &upd_marker_data,
 					sizeof(upd_marker_data)))
 					ret = -EFAULT;
@@ -3375,7 +4505,7 @@ static void mxc_epdc_fb_update_pages(struct mxc_epdc_fb_data *fb_data,
 	update.update_region.top = y1;
 	update.update_region.height = y2 - y1;
 	update.waveform_mode = WAVEFORM_MODE_AUTO;
-	update.update_mode = UPDATE_MODE_FULL;
+	update.update_mode = UPDATE_MODE_PARTIAL;
 	update.update_marker = 0;
 	update.temp = TEMP_USE_AMBIENT;
 	update.flags = 0;
@@ -3394,6 +4524,9 @@ static void mxc_epdc_fb_deferred_io(struct fb_info *info,
 
 	if (fb_data->auto_mode != AUTO_UPDATE_MODE_AUTOMATIC_MODE)
 		return;
+
+	flush_cache_all();
+	outer_flush_all();
 
 	miny = INT_MAX;
 	maxy = 0;
@@ -3573,7 +4706,7 @@ static struct fb_ops mxc_epdc_fb_ops = {
 };
 
 static struct fb_deferred_io mxc_epdc_fb_defio = {
-	.delay = HZ,
+	.delay = HZ / 4,
 	.deferred_io = mxc_epdc_fb_deferred_io,
 };
 
@@ -3704,6 +4837,7 @@ static void epdc_intr_work_func(struct work_struct *work)
 	bool epdc_waiting_on_wb;
 	u32 coll_coord, coll_size;
 	struct mxcfb_rect coll_region;
+	int cfa_scale = fb_data->use_cfa ? 2 : 1;
 
 	/* Protect access to buffer queues and to update HW */
 	mutex_lock(&fb_data->queue_mutex);
@@ -3780,10 +4914,12 @@ static void epdc_intr_work_func(struct work_struct *work)
 				/* Signal completion of update */
 				dev_dbg(fb_data->dev, "Signaling marker %d\n",
 					next_marker->update_marker);
-				if (next_marker->waiting)
+				if (next_marker->waiting) {
+					list_add_tail(&next_marker->aw_list, &fb_data->awaiting_marker_list);
 					complete(&next_marker->update_completion);
-				else
+				} else {
 					kfree(next_marker);
+				}
 			}
 	}
 
@@ -3856,6 +4992,7 @@ static void epdc_intr_work_func(struct work_struct *work)
 
 				/* Found marker to signal - remove from list */
 				list_del_init(&next_marker->full_list);
+				list_add_tail(&next_marker->aw_list, &fb_data->awaiting_marker_list);
 
 				/* Signal completion of update */
 				dev_dbg(fb_data->dev, "Signaling marker "
@@ -3902,10 +5039,12 @@ static void epdc_intr_work_func(struct work_struct *work)
 				dev_dbg(fb_data->dev,
 					"Signaling marker (cancelled) %d\n",
 					next_marker->update_marker);
-				if (next_marker->waiting)
+				if (next_marker->waiting) {
+					list_add_tail(&next_marker->aw_list, &fb_data->awaiting_marker_list);
 					complete(&next_marker->update_completion);
-				else
+				} else {
 					kfree(next_marker);
+				}
 			}
 		} else if (epdc_collision) {
 			/* Real update (no dry-run), collision occurred */
@@ -3928,6 +5067,7 @@ static void epdc_intr_work_func(struct work_struct *work)
 				u32 xres, yres, rotate;
 				struct mxcfb_rect *cur_upd_rect =
 					&fb_data->cur_update->update_desc->upd_data.update_region;
+				struct mxcfb_rect orig_rect;
 
 				/* Get collision region coords from EPDC */
 				coll_coord = __raw_readl(EPDC_UPD_COL_CORD);
@@ -3944,10 +5084,19 @@ static void epdc_intr_work_func(struct work_struct *work)
 				coll_region.height =
 					(coll_size & EPDC_UPD_COL_SIZE_HEIGHT_MASK)
 						>> EPDC_UPD_COL_SIZE_HEIGHT_OFFSET;
-				dev_dbg(fb_data->dev, "Coll region: l = %d, "
+				dev_dbg(fb_data->dev, "Coll region: l = %d->%d, "
 					"t = %d, w = %d, h = %d\n",
-					coll_region.left, coll_region.top,
+					coll_region.left, coll_region.left - fb_data->cur_mode->left_border,
+					coll_region.top,
 					coll_region.width, coll_region.height);
+				coll_region.left -= fb_data->cur_mode->left_border;
+
+				if (fb_data->use_cfa) {
+					coll_region.left /= 2;
+					coll_region.top /= 2;
+					coll_region.width = (coll_region.width + 1) / 2;
+					coll_region.height = (coll_region.height + 1) / 2;
+				}
 
 				/* Convert coords back to orig orientation */
 				switch (fb_data->epdc_fb_var.rotate) {
@@ -3972,7 +5121,8 @@ static void epdc_intr_work_func(struct work_struct *work)
 					rotate = FB_ROTATE_UR;
 					break;
 				}
-				adjust_coordinates(xres, yres, rotate,
+				memcpy(&orig_rect, cur_upd_rect, sizeof(orig_rect));
+				adjust_coordinates(xres, yres, rotate, fb_data->cur_mode->flip_top,
 						&coll_region, cur_upd_rect);
 
 				dev_dbg(fb_data->dev, "Adj coll region: l = %d, "
@@ -3980,6 +5130,18 @@ static void epdc_intr_work_func(struct work_struct *work)
 					cur_upd_rect->left, cur_upd_rect->top,
 					cur_upd_rect->width,
 					cur_upd_rect->height);
+
+				/* Correct coordinates for alt source buffer if needed */
+				if (fb_data->cur_update->update_desc->upd_data.flags & EPDC_FLAG_USE_ALT_BUFFER) {
+					struct mxcfb_rect *alt_upd_rect =
+						&fb_data->cur_update->update_desc->upd_data.alt_buffer_data.alt_update_region;
+
+					/* TODO: check if signed operations are needed */
+					alt_upd_rect->left += (int)cur_upd_rect->left - (int)orig_rect.left;
+					alt_upd_rect->top += (int)cur_upd_rect->top - (int)orig_rect.top;
+					alt_upd_rect->width = cur_upd_rect->width;
+					alt_upd_rect->height = cur_upd_rect->height;
+				}
 			}
 
 			/*
@@ -3998,7 +5160,7 @@ static void epdc_intr_work_func(struct work_struct *work)
 				if (fb_data->lut_update_order[lut] >=
 					fb_data->cur_update->update_desc->update_order) {
 					dev_dbg(fb_data->dev,
-						"Ignoring collision with"
+						"Ignoring collision with "
 						"newer update.\n");
 					ignore_collision = true;
 					break;
@@ -4038,10 +5200,12 @@ static void epdc_intr_work_func(struct work_struct *work)
 					dev_dbg(fb_data->dev,
 						"Signaling marker (wb) %d\n",
 						next_marker->update_marker);
-					if (next_marker->waiting)
+					if (next_marker->waiting) {
+						list_add_tail(&next_marker->aw_list, &fb_data->awaiting_marker_list);
 						complete(&next_marker->update_completion);
-					else
+					} else {
 						kfree(next_marker);
+					}
 				}
 
 			/* Free marker list and update descriptor */
@@ -4190,11 +5354,12 @@ static void epdc_intr_work_func(struct work_struct *work)
 		epdc_set_temp(fb_data->temp_index);
 	epdc_set_update_addr(fb_data->cur_update->phys_addr +
 				fb_data->cur_update->update_desc->epdc_offs);
-	epdc_set_update_coord(next_upd_region->left, next_upd_region->top);
-	epdc_set_update_dimensions(next_upd_region->width,
-				   next_upd_region->height);
+
+	epdc_set_update_coord(next_upd_region->left * cfa_scale, next_upd_region->top * cfa_scale);
+	epdc_set_update_dimensions(next_upd_region->width * cfa_scale,
+				   next_upd_region->height * cfa_scale);
 	if (fb_data->rev > 20)
-		epdc_set_update_stride(fb_data->cur_update->update_desc->epdc_stride);
+		epdc_set_update_stride(fb_data->cur_update->update_desc->epdc_stride * cfa_scale);
 	if (fb_data->wv_modes_update &&
 		(fb_data->cur_update->update_desc->upd_data.waveform_mode
 			== WAVEFORM_MODE_AUTO)) {
@@ -4217,7 +5382,6 @@ static void draw_mode0(struct mxc_epdc_fb_data *fb_data)
 {
 	u32 *upd_buf_ptr;
 	int i;
-	struct fb_var_screeninfo *screeninfo = &fb_data->epdc_fb_var;
 	u32 xres, yres;
 
 	upd_buf_ptr = (u32 *)fb_data->info.screen_base;
@@ -4225,22 +5389,16 @@ static void draw_mode0(struct mxc_epdc_fb_data *fb_data)
 	epdc_working_buf_intr(true);
 	epdc_lut_complete_intr(fb_data->rev, 0, true);
 
-	/* Use unrotated (native) width/height */
-	if ((screeninfo->rotate == FB_ROTATE_CW) ||
-		(screeninfo->rotate == FB_ROTATE_CCW)) {
-		xres = screeninfo->yres;
-		yres = screeninfo->xres;
-	} else {
-		xres = screeninfo->xres;
-		yres = screeninfo->yres;
-	}
+	xres = fb_data->native_width;
+	yres = fb_data->native_height;
 
 	/* Program EPDC update to process buffer */
 	epdc_set_update_addr(fb_data->phys_start);
-	epdc_set_update_coord(0, 0);
+	epdc_set_update_coord(fb_data->cur_mode->left_border, 0);
 	epdc_set_update_dimensions(xres, yres);
-	if (fb_data->rev > 20)
+	if (fb_data->rev > 20) 
 		epdc_set_update_stride(0);
+
 	epdc_submit_update(0, fb_data->wv_modes.mode_init, UPDATE_MODE_FULL,
 		false, true, 0xFF);
 
@@ -4277,18 +5435,18 @@ static void mxc_epdc_fb_fw_handler(const struct firmware *fw,
 	struct clk *epdc_parent;
 	unsigned long rounded_parent_rate, epdc_pix_rate,
 			rounded_pix_clk, target_pix_clk;
-
+	//printk("mxc_epdc_fb_fw_handler\n");
 	if (fw == NULL) {
-		/* If default FW file load failed, we give up */
+		//printk("/* If default FW file load failed, we give up */\n");
 		if (fb_data->fw_default_load)
 			return;
 
-		/* Try to load default waveform */
+		//printk("/* Try to load default waveform */\n");
 		dev_dbg(fb_data->dev,
 			"Can't find firmware. Trying fallback fw\n");
 		fb_data->fw_default_load = true;
 		ret = request_firmware_nowait(THIS_MODULE, FW_ACTION_HOTPLUG,
-			"imx/epdc/epdc.fw", fb_data->dev, GFP_KERNEL, fb_data,
+			"imx/epdc.fw", fb_data->dev, GFP_KERNEL, fb_data,
 			mxc_epdc_fb_fw_handler);
 		if (ret)
 			dev_err(fb_data->dev,
@@ -4335,7 +5493,6 @@ static void mxc_epdc_fb_fw_handler(const struct firmware *fw,
 	clk_prepare_enable(fb_data->epdc_clk_axi);
 
 	target_pix_clk = fb_data->cur_mode->vmode->pixclock;
-	/* Enable pix clk for EPDC */
 	rounded_pix_clk = clk_round_rate(fb_data->epdc_clk_pix, target_pix_clk);
 
 	if (((rounded_pix_clk >= target_pix_clk + target_pix_clk/100) ||
@@ -4359,6 +5516,7 @@ static void mxc_epdc_fb_fw_handler(const struct firmware *fw,
 	}
 
 	clk_set_rate(fb_data->epdc_clk_pix, rounded_pix_clk);
+	/* Enable pix clk for EPDC */
 	clk_prepare_enable(fb_data->epdc_clk_pix);
 
 	epdc_init_sequence(fb_data);
@@ -4369,6 +5527,7 @@ static void mxc_epdc_fb_fw_handler(const struct firmware *fw,
 
 	fb_data->hw_ready = true;
 	fb_data->hw_initializing = false;
+	complete(&fb_data->init_completion);
 
 	/* Use unrotated (native) width/height */
 	if ((screeninfo->rotate == FB_ROTATE_CW) ||
@@ -4396,7 +5555,7 @@ static void mxc_epdc_fb_fw_handler(const struct firmware *fw,
 
 	/* Block on initial update */
 	ret = mxc_epdc_fb_wait_update_complete(&upd_marker_data,
-		&fb_data->info);
+		&fb_data->info, false);
 	if (ret < 0)
 		dev_err(fb_data->dev,
 			"Wait for initial update complete failed."
@@ -4407,26 +5566,44 @@ static int mxc_epdc_fb_init_hw(struct fb_info *info)
 {
 	struct mxc_epdc_fb_data *fb_data = (struct mxc_epdc_fb_data *)info;
 	int ret;
-
+	//printk( "mxc_epdc_fb_init_hw\n");
 	/*
 	 * Create fw search string based on ID string in selected videomode.
 	 * Format is "imx/epdc_[panel string].fw"
 	 */
+	/*
 	if (fb_data->cur_mode) {
-		strcat(fb_data->fw_str, "imx/epdc/epdc_");
+		strcat(fb_data->fw_str, "imx/epdc_");
 		strcat(fb_data->fw_str, fb_data->cur_mode->vmode->name);
 		strcat(fb_data->fw_str, ".fw");
 	}
-
+	*/
+	if (fb_data->cur_mode) {
+		if(strcmp(mxc_epdc_fb_waveform_modaram,"")){
+			
+			strcpy(fb_data->fw_str, "imx/");
+			strcat(fb_data->fw_str, mxc_epdc_fb_waveform_modaram);
+			dev_err(fb_data->dev,
+				"Using FW: %s\n",fb_data->fw_str);
+		}else{
+			strcpy(fb_data->fw_str, "imx/epdc_");
+			strcat(fb_data->fw_str, fb_data->cur_mode->vmode->name);
+			strcat(fb_data->fw_str, ".fw");
+		}
+	}
+	
 	fb_data->fw_default_load = false;
 
 	ret = request_firmware_nowait(THIS_MODULE, FW_ACTION_HOTPLUG,
 				fb_data->fw_str, fb_data->dev, GFP_KERNEL,
 				fb_data, mxc_epdc_fb_fw_handler);
 	if (ret)
-		dev_dbg(fb_data->dev,
+		dev_err(fb_data->dev,
 			"Failed request_firmware_nowait err %d\n", ret);
-
+#ifdef DEBUG
+	dump_epdc_reg();
+#endif
+	
 	return ret;
 }
 
@@ -4464,6 +5641,183 @@ static struct device_attribute fb_attrs[] = {
 	__ATTR(update, S_IRUGO|S_IWUSR, NULL, store_update),
 };
 
+#if (defined(CONFIG_FB_MXC_EPDC_PL_HARDWARE) \
+     || defined(CONFIG_FB_MXC_EPDC_PL_HARDWARE_MODULE))
+int mxc_epdc_fb_plhw_init(struct mxc_epdc_fb_data *fb_data)
+{
+	int ret;
+	int gpio_ret = 0, i;
+	bool pl_7lvl;
+	struct pinctrl_state *pinctrl_state;
+	struct mxc_epdc_plhw_config *conf;
+	conf = kmalloc(sizeof(struct mxc_epdc_plhw_config), GFP_KERNEL);
+	fb_data->plhw_conf = conf;
+	pl_7lvl = (!strcmp(mxc_epdc_fb_panel_type_modparam, "D107_T1.1") ||
+			   !strcmp(mxc_epdc_fb_panel_type_modparam, "Q154_T1.1") ||
+			   !strcmp(mxc_epdc_fb_panel_type_modparam, "T154_T1.1"));
+/*#ifdef DEBUG		   
+	dump_fb_mode(fb_data);
+#endif*/
+	/* 'Workaround' to pre-init T2.1 gate driver chips by bitbashing */
+	if (!pl_7lvl) {
+		pinctrl_state = pinctrl_lookup_state(fb_data->pinctrl, "init");
+		if (IS_ERR(pinctrl_state)) {
+			dev_err(fb_data->dev, "can't find pinctrl state 'init'\n");
+			goto pl_type11_err;
+		}
+
+		ret = pinctrl_select_state(fb_data->pinctrl, pinctrl_state);
+		if (ret) {
+			dev_err(fb_data->dev, "can't select pinctrl\n");
+			goto pl_type11_err;
+		}
+		if(mxc_epdc_fb_have_minimal_cpld_image_modparam){
+			// show the PL_HARDWARE-Module that we have a minimal cpld image
+			fb_data->pdata->plhw_pdata->use_minimal_cpld = 1;
+			gpio_ret = gpio_request_one(EPDC_HVEN,
+				GPIOF_DIR_OUT | GPIOF_INIT_LOW, "EPDC_HVEN");
+			if (gpio_ret)
+				printk("Cannot claim EPDC_HVEN GPIO\n");
+		}
+		gpio_ret = gpio_request_one(EPDC_GDCLK,
+			GPIOF_DIR_OUT | GPIOF_INIT_LOW, "EPDC_GDCLK");
+		if (gpio_ret)
+			printk("Cannot claim EPDC_GDCLK GPIO\n");
+
+		gpio_ret = gpio_request_one(EPDC_GDSP,
+			GPIOF_DIR_OUT | GPIOF_INIT_LOW, "EPDC_GDSP");
+		if (gpio_ret)
+			printk("Cannot claim EPDC_GDSP GPIO\n");
+
+		/* Pulse GDSP, then run GDCLK for 960 pulses, exercising all gate outputs */
+		gpio_set_value(EPDC_GDSP, 1);
+		udelay(15);
+		gpio_set_value(EPDC_GDSP, 0);
+		udelay(15);
+		gpio_set_value(EPDC_GDSP, 1);
+		udelay(15);
+		gpio_set_value(EPDC_GDCLK, 1);
+		udelay(15);
+		gpio_set_value(EPDC_GDCLK, 0);
+		udelay(15);
+		gpio_set_value(EPDC_GDSP, 0);
+
+		for (i = 0; i < 959; i++) {
+			gpio_set_value(EPDC_GDCLK, 1);
+			gpio_set_value(EPDC_GDCLK, 0);
+		}
+/*
+#ifdef DEBUG
+		dump_fb_data(fb_data);
+#endif*/
+		printk("Pre-initialisation done\n");
+		gpio_free(EPDC_GDCLK);
+		gpio_free(EPDC_GDSP);
+		/* Enable_pins called during epdc_powerup will re-claim GDSP and GDCLK for 
+		 * the EPDC */
+		pinctrl_state = pinctrl_lookup_state(fb_data->pinctrl, "default");
+		if (IS_ERR(pinctrl_state)) {
+			dev_err(fb_data->dev, "can't find pinctrl state 'default'\n");
+			goto pl_type11_err;
+		}
+
+		ret = pinctrl_select_state(fb_data->pinctrl, pinctrl_state); 
+		if (ret) {
+			dev_err(fb_data->dev, "can't select pinctrl state 'default'\n");
+		}
+	}
+pl_type11_err:
+	if (!mxc_epdc_fb_vcom_n_modparam) {
+		dev_err(fb_data->dev, "Warning: No VCOM voltage supplied.\n");
+		fb_data->plhw_conf->psu_n = 1;
+	} else {
+		fb_data->plhw_conf->psu_n = mxc_epdc_fb_vcom_n_modparam;
+		dev_err(fb_data->dev, "%i VCOM voltages supplied.\n", mxc_epdc_fb_vcom_n_modparam);
+	}
+
+#if 1 /* temporary hack for dual 7-level displays */
+	fb_data->plhw_conf->source_2bpp_conversion =
+		pl_7lvl && ((mxc_epdc_fb_vcom_n_modparam == 2));
+#endif
+	fb_data->plhw_conf->interlaced_gates =
+		strcmp(mxc_epdc_fb_panel_type_modparam, "Type10") ? false:true;
+
+	fb_data->plhw_conf->source_cs_logic = pl_7lvl ? false : true;
+
+	fb_data->plhw_conf->power_seq = pl_7lvl ?
+		MXC_EPDC_PL_HARDWARE_SEQ_0 : MXC_EPDC_PL_HARDWARE_SEQ_1;
+
+	//dev_err(fb_data->dev,"ModParams read: VCOM: %i, TYPE: %s, SIZE: %s, CFA: %i\n", mxc_epdc_fb_vcom_modparam[mxc_epdc_fb_vcom_n_modparam-1], mxc_epdc_fb_panel_type_modparam, mxc_epdc_fb_panel_size_modparam, mxc_epdc_fb_use_cfa_modparam);
+	dev_err(fb_data->dev,"ModParams read: VCOM: %i %i, TYPE: %s, CFA: %i \
+				, CPLD-Image: %i, Waveform: %s\n", 
+				mxc_epdc_fb_vcom_modparam[mxc_epdc_fb_vcom_n_modparam-1], 
+				mxc_epdc_fb_vcom_modparam[mxc_epdc_fb_vcom_n_modparam], 
+				mxc_epdc_fb_panel_type_modparam, 
+				mxc_epdc_fb_use_cfa_modparam, 
+				mxc_epdc_fb_have_minimal_cpld_image_modparam, 
+				mxc_epdc_fb_waveform_modaram);
+				
+	ret = mxc_epdc_pl_hardware_init(fb_data->pl_hardware,
+					fb_data->pdata->plhw_pdata,
+					fb_data->plhw_conf);
+					/*
+#ifdef DEBUG
+	dump_fb_data(fb_data);
+#endif
+//*/
+	if (ret){
+		dev_err(fb_data->dev, "mxc_epdc_fb_plhw_init: HW init failed: %i\n", ret);
+		return ret;
+	}
+	if (mxc_epdc_fb_vcom_n_modparam) {
+		dev_err(fb_data->dev, "Set VCOM voltages to %i\n", mxc_epdc_fb_vcom_n_modparam);
+		ret = mxc_epdc_pl_hardware_set_vcom(fb_data->pl_hardware,
+						    mxc_epdc_fb_vcom_modparam);
+		if (ret) {
+			dev_err(fb_data->dev, "Failed to set VCOM voltages\n");
+			return ret;
+		}
+	}
+/*
+#ifdef DEBUG
+	dump_fb_data(fb_data);
+#endif
+//*/
+	return ret;
+}
+#endif /* PL_HARDWARE */
+
+static struct imx_epdc_fb_mode *mxc_epdc_find_mode(
+	struct mxc_epdc_fb_data *fb_data, const char *mode_str,
+	const char *type_str)
+{
+	const size_t mode_str_len = strlen(mode_str);
+	int i;
+	for (i = 0; i < fb_data->pdata->num_modes; i++) {
+		const struct imx_epdc_fb_mode *mode =
+			&fb_data->pdata->epdc_mode[i];
+		const char *mode_type_str;
+
+		if (strncmp(mode->vmode->name, mode_str, mode_str_len))
+			continue;
+
+		if (!type_str)
+			return mode;
+
+		if (mode->vmode->name[mode_str_len] != '.')
+			continue;
+
+		mode_type_str = &mode->vmode->name[mode_str_len + 1];
+
+		if (strcmp(mode_type_str, type_str))
+			continue;
+
+		return mode;
+	}
+
+	return NULL;
+}
+
 static const struct of_device_id imx_epdc_dt_ids[] = {
 	{ .compatible = "fsl,imx6dl-epdc", },
 	{ /* sentinel */ }
@@ -4481,7 +5835,9 @@ int mxc_epdc_fb_probe(struct platform_device *pdev)
 	char *panel_str = NULL;
 	char name[] = "mxcepdcfb";
 	struct fb_videomode *vmode;
+	struct mxc_epdc_fb_mode *found_mode = NULL;
 	int xres_virt, yres_virt, buf_size;
+	int cfa_scale = 1;
 	int xres_virt_rot, yres_virt_rot, pix_size_rot;
 	struct fb_var_screeninfo *var_info;
 	struct fb_fix_screeninfo *fix_info;
@@ -4501,7 +5857,6 @@ int mxc_epdc_fb_probe(struct platform_device *pdev)
 		ret = -ENOMEM;
 		goto out;
 	}
-
 	/* Get platform data and check validity */
 	fb_data->pdata = &epdc_data;
 	if ((fb_data->pdata == NULL) || (fb_data->pdata->num_modes < 1)
@@ -4535,34 +5890,89 @@ int mxc_epdc_fb_probe(struct platform_device *pdev)
 		}
 
 	fb_data->dev = &pdev->dev;
-
+	/*-----------------------------------------------------------------------------------------------------------------*/
+	if(!panel_str)
+		dev_err(fb_data->dev,"No panel specified!");
+		
 	if (!fb_data->default_bpp)
 		fb_data->default_bpp = 16;
 
 	/* Set default (first defined mode) before searching for a match */
 	fb_data->cur_mode = &fb_data->pdata->epdc_mode[0];
 
-	if (panel_str)
-		for (i = 0; i < fb_data->pdata->num_modes; i++)
-			if (!strcmp(fb_data->pdata->epdc_mode[i].vmode->name,
-						panel_str)) {
-				fb_data->cur_mode =
-					&fb_data->pdata->epdc_mode[i];
-				break;
-			}
+	found_mode = mxc_epdc_find_mode(fb_data, 
+					mxc_epdc_fb_panel_type_modparam, NULL);
+					
+	if (found_mode){
+		/*
+		if(use_pedantic_conf_modparam){
+			//found_mode->vmode->name = vmode_name_modparam;//
+			found_mode->vscan_holdoff = ptype_vscan_holdoff_modparam;//1,
+			found_mode->sdoed_width = ptype_sdoed_width_modparam; // 10,
+			found_mode->sdoed_delay = ptype_sdoed_delay_modparam; // 0,
+			found_mode->sdoez_width = ptype_sdoez_width_modparam; // 10,
+			found_mode->sdoez_delay = ptype_sdoez_delay_modparam; // 20,
+			found_mode->gdclk_hp_offs = ptype_gdclk_hp_offs_modparam; // 740,
+			found_mode->gdsp_offs = ptype_gdsp_offs_modparam; // 2,
+			found_mode->gdsp_frame_sync = ptype_gdsp_frame_sync_modparam; // false,
+			found_mode->gdsp_active_high = ptype_gdsp_active_high_modparam; // false,
+			found_mode->gdoe_offs = ptype_gdoe_offs_modparam; // 24,
+			found_mode->gdoe_delayed_gclk = ptype_gdoe_delayed_gclk_modparam; // true,
+			found_mode->gdoe_active_high = ptype_gdoe_active_high_modparam; // true,
+			found_mode->gdclk_offs = ptype_gdclk_offs_modparam; // 4,
+			found_mode->num_ce = ptype_num_ce_modparam; // 1,
+			found_mode->sddo_16_bits = ptype_sddo_16_bits_modparam; // 0,
+			found_mode->sddo_flip_bits = ptype_sddo_flip_bits_modparam; // false,
+			found_mode->tft_4bpp = ptype_tft_4bpp_modparam; // false,
+			found_mode->dual_scan = ptype_dual_scan_modparam; // false,
+			found_mode->scan_dir_0_up = ptype_scan_dir_0_up_modparam; // false,
+			found_mode->scan_dir_1_up = ptype_scan_dir_1_up_modparam; // false,
+			found_mode->flip_top = ptype_flip_top_modparam; // false,
+			found_mode->sdclk_hold = ptype_sdclk_hold_modparam; // false,
+			found_mode->left_border = ptype_left_border_modparam; // 0,
+			found_mode->right_border = ptype_right_border_modparam; // 0
+			found_mode->vmode->refresh = vmode_refresh_modparam;//50,
+			found_mode->vmode->xres = vmode_xres_modparam;//800,
+			found_mode->vmode->yres = vmode_yres_modparam;//450,
+			found_mode->vmode->pixclock = vmode_pixclock_modparam;//14424000,
+			found_mode->vmode->left_margin = vmode_left_margin_modparam;//27, //* line_begin 
+			found_mode->vmode->right_margin = vmode_right_margin_modparam;//88, //* line_end 
+			found_mode->vmode->upper_margin = vmode_upper_margin_modparam;//4, //* frame_begin 
+			found_mode->vmode->lower_margin = vmode_lower_margin_modparam;//4, //* frame_end 
+			found_mode->vmode->hsync_len = vmode_hsync_len_modparam;//11,
+			found_mode->vmode->vsync_len = vmode_vsync_len_modparam;//1,
+			found_mode->vmode->sync = vmode_sync_modparam;//0,
+			found_mode->vmode->vmode = vmode_vmode_modparam;//FB_VMODE_NONINTERLACED,
+			found_mode->vmode->flag = vmode_flag_modparam;//0,
+				
+		}
+		//*/
+		fb_data->cur_mode = (const struct imx_epdc_fb_mode*) found_mode;
+		dev_err(fb_data->dev,"We have found Panel: %s\n", mxc_epdc_fb_panel_type_modparam);
+			
+	}
+
+	/*
+	 * Color Filter Array used (one color pixel is 2x2 square of b/w pixels
+	 * with color filter
+	 * Divide userspace-visible screen resolution by 2 at both dimensions
+	 */
+	fb_data->use_cfa = mxc_epdc_fb_use_cfa_modparam;
+	if (fb_data->use_cfa)
+		cfa_scale = 2;
 
 	vmode = fb_data->cur_mode->vmode;
 
 	platform_set_drvdata(pdev, fb_data);
 	info = &fb_data->info;
-
 	/* Allocate color map for the FB */
 	ret = fb_alloc_cmap(&info->cmap, 256, 0);
 	if (ret)
 		goto out_fbdata;
 
-	dev_dbg(&pdev->dev, "resolution %dx%d, bpp %d\n",
-		vmode->xres, vmode->yres, fb_data->default_bpp);
+	dev_err(&pdev->dev, "resolution %dx%d%s, bpp %d\n",
+		vmode->xres / cfa_scale, vmode->yres / cfa_scale,
+		fb_data->use_cfa ? "" : "(CFA)",  fb_data->default_bpp);
 
 	/*
 	 * GPU alignment restrictions dictate framebuffer parameters:
@@ -4584,8 +5994,7 @@ int mxc_epdc_fb_probe(struct platform_device *pdev)
 	fb_data->max_pix_size = (fb_data->max_pix_size > pix_size_rot) ?
 				fb_data->max_pix_size : pix_size_rot;
 
-	buf_size = fb_data->max_pix_size * fb_data->default_bpp/8;
-
+	buf_size = fb_data->max_pix_size * fb_data->default_bpp/8 / cfa_scale;
 	/* Compute the number of screens needed based on X memory requested */
 	if (x_mem_size > 0) {
 		fb_data->num_screens = DIV_ROUND_UP(x_mem_size, buf_size);
@@ -4597,7 +6006,19 @@ int mxc_epdc_fb_probe(struct platform_device *pdev)
 		fb_data->num_screens = NUM_SCREENS_MIN;
 
 	fb_data->map_size = buf_size * fb_data->num_screens;
-	dev_dbg(&pdev->dev, "memory to allocate: %d\n", fb_data->map_size);
+	fb_data->working_buffer_size = vmode->yres * vmode->xres * 2;
+
+	fb_data->max_updates = (MXCFB_MAX_DMA_ALLOC - fb_data->map_size
+				- fb_data->working_buffer_size);
+
+	if (fb_data->max_pix_size)
+		fb_data->max_updates /= (3 * fb_data->max_pix_size);
+
+	if (fb_data->max_updates > CONFIG_FB_MXC_EPDC_MAX_UPDATES)
+		fb_data->max_updates = CONFIG_FB_MXC_EPDC_MAX_UPDATES;
+
+	dev_info(&pdev->dev, "Maximum number of concurrent updates: %d\n",
+		 fb_data->max_updates);
 
 	res = platform_get_resource(pdev, IORESOURCE_MEM, 0);
 	if (res == NULL) {
@@ -4621,17 +6042,17 @@ int mxc_epdc_fb_probe(struct platform_device *pdev)
 		ret = -ENOMEM;
 		goto out_cmap;
 	}
-	dev_dbg(&pdev->dev, "allocated at %p:0x%x\n", info->screen_base,
+	dev_info(&pdev->dev, "allocated at %p:0x%x\n", info->screen_base,
 		fb_data->phys_start);
 
 	var_info = &info->var;
 	var_info->activate = FB_ACTIVATE_TEST;
 	var_info->bits_per_pixel = fb_data->default_bpp;
-	var_info->xres = vmode->xres;
-	var_info->yres = vmode->yres;
-	var_info->xres_virtual = xres_virt;
+	var_info->xres = vmode->xres / cfa_scale;
+	var_info->yres = vmode->yres / cfa_scale;
+	var_info->xres_virtual = xres_virt / cfa_scale;
 	/* Additional screens allow for panning  and buffer flipping */
-	var_info->yres_virtual = yres_virt * fb_data->num_screens;
+	var_info->yres_virtual = yres_virt / cfa_scale * fb_data->num_screens;
 
 	var_info->pixclock = vmode->pixclock;
 	var_info->left_margin = vmode->left_margin;
@@ -4702,6 +6123,8 @@ int mxc_epdc_fb_probe(struct platform_device *pdev)
 
 	fb_data->native_width = vmode->xres;
 	fb_data->native_height = vmode->yres;
+	fb_data->epdc_xres = (vmode->xres + fb_data->cur_mode->left_border +
+		fb_data->cur_mode->right_border);
 
 	info->fbops = &mxc_epdc_fb_ops;
 	info->var.activate = FB_ACTIVATE_NOW;
@@ -4713,7 +6136,7 @@ int mxc_epdc_fb_probe(struct platform_device *pdev)
 
 	fb_data->auto_mode = AUTO_UPDATE_MODE_REGION_MODE;
 	fb_data->upd_scheme = UPDATE_SCHEME_QUEUE_AND_MERGE;
-
+	dev_err(fb_data->dev, "Initialize our internal copy of the screeninfo\n");
 	/* Initialize our internal copy of the screeninfo */
 	fb_data->epdc_fb_var = *var_info;
 	fb_data->fb_offset = 0;
@@ -4763,7 +6186,6 @@ int mxc_epdc_fb_probe(struct platform_device *pdev)
 	INIT_LIST_HEAD(&fb_data->upd_buf_queue);
 	INIT_LIST_HEAD(&fb_data->upd_buf_free_list);
 	INIT_LIST_HEAD(&fb_data->upd_buf_collision_list);
-
 	/* Allocate update buffers and add them to the list */
 	for (i = 0; i < fb_data->max_num_updates; i++) {
 		upd_list = kzalloc(sizeof(*upd_list), GFP_KERNEL);
@@ -4788,15 +6210,16 @@ int mxc_epdc_fb_probe(struct platform_device *pdev)
 		 * be as big as the full-screen frame buffer
 		 */
 		fb_data->virt_addr_updbuf[i] =
-			kmalloc(fb_data->max_pix_size, GFP_KERNEL);
-		fb_data->phys_addr_updbuf[i] =
-			virt_to_phys(fb_data->virt_addr_updbuf[i]);
+			dma_alloc_coherent(&pdev->dev, fb_data->max_pix_size,
+				&fb_data->phys_addr_updbuf[i],
+				GFP_DMA | GFP_KERNEL);
+
 		if (fb_data->virt_addr_updbuf[i] == NULL) {
 			ret = -ENOMEM;
 			goto out_upd_buffers;
 		}
 
-		dev_dbg(fb_data->info.device, "allocated %d bytes @ 0x%08X\n",
+		dev_dbg(&pdev->dev, "allocated %d bytes @ 0x%08X\n",
 			fb_data->max_pix_size, fb_data->phys_addr_updbuf[i]);
 	}
 
@@ -4816,8 +6239,7 @@ int mxc_epdc_fb_probe(struct platform_device *pdev)
 		ret = -ENOMEM;
 		goto out_upd_buffers;
 	}
-
-	fb_data->working_buffer_size = vmode->yres * vmode->xres * 2;
+	//printk("Allocate memory for EPDC working buffer\n");
 	/* Allocate memory for EPDC working buffer */
 	fb_data->working_buffer_virt =
 	    dma_alloc_coherent(&pdev->dev, fb_data->working_buffer_size,
@@ -4828,7 +6250,6 @@ int mxc_epdc_fb_probe(struct platform_device *pdev)
 		ret = -ENOMEM;
 		goto out_copybuffer;
 	}
-
 	/* Initialize EPDC pins */
 	pinctrl = devm_pinctrl_get_select_default(&pdev->dev);
 	if (IS_ERR(pinctrl)) {
@@ -4856,6 +6277,7 @@ int mxc_epdc_fb_probe(struct platform_device *pdev)
 
 	/* Initialize marker list */
 	INIT_LIST_HEAD(&fb_data->full_marker_list);
+	INIT_LIST_HEAD(&fb_data->awaiting_marker_list);
 
 	/* Initialize all LUTs to inactive */
 	fb_data->lut_update_order =
@@ -4896,8 +6318,30 @@ int mxc_epdc_fb_probe(struct platform_device *pdev)
 #ifdef CONFIG_FB_MXC_EINK_AUTO_UPDATE_MODE
 	fb_deferred_io_init(info);
 #endif
-
 	/* get pmic regulators */
+#if (defined(CONFIG_FB_MXC_EPDC_PL_HARDWARE) \
+     || defined(CONFIG_FB_MXC_EPDC_PL_HARDWARE_MODULE))
+	fb_data->pinctrl = pinctrl;
+	fb_data->pl_hardware = mxc_epdc_pl_hardware_alloc();
+	if (!fb_data->pl_hardware) {
+		ret = -ENOMEM;
+		goto out_dma_work_buf;
+	}
+
+	/* ToDo: pass on to mxc_epdc_pl_hardware_init for panel type specific
+	 * configuration */
+	if (mxc_epdc_fb_panel_type_modparam[0] != '\0') {
+		dev_info(&pdev->dev, "Panel type: %s\n",
+			 mxc_epdc_fb_panel_type_modparam);
+	}
+	ret = mxc_epdc_fb_plhw_init(fb_data);
+	if (ret) {
+		dev_err(&pdev->dev,
+			"Failed to initialize Plastic Logic hardware\n");
+		ret = -ENODEV;
+		goto out_regulator_pl;
+	}
+#else /* PL_HARDWARE */
 	fb_data->display_regulator = devm_regulator_get(&pdev->dev, "DISPLAY");
 	if (IS_ERR(fb_data->display_regulator)) {
 		dev_err(&pdev->dev, "Unable to get display PMIC regulator."
@@ -4919,6 +6363,7 @@ int mxc_epdc_fb_probe(struct platform_device *pdev)
 		ret = -ENODEV;
 		goto out_dma_work_buf;
 	}
+#endif
 
 	if (device_create_file(info->dev, &fb_attrs[0]))
 		dev_err(&pdev->dev, "Unable to create file from fb_attrs\n");
@@ -4986,11 +6431,14 @@ int mxc_epdc_fb_probe(struct platform_device *pdev)
 	 * Output is Y-only greyscale
 	 * Output width/height will vary based on update region size
 	 */
-	pxp_conf->out_param.width = fb_data->info.var.xres;
+	pxp_conf->out_param.width = fb_data->epdc_xres;
 	pxp_conf->out_param.height = fb_data->info.var.yres;
 	pxp_conf->out_param.stride = pxp_conf->out_param.width;
 	pxp_conf->out_param.pixel_fmt = PXP_PIX_FMT_GREY;
 
+
+#if !(defined(CONFIG_FB_MXC_EPDC_PL_HARDWARE) \
+     || defined(CONFIG_FB_MXC_EPDC_PL_HARDWARE_MODULE))
 	/* Initialize color map for conversion of 8-bit gray pixels */
 	fb_data->pxp_conf.proc_data.lut_map = kmalloc(256, GFP_KERNEL);
 	if (fb_data->pxp_conf.proc_data.lut_map == NULL) {
@@ -5002,6 +6450,7 @@ int mxc_epdc_fb_probe(struct platform_device *pdev)
 		fb_data->pxp_conf.proc_data.lut_map[i] = i;
 
 	fb_data->pxp_conf.proc_data.lut_map_updated = true;
+#endif
 
 	/*
 	 * Ensure this is set to NULL here...we will initialize pxp_chan
@@ -5021,7 +6470,6 @@ int mxc_epdc_fb_probe(struct platform_device *pdev)
 	sg_dma_address(&sg[0]) = info->fix.smem_start;
 	sg_set_page(&sg[0], virt_to_page(info->screen_base),
 		    info->fix.smem_len, offset_in_page(info->screen_base));
-
 	fb_data->order_cnt = 0;
 	fb_data->waiting_for_wb = false;
 	fb_data->waiting_for_lut = false;
@@ -5047,6 +6495,8 @@ int mxc_epdc_fb_probe(struct platform_device *pdev)
 	pm_runtime_enable(fb_data->dev);
 
 #ifdef DEFAULT_PANEL_HW_INIT
+	fb_data->hw_initializing = true;
+	init_completion(&fb_data->init_completion);
 	ret = mxc_epdc_fb_init_hw((struct fb_info *)fb_data);
 	if (ret) {
 		dev_err(&pdev->dev, "Failed to initialize HW!\n");
@@ -5057,6 +6507,11 @@ int mxc_epdc_fb_probe(struct platform_device *pdev)
 
 out_lutmap:
 	kfree(fb_data->pxp_conf.proc_data.lut_map);
+#if (defined(CONFIG_FB_MXC_EPDC_PL_HARDWARE) \
+     || defined(CONFIG_FB_MXC_EPDC_PL_HARDWARE_MODULE))
+out_regulator_pl:
+	mxc_epdc_pl_hardware_free(fb_data->pl_hardware);
+#endif
 out_dma_work_buf:
 	dma_free_writecombine(&pdev->dev, fb_data->working_buffer_size,
 		fb_data->working_buffer_virt, fb_data->working_buffer_phys);
@@ -5067,7 +6522,9 @@ out_copybuffer:
 out_upd_buffers:
 	for (i = 0; i < fb_data->max_num_buffers; i++)
 		if (fb_data->virt_addr_updbuf[i] != NULL)
-			kfree(fb_data->virt_addr_updbuf[i]);
+			dma_free_coherent(&pdev->dev, fb_data->max_pix_size,
+					fb_data->virt_addr_updbuf[i],
+					fb_data->phys_addr_updbuf[i]);
 	if (fb_data->virt_addr_updbuf != NULL)
 		kfree(fb_data->virt_addr_updbuf);
 	if (fb_data->phys_addr_updbuf != NULL)
@@ -5087,6 +6544,7 @@ out_cmap:
 out_fbdata:
 	kfree(fb_data);
 out:
+
 	return ret;
 }
 
@@ -5101,11 +6559,18 @@ static int mxc_epdc_fb_remove(struct platform_device *pdev)
 	flush_workqueue(fb_data->epdc_submit_workqueue);
 	destroy_workqueue(fb_data->epdc_submit_workqueue);
 
+#if (defined(CONFIG_FB_MXC_EPDC_PL_HARDWARE) \
+     || defined(CONFIG_FB_MXC_EPDC_PL_HARDWARE_MODULE))
+	mxc_epdc_pl_hardware_free(fb_data->pl_hardware);
+#endif
+
 	unregister_framebuffer(&fb_data->info);
 
 	for (i = 0; i < fb_data->max_num_buffers; i++)
 		if (fb_data->virt_addr_updbuf[i] != NULL)
-			kfree(fb_data->virt_addr_updbuf[i]);
+			dma_free_coherent(&pdev->dev, fb_data->max_pix_size,
+					fb_data->virt_addr_updbuf[i],
+					fb_data->phys_addr_updbuf[i]);
 	if (fb_data->virt_addr_updbuf != NULL)
 		kfree(fb_data->virt_addr_updbuf);
 	if (fb_data->phys_addr_updbuf != NULL)
@@ -5206,12 +6671,16 @@ static const struct dev_pm_ops mxc_epdc_fb_pm_ops = {
 static void mxc_epdc_fb_shutdown(struct platform_device *pdev)
 {
 	struct mxc_epdc_fb_data *fb_data = platform_get_drvdata(pdev);
-
+#if (defined(CONFIG_FB_MXC_EPDC_PL_HARDWARE) \
+     || defined(CONFIG_FB_MXC_EPDC_PL_HARDWARE_MODULE))
+	mxc_epdc_pl_hardware_disable(fb_data->pl_hardware);
+#else
 	/* Disable power to the EPD panel */
 	if (regulator_is_enabled(fb_data->vcom_regulator))
 		regulator_disable(fb_data->vcom_regulator);
 	if (regulator_is_enabled(fb_data->display_regulator))
 		regulator_disable(fb_data->display_regulator);
+#endif
 
 	/* Disable clocks to EPDC */
 	clk_prepare_enable(fb_data->epdc_clk_axi);
@@ -5220,9 +6689,12 @@ static void mxc_epdc_fb_shutdown(struct platform_device *pdev)
 	clk_disable_unprepare(fb_data->epdc_clk_pix);
 	clk_disable_unprepare(fb_data->epdc_clk_axi);
 
+#if !(defined(CONFIG_FB_MXC_EPDC_PL_HARDWARE) \
+     || defined(CONFIG_FB_MXC_EPDC_PL_HARDWARE_MODULE))
 	/* turn off the V3p3 */
 	if (regulator_is_enabled(fb_data->v3p3_regulator))
 		regulator_disable(fb_data->v3p3_regulator);
+#endif
 }
 
 static struct platform_driver mxc_epdc_fb_driver = {
@@ -5279,6 +6751,105 @@ static int pxp_chan_init(struct mxc_epdc_fb_data *fb_data)
 	fb_data->pxp_chan->client = fb_data;
 
 	init_completion(&fb_data->pxp_tx_cmpl);
+
+	return 0;
+}
+
+static int cfa_process_update(struct mxc_epdc_fb_data *fb_data,
+			      u32 src_width, u32 src_height,
+			      void *src_buf_virt, void *dst_buf_virt,
+			      struct mxcfb_rect *src_update_region)
+{
+	uint16_t *src, *srcp;
+	uint16_t *dst_line_start, *dst1, *dst2;
+	int i,j;
+	int dst_line_step = 0, dst_step = 0, dst_stride = 0;
+#ifdef DEBUG
+	ktime_t t1, t2;
+#endif
+
+	dev_dbg(fb_data->dev, "Starting CFA translation\n");
+	dev_dbg(fb_data->dev, "Source buf @0x%p, destination buf @0x%p\n", src_buf_virt, dst_buf_virt);
+	dev_dbg(fb_data->dev, "Source buffer %ux%u pixels, update region is (%u,%u)+%ux%u (userspace size)\n",
+			src_width, src_height, src_update_region->left, src_update_region->top,
+			src_update_region->width, src_update_region->height);
+
+#ifdef DEBUG
+	t1 = ktime_get();
+#endif
+
+	src = (uint16_t *)src_buf_virt + src_update_region->top * src_width + src_update_region->left;
+	dst_line_start = dst_buf_virt;
+
+	switch (fb_data->epdc_fb_var.rotate) {
+	case FB_ROTATE_UR:
+		dst_stride = src_update_region->width;
+		dst_line_start += 0;
+		dst_line_step = dst_stride * 2;
+		dst_step = 1;
+		break;
+	case FB_ROTATE_CW:
+		dst_stride = src_update_region->height;
+		dst_line_start += src_update_region->height - 1;
+		dst_line_step = -1;
+		dst_step = dst_stride * 2;;
+		break;
+	case FB_ROTATE_UD:
+		dst_stride = src_update_region->width;
+		dst_line_start += (src_update_region->width - 1) + dst_stride * 2 * (src_update_region->height - 1);
+		dst_line_step = -dst_stride * 2;
+		dst_step = -1;
+		break;
+	case FB_ROTATE_CCW:
+		dst_stride = src_update_region->height;
+		dst_line_start += (src_update_region->width - 1) * dst_stride * 2;
+		dst_line_step = 1;
+		dst_step = -dst_stride * 2;;
+		break;
+	}
+	dev_dbg(fb_data->dev, "rotate: %d, dst_stride = %d, dst_line_start = 0x%p, dst_line_step = %d, dst_step = %d",
+			fb_data->epdc_fb_var.rotate, dst_stride, dst_line_start, dst_line_step, dst_step);
+
+	for (i = 0; i < src_update_region->height; i++) {
+		srcp = src;
+
+		dst1 = dst_line_start;
+		dst2 = dst_line_start + dst_stride;
+
+		for (j = 0; j < src_update_region->width; j++) {
+			uint16_t val;
+			uint8_t  r, g, b;
+			unsigned int w;
+			uint8_t r5, g6, b5;
+
+			val = *srcp;
+			r5 = (val >> 11) & 0x1F;
+			r = (r5 << 3) | (r5 >> 2);
+
+			g6 = (val >> 5) & 0x3F;
+			g = (g6 << 2) | (g6 >> 4);
+
+			b5 = val & 0x1F;
+			b = (b5 << 3) | (b5 >> 2);
+
+			w = ((r * 299) + (g * 587) + (b * 114)) / 1000;
+
+			*dst1 = g | (r << 8);
+			*dst2 = b | ((w & 0xFF) << 8);
+
+			srcp++;
+			dst1 += dst_step;
+			dst2 += dst_step;
+		}
+		src += src_width;
+
+		dst_line_start += dst_line_step;
+	}
+
+#ifdef DEBUG
+	t2 = ktime_get();
+	dev_dbg(fb_data->dev, "CFA translation time = %lld us\n", ktime_to_us(ktime_sub(t2, t1)));
+#endif
 
 	return 0;
 }
@@ -5466,7 +7037,9 @@ static void do_dithering_processing_Y1_v1_0(
 		unsigned long update_region_stride,
 		int *err_dist)
 {
-
+	do_ordered_dithering_processing(update_region_ptr, update_region, update_region_stride, err_dist);
+	return;
+	printk( "\ndo_dithering_processing_Y1_v1_0\n");
 	/* create a temp error distribution array */
 	int bwPix;
 	int y;
@@ -5489,7 +7062,7 @@ static void do_dithering_processing_Y1_v1_0(
 		for (col = 1; col <= update_region->width; col++) {
 			bwPix = *(err_dist_l0 + col) + *y8buf;
 
-			if (bwPix >= 128) {
+			if (bwPix >= 192) {//128
 				*y8buf++ = 0xff;
 				distrib_error = (bwPix - 255) >> 3;
 			} else {
@@ -5568,6 +7141,67 @@ static void do_dithering_processing_Y4_v1_0(
 	flush_cache_all();
 	outer_flush_all();
 }
+
+// Ordered dithering aka Bayer matrix dithering
+
+/* Bayer-method ordered dither.  The array line[] contains the intensity
+** values for the line being processed.  As you can see, the ordered
+** dither is much simpler than the error dispersion dither.  It is also
+** many times faster, but it is not as accurate and produces cross-hatch
+** patterns on the output.
+*/
+
+
+static void do_ordered_dithering_processing(
+		unsigned char *update_region_ptr,
+		struct mxcfb_rect *update_region,
+		unsigned long update_region_stride,
+		int *err_dist)
+{
+	int pattern[8][8] = {
+		{ 0, 32,  8, 40,  2, 34, 10, 42},   /* 8x8 Bayer ordered dithering  */
+		{48, 16, 56, 24, 50, 18, 58, 26},   /* pattern.  Each input pixel   */
+		{12, 44,  4, 36, 14, 46,  6, 38},   /* is scaled to the 0..63 range */
+		{60, 28, 52, 20, 62, 30, 54, 22},   /* before looking in this table */
+		{ 3, 35, 11, 43,  1, 33,  9, 41},   /* to determine the action.     */
+		{51, 19, 59, 27, 49, 17, 57, 25},
+		{15, 47,  7, 39, 13, 45,  5, 37},
+		{63, 31, 55, 23, 61, 29, 53, 21} };
+
+	/* create a temp error distribution array */
+	int bwPix;
+	int y;
+	int col;
+	printk("\ndo_ordered_dithering_processing\n");
+	char *y8buf;
+	int x_offset = 0;
+
+	/* prime a few elements the error distribution array */
+	for (y = 0; y < update_region->height; y++) {
+		/* Dithering the Y8 in sbuf to BW suitable for A2 waveform */
+
+
+		y8buf = update_region_ptr + x_offset;
+
+		/* scan the line and convert the Y8 to BW */
+		for (col = 1; col <= update_region->width; col++) {
+			bwPix = *y8buf >> 2;
+
+			if (bwPix > pattern[col & 7][y & 7]) {//128
+				*y8buf++ = 0xff;
+
+			} else {
+				*y8buf++ = 0;
+			}
+
+		}
+		x_offset += update_region_stride;
+	}
+
+	flush_cache_all();
+	outer_flush_all();
+}
+
 
 module_platform_driver(mxc_epdc_fb_driver);
 

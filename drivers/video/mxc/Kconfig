@@ -66,6 +66,13 @@ config FB_MXC_EINK_V2_PANEL
 	select FB_DEFERRED_IO
 	tristate "E-Ink Panel Framebuffer based on EPDC V2"
 
+config FB_MXC_EPDC_PL_HARDWARE
+	depends on FB_MXC_EINK_PANEL
+	tristate "Use Plastic Logic display hardware"
+	help
+	    This is an interim solution to support Plastic
+	    Logic display hardware and power supply control.
+
 config FB_MXC_EINK_AUTO_UPDATE_MODE
     bool "E-Ink Auto-update Mode Support"
     default n

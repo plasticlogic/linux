@@ -19,6 +19,11 @@
 #ifndef _MXCFB_EPDC_KERNEL
 #define _MXCFB_EPDC_KERNEL
 
+#if (defined(CONFIG_FB_MXC_EPDC_PL_HARDWARE) \
+     || defined(CONFIG_FB_MXC_EPDC_PL_HARDWARE_MODULE))
+#include <linux/mxc_epdc_pl_hardware.h>
+#endif
+
 struct imx_epdc_fb_mode {
     struct fb_videomode *vmode;
     int vscan_holdoff;
@@ -28,9 +33,23 @@ struct imx_epdc_fb_mode {
     int sdoez_delay;
     int gdclk_hp_offs;
     int gdsp_offs;
+    bool gdsp_frame_sync;
+    bool gdsp_active_high;
     int gdoe_offs;
+    bool gdoe_delayed_gclk;
+    bool gdoe_active_high;
     int gdclk_offs;
     int num_ce;
+    bool sddo_16_bits;
+    bool sddo_flip_bits;
+    bool tft_4bpp;
+    bool dual_scan;
+    bool scan_dir_0_up;
+    bool scan_dir_1_up;
+    bool flip_top;
+    bool sdclk_hold;
+    int left_border;
+    int right_border;
 };
 
 struct imx_epdc_fb_platform_data {
@@ -40,6 +59,37 @@ struct imx_epdc_fb_platform_data {
     void (*put_pins) (void);
     void (*enable_pins) (void);
     void (*disable_pins) (void);
+#if (defined(CONFIG_FB_MXC_EPDC_PL_HARDWARE) \
+     || defined(CONFIG_FB_MXC_EPDC_PL_HARDWARE_MODULE))
+    struct mxc_epdc_plhw_pdata *plhw_pdata;
+#endif
 };
 
+void mxc_epdc_fb_set_waveform_modes(struct mxcfb_waveform_modes *modes,
+						struct fb_info *info);
+int mxc_epdc_fb_set_temperature(int temperature, struct fb_info *info);
+int mxc_epdc_fb_set_auto_update(u32 auto_mode, struct fb_info *info);
+int mxc_epdc_fb_send_update(struct mxcfb_update_data *upd_data,
+				   struct fb_info *info);
+int mxc_epdc_fb_wait_update_complete(
+				struct mxcfb_update_marker_data *marker_data,
+				struct fb_info *info, bool async);
+int mxc_epdc_fb_set_pwrdown_delay(u32 pwrdown_delay,
+					    struct fb_info *info);
+int mxc_epdc_get_pwrdown_delay(struct fb_info *info);
+int mxc_epdc_fb_set_upd_scheme(u32 upd_scheme, struct fb_info *info);
+
+void mxc_spdc_fb_set_waveform_modes(struct mxcfb_waveform_modes *modes,
+						struct fb_info *info);
+int mxc_spdc_fb_set_temperature(int temperature, struct fb_info *info);
+int mxc_spdc_fb_set_auto_update(u32 auto_mode, struct fb_info *info);
+int mxc_spdc_fb_send_update(struct mxcfb_update_data *upd_data,
+				   struct fb_info *info);
+int mxc_spdc_fb_wait_update_complete(
+				struct mxcfb_update_marker_data *marker_data,
+				struct fb_info *info);
+int mxc_spdc_fb_set_pwrdown_delay(u32 pwrdown_delay,
+					    struct fb_info *info);
+int mxc_spdc_get_pwrdown_delay(struct fb_info *info);
+int mxc_spdc_fb_set_upd_scheme(u32 upd_scheme, struct fb_info *info);
 #endif

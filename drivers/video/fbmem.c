@@ -1675,7 +1675,9 @@ static int do_register_framebuffer(struct fb_info *fb_info)
 	registered_fb[i] = fb_info;
 
 	event.info = fb_info;
+
 	console_lock();
+
 	if (!lock_fb_info(fb_info)) {
 		console_unlock();
 		return -ENODEV;
@@ -1772,7 +1774,7 @@ int
 register_framebuffer(struct fb_info *fb_info)
 {
 	int ret;
-
+	printk("register_framebuffer(%p fb_info)", fb_info);
 	mutex_lock(&registration_lock);
 	ret = do_register_framebuffer(fb_info);
 	mutex_unlock(&registration_lock);

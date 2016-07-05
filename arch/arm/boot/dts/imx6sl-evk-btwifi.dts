@@ -13,7 +13,7 @@
  * WL_REG_ON/BT_REG_ON/WL_HOST_WAKE are connected from SD Card Extender on SD3
  * slot.
  */
-#include "imx6sl-evk.dts"
+#include "imx6sl-evk-pl.dts"
 
 / {
 	regulators {
