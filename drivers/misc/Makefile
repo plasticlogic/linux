@@ -52,4 +52,5 @@ obj-$(CONFIG_INTEL_MEI)		+= mei/
 obj-$(CONFIG_GPEVT)		+= gpevt.o
 obj-$(CONFIG_GROVE_I2C)		+= grove-i2c.o
 obj-$(CONFIG_TIEQEP)      += tieqep.o
+obj-$(CONFIG_PARALLEL) 	  += parallel/dev_parallel.o
 obj-y				+= cape/
