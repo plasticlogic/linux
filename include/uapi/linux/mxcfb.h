@@ -103,6 +103,7 @@ struct mxcfb_rect {
 #define EPDC_FLAG_ENABLE_INVERSION		0x01
 #define EPDC_FLAG_FORCE_MONOCHROME		0x02
 #define EPDC_FLAG_USE_CMAP			0x04
+#define EPDC_USE_ALT_VSOURCE			0x08
 #define EPDC_FLAG_USE_ALT_BUFFER		0x100
 #define EPDC_FLAG_TEST_COLLISION		0x200
 #define EPDC_FLAG_GROUP_UPDATE			0x400
@@ -184,6 +185,7 @@ struct mxcfb_csc_matrix {
 #define MXCFB_GET_PREFETCH	_IOR('F', 0x31, int)
 
 /* IOCTLs for E-ink panel updates */
+#if 0
 #define MXCFB_SET_WAVEFORM_MODES	_IOW('F', 0x2B, struct mxcfb_waveform_modes)
 #define MXCFB_SET_TEMPERATURE		_IOW('F', 0x2C, int32_t)
 #define MXCFB_SET_AUTO_UPDATE_MODE	_IOW('F', 0x2D, __u32)
@@ -196,4 +198,21 @@ struct mxcfb_csc_matrix {
 #define MXCFB_DISABLE_EPDC_ACCESS	_IO('F', 0x35)
 #define MXCFB_ENABLE_EPDC_ACCESS	_IO('F', 0x36)
 #define MXCFB_CHECK_FOR_UPDATE_COMPLETE	_IOWR('F', 0x37, struct mxcfb_update_marker_data)
+#else
+#define MXCFB_SET_WAVEFORM_MODES	_IOW('F', 0x2B, struct mxcfb_waveform_modes)
+#define MXCFB_SET_TEMPERATURE		_IOW('F', 0x2C, int32_t)
+#define MXCFB_SET_AUTO_UPDATE_MODE	_IOW('F', 0x2D, __u32)
+#define MXCFB_SEND_UPDATE		_IOW('F', 0x2E, struct mxcfb_update_data)
+#define MXCFB_WAIT_FOR_UPDATE_COMPLETE	_IOW('F', 0x2F, __u32)
+#define MXCFB_SET_PWRDOWN_DELAY		_IOW('F', 0x30, int32_t)
+#define MXCFB_GET_PWRDOWN_DELAY		_IOR('F', 0x31, int32_t)
+#define MXCFB_SET_UPDATE_SCHEME		_IOW('F', 0x32, __u32)
+#define MXCFB_SET_AUTO_TEMPERATURE_MODE  _IOW('F', 0x33, __u32)
+#define MXCFB_GET_AUTO_TEMPERATURE_MODE  _IOW('F', 0x34, __u32)
+#define MXCFB_GET_TEMPERATURE           _IOW('F', 0x35, int32_t)
+#define MXCFB_GET_WORK_BUFFER		_IOWR('F', 0x38, unsigned long)
+#define MXCFB_DISABLE_EPDC_ACCESS	_IO('F', 0x39)
+#define MXCFB_ENABLE_EPDC_ACCESS	_IO('F', 0x36)
+#define MXCFB_CHECK_FOR_UPDATE_COMPLETE	_IOWR('F', 0x37, struct mxcfb_update_marker_data)
+#endif
 #endif

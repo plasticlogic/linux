@@ -86,7 +86,7 @@ static ssize_t show_temp_input1(struct device *dev,
 	struct device_attribute *attr, char *buf)
 {
 	unsigned int reg_val;
-	max17135_reg_read(REG_MAX17135_INT_TEMP, &reg_val);
+	max17135_reg_read(NULL, REG_MAX17135_INT_TEMP, &reg_val);
 	return snprintf(buf, PAGE_SIZE, "%d\n", temp_from_reg(reg_val));
 }
 
@@ -94,7 +94,7 @@ static ssize_t show_temp_input2(struct device *dev,
 	struct device_attribute *attr, char *buf)
 {
 	unsigned int reg_val;
-	max17135_reg_read(REG_MAX17135_EXT_TEMP, &reg_val);
+	max17135_reg_read(NULL, REG_MAX17135_EXT_TEMP, &reg_val);
 	return snprintf(buf, PAGE_SIZE, "%d\n", temp_from_reg(reg_val));
 }
 
@@ -116,15 +116,21 @@ static const struct attribute_group max17135_group = {
  */
 static int max17135_sensor_probe(struct platform_device *pdev)
 {
+	struct max17135 *max17135 = dev_get_drvdata(pdev->dev.parent);
 	struct max17135_data *data;
 	int err;
-
+	dev_err(&pdev->dev, "%s\n", __func__);
 	data = kzalloc(sizeof(struct max17135_data), GFP_KERNEL);
 	if (!data) {
 		err = -ENOMEM;
 		goto exit;
 	}
-
+	/*
+	char sns_name[128]; 
+	struct i2c_client *client = max17135->i2c_client;
+	snprintf(sns_name, 128, "max17135-sns-%i",client->adapter->nr);
+	//max17135_sns_id[0].
+	
 	/* Register sysfs hooks */
 	err = sysfs_create_group(&pdev->dev.kobj, &max17135_group);
 	if (err)

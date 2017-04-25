@@ -128,6 +128,8 @@ enum {
 #define TIMING8_LSH         0
 #define TIMING8_WID         8
 
+//extern struct i2c_client *max17135_client;
+
 struct max17135 {
 	/* chip revision */
 	int rev;
@@ -214,7 +216,7 @@ struct max17135_regulator_data {
 	struct device_node *reg_node;
 };
 
-int max17135_reg_read(int reg_num, unsigned int *reg_val);
-int max17135_reg_write(int reg_num, const unsigned int reg_val);
+int max17135_reg_read(struct i2c_client *max17135_client, int reg_num, unsigned int *reg_val);
+int max17135_reg_write(struct i2c_client *max17135_client, int reg_num, const unsigned int reg_val);
 
 #endif

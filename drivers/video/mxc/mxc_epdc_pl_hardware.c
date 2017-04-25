@@ -144,6 +144,7 @@ int mxc_epdc_pl_hardware_init(struct mxc_epdc_pl_hardware *p,
 	int stat;
 	int i;
 	if (p->init_done){
+		printk("PLHW: Already initialized.\n");
 		return -EINVAL;
 	}
 	if (!conf->psu_n || (conf->psu_n > 2)) {
@@ -257,8 +258,10 @@ int mxc_epdc_pl_hardware_enable(struct mxc_epdc_pl_hardware *p)
 {
 	struct pl_hardware_psu *psu;
 
-	if (!p->init_done)
+	if (!p->init_done){
+		printk(KERN_ERR "PLHW: Cannot enable: Not yet initialized!\n");
 		return -EINVAL;
+	}
 	psu = &p->psu[0];
 	STEP(pl_hardware_cpld_switch(p, CPLD_HVEN, true), "HV ON");
 	STEP(pl_hardware_hvpmic_wait_pok(p, psu), "wait for POK");
@@ -287,8 +290,10 @@ int mxc_epdc_pl_hardware_disable(struct mxc_epdc_pl_hardware *p)
 {
 	struct pl_hardware_psu *psu;
 
-	if (!p->init_done)
+	if (!p->init_done){
+		printk(KERN_ERR "PLHW: Cannot disable: Not yet initialized!\n");
 		return -EINVAL;
+	}
 	psu = &p->psu[0];
 	STEP(pl_hardware_cpld_switch(p, CPLD_COM_SW_CLOSE, false),"COM open");
 	STEP(pl_hardware_cpld_switch(p, CPLD_COM_SW_EN, false), "COM disable");
@@ -547,6 +552,7 @@ int pl_hardware_hvpmic_init(struct mxc_epdc_pl_hardware *p,
 		return stat;
 
 	if (p->conf->power_seq >= MXC_EPDC_PL_HARDWARE_SEQ_N) {
+		printk(KERN_ERR "PLHW: Invalid power seq!\n");
 		return -EINVAL;
 	}
 

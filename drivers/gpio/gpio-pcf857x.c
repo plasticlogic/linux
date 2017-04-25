@@ -104,11 +104,13 @@ struct pcf857x {
 
 static int i2c_write_le8(struct i2c_client *client, unsigned data)
 {
+	//dev_err(&client->dev, "%s: %p\n", __func__, client);
 	return i2c_smbus_write_byte(client, data);
 }
 
 static int i2c_read_le8(struct i2c_client *client)
 {
+	//dev_err(&client->dev, "%s: %p\n", __func__, client);
 	return (int)i2c_smbus_read_byte(client);
 }
 
@@ -118,7 +120,7 @@ static int i2c_write_le16(struct i2c_client *client, unsigned word)
 {
 	u8 buf[2] = { word & 0xff, word >> 8, };
 	int status;
-
+	//dev_err(&client->dev, "%s: %p\n", __func__, client);
 	status = i2c_master_send(client, buf, 2);
 	return (status < 0) ? status : 0;
 }
@@ -127,7 +129,7 @@ static int i2c_read_le16(struct i2c_client *client)
 {
 	u8 buf[2];
 	int status;
-
+	//dev_err(&client->dev, "%s: %p\n", __func__, client);
 	status = i2c_master_recv(client, buf, 2);
 	if (status < 0)
 		return status;
@@ -140,7 +142,7 @@ static int pcf857x_input(struct gpio_chip *chip, unsigned offset)
 {
 	struct pcf857x	*gpio = container_of(chip, struct pcf857x, chip);
 	int		status;
-
+	//dev_err(&gpio->client->dev, "%s: %i\n", __func__, offset);
 	mutex_lock(&gpio->lock);
 	gpio->out |= (1 << offset);
 	status = gpio->write(gpio->client, gpio->out);
@@ -155,6 +157,7 @@ static int pcf857x_get(struct gpio_chip *chip, unsigned offset)
 	int		value;
 
 	value = gpio->read(gpio->client);
+	//dev_err(&gpio->client->dev, "%s: %i (%i)\n", __func__, (value & (1 << offset)), offset);
 	return (value < 0) ? 0 : (value & (1 << offset));
 }
 
@@ -163,7 +166,9 @@ static int pcf857x_output(struct gpio_chip *chip, unsigned offset, int value)
 	struct pcf857x	*gpio = container_of(chip, struct pcf857x, chip);
 	unsigned	bit = 1 << offset;
 	int		status;
-
+	
+	//dev_err(&gpio->client->dev, "%s: %i (%i)\n", __func__, value , offset);
+	
 	mutex_lock(&gpio->lock);
 	if (value)
 		gpio->out |= bit;
@@ -288,7 +293,7 @@ static int pcf857x_probe(struct i2c_client *client,
 	struct pcf857x			*gpio;
 	unsigned int			n_latch = 0;
 	int				status;
-
+	//dev_err(&client->dev, "%s: %p\n", __func__, client->adapter);
 	if (IS_ENABLED(CONFIG_OF) && np)
 		of_property_read_u32(np, "lines-initial-states", &n_latch);
 	else if (pdata)
@@ -305,7 +310,7 @@ static int pcf857x_probe(struct i2c_client *client,
 	spin_lock_init(&gpio->slock);
 
 	gpio->chip.base			= pdata ? pdata->gpio_base : -1;
-	gpio->chip.can_sleep		= true;
+	gpio->chip.can_sleep		= false;
 	gpio->chip.dev			= &client->dev;
 	gpio->chip.owner		= THIS_MODULE;
 	gpio->chip.get			= pcf857x_get;
@@ -414,7 +419,7 @@ static int pcf857x_probe(struct i2c_client *client,
 	return 0;
 
 fail:
-	dev_dbg(&client->dev, "probe error %d for '%s'\n",
+	dev_err(&client->dev, "probe error %d for '%s'\n",
 			status, client->name);
 
 	if (client->irq)

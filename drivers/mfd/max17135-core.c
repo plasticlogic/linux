@@ -49,7 +49,7 @@
 
 static int max17135_detect(struct i2c_client *client,
 			  struct i2c_board_info *info);
-struct i2c_client *max17135_client;
+//struct i2c_client *max17135_client;
 static struct regulator *gpio_regulator;
 
 static struct mfd_cell max17135_devs[] = {
@@ -59,7 +59,7 @@ static struct mfd_cell max17135_devs[] = {
 
 static const unsigned short normal_i2c[] = {0x48, I2C_CLIENT_END};
 
-int max17135_reg_read(int reg_num, unsigned int *reg_val)
+int max17135_reg_read(struct i2c_client *max17135_client, int reg_num, unsigned int *reg_val)
 {
 	int result;
 
@@ -84,15 +84,16 @@ int max17135_reg_read(int reg_num, unsigned int *reg_val)
 			return PMIC_ERROR;
 		}
 	}
-
+	//dev_err(&max17135_client->dev, "i2c %p read: %x, %x\n",max17135_client, reg_num, result);
 	*reg_val = result;
 	return PMIC_SUCCESS;
 }
 
-int max17135_reg_write(int reg_num, const unsigned int reg_val)
+int max17135_reg_write(struct i2c_client *max17135_client, int reg_num, const unsigned int reg_val)
 {
 	int result;
-
+	//dev_err(&max17135_client->dev, "i2c %p write: %x, %x\n",max17135_client, reg_num, reg_val);
+	
 	if (max17135_client == NULL)
 		return PMIC_ERROR;
 
@@ -135,7 +136,6 @@ static int max17135_probe(struct i2c_client *client,
 	struct max17135_platform_data *pdata = client->dev.platform_data;
 	struct device_node *np = client->dev.of_node;
 	int ret = 0;
-
 	if (!np)
 		return -ENODEV;
 
@@ -158,10 +158,21 @@ static int max17135_probe(struct i2c_client *client,
 	max17135->dev = &client->dev;
 	max17135->i2c_client = client;
 
-	max17135_client = client;
+	//max17135_client = client;
 	ret = max17135_detect(client, NULL);
 	if (ret)
 		goto err1;
+	
+	char pmic_name[128]; 
+	char sns_name[128]; 
+	
+	snprintf(pmic_name, 128, "max17135-pmic-%i",client->adapter->nr);
+	snprintf(sns_name, 128, "max17135-sns-%i",client->adapter->nr);
+	
+	struct mfd_cell max17135_devs[] = {
+		{ .name = pmic_name, },
+		{ .name = sns_name, },
+	}; 	
 
 	mfd_add_devices(max17135->dev, -1, max17135_devs,
 			ARRAY_SIZE(max17135_devs),

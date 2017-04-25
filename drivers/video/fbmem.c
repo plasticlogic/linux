@@ -1774,7 +1774,7 @@ int
 register_framebuffer(struct fb_info *fb_info)
 {
 	int ret;
-	printk("register_framebuffer(%p fb_info)", fb_info);
+	//printk("register_framebuffer(%p fb_info)", fb_info);
 	mutex_lock(&registration_lock);
 	ret = do_register_framebuffer(fb_info);
 	mutex_unlock(&registration_lock);
