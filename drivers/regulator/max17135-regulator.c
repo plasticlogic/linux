@@ -149,8 +149,8 @@ static int max17135_hvinp_get_voltage(struct regulator_dev *reg)
 		volt = (fld_val * MAX17135_HVINP_STEP_uV) +
 			MAX17135_HVINP_MIN_uV;
 	} else {
-		//dev_err(&reg->dev, "MAX17135: HVINP voltage is out of range\n");
-		printk(KERN_ERR "MAX17135: HVINP voltage is out of range\n");
+		dev_err(&reg->dev, "MAX17135: HVINP voltage is out of range\n");
+		//printk(KERN_ERR "MAX17135: HVINP voltage is out of range\n");
 		volt = 0;
 	}
 	return volt;
@@ -190,9 +190,13 @@ static int max17135_vcom_set_voltage(struct regulator_dev *reg,
 	if ((uV < vcom_data[max17135->pass_num-1].vcom_min_uV)
 		|| (uV > vcom_data[max17135->pass_num-1].vcom_max_uV))
 		return -EINVAL;
-
+	
 	max17135_reg_read(max17135->i2c_client, REG_MAX17135_DVR, &reg_val);
-
+	if(max17135->vcom_uV != uV){
+		max17135->vcom_uV = uV;
+		max17135->vcom_setup = false;
+		return -1;
+	}
 	/*
 	 * Only program VCOM if it is not set to the desired value.
 	 * Programming VCOM excessively degrades ability to keep
@@ -204,7 +208,6 @@ static int max17135_vcom_set_voltage(struct regulator_dev *reg,
 		reg_val |= BITFVAL(DVR, vcom_uV_to_rs(uV,
 			max17135->pass_num-1));
 		max17135_reg_write(max17135->i2c_client, REG_MAX17135_DVR, reg_val);
-
 		reg_val = BITFVAL(CTRL_DVR, true); /* shift to correct bit */
 		return max17135_reg_write(max17135->i2c_client, REG_MAX17135_PRGM_CTRL, reg_val);
 	}
@@ -322,8 +325,6 @@ static int max17135_wait_power_good(struct max17135 *max17135)
 static int max17135_display_enable(struct regulator_dev *reg)
 {
 	struct max17135 *max17135 = rdev_get_drvdata(reg);
-	//dev_err(&reg->dev, "MAX17135: %s Pass num: %d\n", __func__, max17135->pass_num);
-	//printk("MAX17135: %s Pass num: %d\n", __func__, max17135->pass_num);
 	/* The Pass 1 parts cannot turn on the PMIC via I2C. */
 	if (max17135->pass_num == 1)
 		gpio_set_value(max17135->gpio_pmic_wakeup, 1);
@@ -342,8 +343,7 @@ static int max17135_display_enable(struct regulator_dev *reg)
 static int max17135_display_disable(struct regulator_dev *reg)
 {
 	struct max17135 *max17135 = rdev_get_drvdata(reg);
-	//dev_err(&reg->dev, "MAX17135: %s Pass num: %i\n", __func__,max17135->pass_num);
-	//printk("MAX17135: %s Pass num: %i\n", __func__,max17135->pass_num);
+
 	if (max17135->pass_num == 1)
 		gpio_set_value(max17135->gpio_pmic_wakeup, 0);
 	else {
@@ -362,10 +362,9 @@ static int max17135_display_disable(struct regulator_dev *reg)
 static int max17135_display_is_enabled(struct regulator_dev *reg)
 {
 	struct max17135 *max17135 = rdev_get_drvdata(reg);
-	//dev_err(&reg->dev, "MAX17135: %s Pass num: %i\n", __func__,max17135->pass_num);
-//	printk("MAX17135: %s Pass num: %d\n", __func__,max17135->pass_num);
+
 	int gpio = gpio_get_value(max17135->gpio_pmic_wakeup);
-//	printk("MAX17135: %s GPIO: %d\n", __func__, gpio); 
+
 	if (gpio == 0)
 		return 0;
 	else

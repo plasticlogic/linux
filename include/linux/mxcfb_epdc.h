@@ -19,11 +19,6 @@
 #ifndef _MXCFB_EPDC_KERNEL
 #define _MXCFB_EPDC_KERNEL
 
-#if (defined(CONFIG_FB_MXC_EPDC_PL_HARDWARE) \
-     || defined(CONFIG_FB_MXC_EPDC_PL_HARDWARE_MODULE))
-#include <linux/mxc_epdc_pl_hardware.h>
-#endif
-
 struct imx_epdc_fb_mode {
     struct fb_videomode *vmode;
     int vscan_holdoff;
@@ -42,6 +37,8 @@ struct imx_epdc_fb_mode {
     int num_ce;
     bool sddo_16_bits;
     bool sddo_flip_bits;
+	bool sddo_invert;
+	bool sddo_shift_right;
     bool tft_4bpp;
     bool dual_scan;
     bool scan_dir_0_up;
@@ -59,10 +56,6 @@ struct imx_epdc_fb_platform_data {
     void (*put_pins) (void);
     void (*enable_pins) (void);
     void (*disable_pins) (void);
-#if (defined(CONFIG_FB_MXC_EPDC_PL_HARDWARE) \
-     || defined(CONFIG_FB_MXC_EPDC_PL_HARDWARE_MODULE))
-    struct mxc_epdc_plhw_pdata *plhw_pdata;
-#endif
 };
 
 void mxc_epdc_fb_set_waveform_modes(struct mxcfb_waveform_modes *modes,

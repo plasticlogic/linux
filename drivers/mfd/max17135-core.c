@@ -84,7 +84,7 @@ int max17135_reg_read(struct i2c_client *max17135_client, int reg_num, unsigned 
 			return PMIC_ERROR;
 		}
 	}
-	//dev_err(&max17135_client->dev, "i2c %p read: %x, %x\n",max17135_client, reg_num, result);
+	dev_dbg(&max17135_client->dev, "i2c %p read: %x, %x\n",max17135_client, reg_num, result);
 	*reg_val = result;
 	return PMIC_SUCCESS;
 }
@@ -92,7 +92,7 @@ int max17135_reg_read(struct i2c_client *max17135_client, int reg_num, unsigned 
 int max17135_reg_write(struct i2c_client *max17135_client, int reg_num, const unsigned int reg_val)
 {
 	int result;
-	//dev_err(&max17135_client->dev, "i2c %p write: %x, %x\n",max17135_client, reg_num, reg_val);
+	dev_dbg(&max17135_client->dev, "i2c %p write: %x, %x\n",max17135_client, reg_num, reg_val);
 	
 	if (max17135_client == NULL)
 		return PMIC_ERROR;

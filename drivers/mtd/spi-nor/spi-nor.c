@@ -484,6 +484,7 @@ const struct spi_device_id spi_nor_ids[] = {
 	/* Macronix */
 	{ "mx25l2005a",  INFO(0xc22012, 0, 64 * 1024,   4, SECT_4K) },
 	{ "mx25l4005a",  INFO(0xc22013, 0, 64 * 1024,   8, SECT_4K) },
+	//{ "mx25l4005a",  INFO(0xffffff, 0, 64 * 1024,   8, SECT_4K) }, // evil hack for PL HBZ3.3 bug
 	{ "mx25l8005",   INFO(0xc22014, 0, 64 * 1024,  16, 0) },
 	{ "mx25l1606e",  INFO(0xc22015, 0, 64 * 1024,  32, SECT_4K) },
 	{ "mx25l3205d",  INFO(0xc22016, 0, 64 * 1024,  64, 0) },
@@ -618,9 +619,10 @@ static const struct spi_device_id *spi_nor_read_id(struct spi_nor *nor)
 
 	tmp = nor->read_reg(nor, SPINOR_OP_RDID, id, 6);
 	if (tmp < 0) {
-		dev_dbg(nor->dev, " error %d reading JEDEC ID\n", tmp);
+		dev_err(nor->dev, " error %d reading JEDEC ID\n", tmp);
 		return ERR_PTR(tmp);
 	}
+	jedec = 0;
 	jedec = id[0];
 	jedec = jedec << 8;
 	jedec |= id[1];
@@ -628,7 +630,14 @@ static const struct spi_device_id *spi_nor_read_id(struct spi_nor *nor)
 	jedec |= id[2];
 
 	ext_jedec = id[3] << 8 | id[4];
-
+	
+	/* Non-JEDEC flash memory can not be detected correctly */
+	if (!jedec && !ext_jedec) {
+		dev_err(nor->dev, "JEDEC compliant device is not found\n");
+		return ERR_PTR(-ENODEV);
+	}
+	//*/
+	dev_info(nor->dev, "read JEDEC id %06x\n", jedec);
 	for (tmp = 0; tmp < ARRAY_SIZE(spi_nor_ids) - 1; tmp++) {
 		info = (void *)spi_nor_ids[tmp].driver_data;
 		if (info->jedec_id == jedec) {

@@ -739,7 +739,7 @@ static void spi_imx_chipselect(struct spi_device *spi, int is_active)
 
 	if (!gpio_is_valid(gpio))
 		return;
-
+	dev_dbg(&spi->dev,"%s: Chipselect: %i, %i, %i\n", __func__, dev_is_lowactive, active, gpio);
 	gpio_set_value(gpio, dev_is_lowactive ^ active);
 }
 
@@ -1003,8 +1003,9 @@ static int spi_imx_dma_transfer(struct spi_imx_data *spi_imx,
 	spi_imx->dma_finished = 0;
 	spi_imx->devtype_data->trigger(spi_imx);
 
-	dma_async_issue_pending(master->dma_tx);
 	dma_async_issue_pending(master->dma_rx);
+	dma_async_issue_pending(master->dma_tx);
+	//dma_async_issue_pending(master->dma_rx);
 	/* Wait SDMA to finish the data transfer.*/
 	ret = wait_for_completion_timeout(&spi_imx->dma_tx_completion,
 					  IMX_DMA_TIMEOUT(transfer->len));

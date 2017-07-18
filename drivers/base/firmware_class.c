@@ -326,10 +326,10 @@ static int fw_get_filesystem_firmware(struct device *device,
 	for (i = 0; i < ARRAY_SIZE(fw_path); i++) {
 		struct file *file;
 
-		/* skip the unset customized path */
+		/* skip the unset customized path * /
 		if (!fw_path[i][0])
 			continue;
-
+		//*/
 		snprintf(path, PATH_MAX, "%s/%s", fw_path[i], buf->fw_id);
 
 		file = filp_open(path, O_RDONLY, 0);
@@ -338,7 +338,7 @@ static int fw_get_filesystem_firmware(struct device *device,
 		rc = fw_read_file_contents(file, buf);
 		fput(file);
 		if (rc)
-			dev_warn(device, "firmware, attempted to load %s, but failed with error %d\n",
+			dev_err(device, "firmware, attempted to load %s, but failed with error %d\n",
 				path, rc);
 		else
 			break;
@@ -874,7 +874,6 @@ static int _request_firmware_load(struct firmware_priv *fw_priv,
 	int retval = 0;
 	struct device *f_dev = &fw_priv->dev;
 	struct firmware_buf *buf = fw_priv->buf;
-
 	/* fall back on userspace loading */
 	buf->is_paged_buf = true;
 
@@ -1087,7 +1086,7 @@ _request_firmware(const struct firmware **firmware_p, const char *name,
 	struct firmware *fw;
 	long timeout;
 	int ret;
-	//dev_warn(device, "Try to load Firmware %s", name);
+
 	if (!firmware_p)
 		return -EINVAL;
 
@@ -1120,7 +1119,7 @@ _request_firmware(const struct firmware **firmware_p, const char *name,
 	ret = fw_get_filesystem_firmware(device, fw->priv);
 	if (ret) {
 		if (opt_flags & FW_OPT_FALLBACK) {
-			dev_warn(device,
+			dev_err(device,
 				 "Direct firmware load failed with error %d\n",
 				 ret);
 			dev_warn(device, "Falling back to user helper\n");
@@ -1169,7 +1168,6 @@ request_firmware(const struct firmware **firmware_p, const char *name,
                  struct device *device)
 {
 	int ret;
-
 	/* Need to pin this module until return */
 	__module_get(THIS_MODULE);
 	ret = _request_firmware(firmware_p, name, device,
@@ -1273,8 +1271,8 @@ request_firmware_nowait(
 	const char *name, struct device *device, gfp_t gfp, void *context,
 	void (*cont)(const struct firmware *fw, void *context))
 {
-	struct firmware_work *fw_work;
 
+	struct firmware_work *fw_work;
 	fw_work = kzalloc(sizeof (struct firmware_work), gfp);
 	if (!fw_work)
 		return -ENOMEM;

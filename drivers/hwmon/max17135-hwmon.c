@@ -45,6 +45,8 @@
  */
 static int temp_from_reg(int val)
 {
+	int8_t temp = (val >> 8);
+	printk("%s: %d (0x%x) \n", __func__, (int8_t) temp,  val);
 	return val >> 8;
 }
 
@@ -55,7 +57,8 @@ static int max17135_sensor_probe(struct platform_device *pdev);
 static int max17135_sensor_remove(struct platform_device *pdev);
 
 static const struct platform_device_id max17135_sns_id[] = {
-	{ "max17135-sns", 0},
+	{ "max17135-sns-0", 0},
+	{ "max17135-sns-1", 0},
 	{ /* sentinel */ },
 };
 MODULE_DEVICE_TABLE(platform, max17135_sns_id);
@@ -119,17 +122,11 @@ static int max17135_sensor_probe(struct platform_device *pdev)
 	struct max17135 *max17135 = dev_get_drvdata(pdev->dev.parent);
 	struct max17135_data *data;
 	int err;
-	dev_err(&pdev->dev, "%s\n", __func__);
 	data = kzalloc(sizeof(struct max17135_data), GFP_KERNEL);
 	if (!data) {
 		err = -ENOMEM;
 		goto exit;
 	}
-	/*
-	char sns_name[128]; 
-	struct i2c_client *client = max17135->i2c_client;
-	snprintf(sns_name, 128, "max17135-sns-%i",client->adapter->nr);
-	//max17135_sns_id[0].
 	
 	/* Register sysfs hooks */
 	err = sysfs_create_group(&pdev->dev.kobj, &max17135_group);
