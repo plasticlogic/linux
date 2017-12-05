@@ -6202,7 +6202,14 @@ static void mxc_epdc_fb_fw_handler(const struct firmware *fw,
 
 	memcpy(fb_data->waveform_buffer_virt, (u8 *)(fw->data) + wv_data_offs,
 		fb_data->waveform_buffer_size);
-
+	/******************************************************************/
+	/**//* Read field to determine if 4-bit or 5-bit mode */		/**/
+	/**/if ((wv_file->wdh.luts & 0xC) == 0x4)						/**/
+	/**/	fb_data->buf_pix_fmt = EPDC_FORMAT_BUF_PIXEL_FORMAT_P5N;/**/
+	/**/else 														/**/
+	/**/	fb_data->buf_pix_fmt = EPDC_FORMAT_BUF_PIXEL_FORMAT_P4N;/**/
+	/******************************************************************/
+	
 	release_firmware(fw);
 
 	/* Enable clocks to access EPDC regs */
@@ -7677,6 +7684,117 @@ static int pxp_chan_init(struct mxc_epdc_fb_data *fb_data)
 	
 	return 0;
 }
+
+#define INVALID -1
+
+static int regal_process_update(struct mxc_epdc_fb_data *fb_data,
+			      u32 src_width, u32 src_height,
+			      void *src_buf_virt, void *dst_buf_virt,
+			      struct mxcfb_rect *src_update_region)
+{
+	uint16_t *src, *srcp;
+	uint16_t *dst_line_start, *dst;
+	int16_t *top_neighbor,*bot_neighbor,*left_neighbor,*right_neighbor;
+	int i,j;
+	uint8_t mask, regal_offset, do_regal;
+	int dst_line_step = 0, dst_step = 0, dst_stride = 0;
+#ifdef DEBUG
+	ktime_t t1, t2;
+#endif
+	
+#ifdef DEBUG
+	t1 = ktime_get();
+#endif
+
+	if(fb_data->buf_pix_fmt == EPDC_FORMAT_BUF_PIXEL_FORMAT_P5N){
+		mask = 0xF8;
+		regal_offset = 0x08;
+	}else{
+		mask = 0xF0;
+		regal_offset = 0x10;
+	}
+	
+	src = (uint16_t *)src_buf_virt + src_update_region->top * src_width + src_update_region->left;
+	dst_line_start = dst_buf_virt;
+
+	switch (fb_data->epdc_fb_var.rotate) {
+	case FB_ROTATE_UR:
+		dst_stride = src_update_region->width;
+		dst_line_start += 0;
+		dst_line_step = dst_stride;
+		dst_step = 1;
+		break;
+	case FB_ROTATE_CW:
+		dst_stride = src_update_region->height;
+		dst_line_start += src_update_region->height - 1;
+		dst_line_step = -1;
+		dst_step = dst_stride;
+		break;
+	case FB_ROTATE_UD:
+		dst_stride = src_update_region->width;
+		dst_line_start += (src_update_region->width - 1) + dst_stride * (src_update_region->height - 1);
+		dst_line_step = -dst_stride;
+		dst_step = -1;
+		break;
+	case FB_ROTATE_CCW:
+		dst_stride = src_update_region->height;
+		dst_line_start += (src_update_region->width - 1) * dst_stride;
+		dst_line_step = 1;
+		dst_step = -dst_stride;
+		break;
+	}
+	dev_dbg(fb_data->dev, "rotate: %d, dst_stride = %d, dst_line_start = 0x%p, dst_line_step = %d, dst_step = %d",
+			fb_data->epdc_fb_var.rotate, dst_stride, dst_line_start, dst_line_step, dst_step);
+
+	for (i = 0; i < src_update_region->height; i++) {
+		srcp = src;
+
+		dst = dst_line_start;
+		
+		for (j = 0; j < src_update_region->width; j++) {
+			uint16_t val = (*srcp) & mask;
+			
+			if(j > 0){
+				left_neigbor = srcp -1;
+				do_regal += (((*left_neigbor) & mask) == val);
+			}
+			
+			if(j < src_update_region->width){
+				right_neighbor = scrp + 1;
+				do_regal += (((*right_neigbor) & mask) == val);
+			}
+			
+			if(i>0){
+				top_neighbor = srcp - dst_stride;
+				do_regal +=  (((*top_neigbor) & mask) == val);
+			}
+			
+			if(i<src_update_region->height){
+				bot_neigbor = srcp + dst_stride;
+				do_regal +=  (((*bot_neigbor) & mask) == val);
+			}
+
+			if(do_regal){
+				val += regal_offset;
+			}
+			do_regal = 0;
+			srcp++;
+			dst += dst_step;
+
+		}
+		src += src_width;
+
+		dst_line_start += dst_line_step;
+	}
+
+#ifdef DEBUG
+	t2 = ktime_get();
+	dev_dbg(fb_data->dev, "CFA translation time = %lld us\n", ktime_to_us(ktime_sub(t2, t1)));
+#endif
+
+	return 0;
+}
+
 
 static int cfa_process_update(struct mxc_epdc_fb_data *fb_data,
 			      u32 src_width, u32 src_height,
