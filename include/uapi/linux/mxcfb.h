@@ -214,6 +214,8 @@ struct mxcfb_csc_matrix {
 #define MXCFB_GET_WORK_BUFFER		_IOWR('F', 0x38, unsigned long)
 #define MXCFB_DISABLE_EPDC_ACCESS	_IO('F', 0x39)
 #define MXCFB_ENABLE_EPDC_ACCESS	_IO('F', 0x36)
+#define MXCFB_POWERUP				_IO('F', 0x3A)
+#define MXCFB_POWERDOWN				_IO('F', 0x3B)
 #define MXCFB_CHECK_FOR_UPDATE_COMPLETE	_IOWR('F', 0x37, struct mxcfb_update_marker_data)
 #endif
 #endif

@@ -194,6 +194,7 @@ dtb-$(CONFIG_ARCH_MXC) += \
 	imx6sl-evk.dtb \
 	imx6sl-evk-pl.dtb \
 	imx6sl-evk-hummingbird-z33.dtb \
+	imx6sl-evk-hummingbird-z33-test.dtb \
 	imx6sl-evk-hummingbird-z33-minimal-i2c.dtb \
 	imx6sl-evk-btwifi.dtb \
 	imx6sl-evk-csi.dtb \
