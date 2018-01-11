@@ -1423,6 +1423,9 @@ void __iomem *epdc_base;
 struct mxc_epdc_fb_data *g_fb_data;
 
 /* forward declaration */
+
+static void v3p3_powerdown(struct mxc_epdc_fb_data *fb_data);
+static void v3p3_powerup(struct mxc_epdc_fb_data *fb_data);
 static int mxc_epdc_fb_get_temp_index(struct mxc_epdc_fb_data *fb_data,
 						int temp);
 static void mxc_epdc_fb_flush_updates(struct mxc_epdc_fb_data *fb_data);
@@ -1464,10 +1467,7 @@ static void do_ordered_dithering_processing(
 
 static void dump_fb_mode(struct mxc_epdc_fb_data *fb_data)
 {
-
-	
-	printk("***** DUMP FB MODE *****\n\n");
-	printk("");
+	printk("***** DUMP FB MODE *****\n");
 	printk("struct fb_videomode *vmode: %p\n",fb_data->cur_mode->vmode);
 	printk("struct fb_videomode *vmode.name: %s\n",fb_data->cur_mode->vmode->name);
 	printk("struct fb_videomode *vmode.refresh: %i\n",fb_data->cur_mode->vmode->refresh);
@@ -1799,7 +1799,7 @@ int check_mtd_flash(struct mxc_epdc_fb_data *fb_data){
 	int wflen = 0;
 	int partno_valid = 0, wf_name_valid = 0,vcom_valid = 0, wflen_valid = 0;
 	size_t len;
-
+	
     for(num = 0; num < 16; num++) {
         mtd_info = get_mtd_device(NULL, num);
         if(IS_ERR(mtd_info)) {
@@ -1817,8 +1817,8 @@ int check_mtd_flash(struct mxc_epdc_fb_data *fb_data){
 			!strncmp(mtd_info->name, "wave", 4)) {
             
             dev_dbg(fb_data->dev, "MTD name: %s\n", mtd_info->name);
-            dev_dbg(fb_data->dev, "MTD type: %u\n", mtd_info->type);
-			dev_dbg(fb_data->dev, "MTD total size : %u bytes\n", mtd_info->size);
+            dev_dbg(fb_data->dev, "MTD type: %i\n", mtd_info->type);
+			dev_dbg(fb_data->dev, "MTD total size : %lu bytes\n", mtd_info->size);
 			dev_dbg(fb_data->dev, "MTD erase size : %u bytes\n", mtd_info->erasesize);
 
 			if(mtd_info->size > 0 && mtd_info->erasesize > 0){
@@ -1884,10 +1884,12 @@ int check_mtd_flash(struct mxc_epdc_fb_data *fb_data){
 					if(vcom < 15000 && vcom > 3000){
 						if(!strncmp(mtd_info->name, "vcom0", 5)){
 							nvm->vcom[0] = vcom;
+							dev_info(fb_data->dev, "We read VCOM0: %i\n", vcom);
 						}else if(!strncmp(mtd_info->name, "vcom1", 5)){
 							nvm->vcom[1] = vcom;
+							dev_info(fb_data->dev, "We read VCOM1: %i\n", vcom);
 						}
-						dev_info(fb_data->dev, "We read VCOM: %i\n", vcom);
+						
 						vcom_valid = NVM_VCOM_VALID;
 					}
 				}
@@ -1900,8 +1902,10 @@ int check_mtd_flash(struct mxc_epdc_fb_data *fb_data){
 						int bytes_to_transfer = 0x3AFFF;
 						uint8_t *data;
 						int data_read = 0;
+						/*
 						struct file* waveform;
 						char* wf_path;
+						*/
 						while(bytes_to_transfer > 0){
 							// transfer chunkSize or bytes to transfer
 							size_t transferChunkSize = (bytes_to_transfer >= chunkSize) ? chunkSize : bytes_to_transfer;
@@ -1934,6 +1938,7 @@ int check_mtd_flash(struct mxc_epdc_fb_data *fb_data){
         //return 0;
     }
     mtd_info = NULL;
+    
     result = partno_valid + wf_name_valid  + vcom_valid + wf_read + wflen_valid;
     dev_dbg(fb_data->dev, "%s: Result: %x\n", __func__, result);
     return result;
@@ -2558,11 +2563,75 @@ static void epdc_init_settings(struct mxc_epdc_fb_data *fb_data)
 	clk_disable_unprepare(fb_data->epdc_clk_pix);
 }
 
+
+static void v3p3_powerdown(struct mxc_epdc_fb_data *fb_data){
+#if 1	
+	return;
+#else	
+	dev_dbg(fb_data->dev, "/* turn off the V3p3 */\n");
+	msleep(10);
+#if 1
+	int ret = regulator_enable(fb_data->v3p3_regulator[0]);
+	if (IS_ERR((void *)ret)) {
+		dev_err(fb_data->dev, "Unable to enable V3P3_1 regulator."
+			"err = 0x%x\n", ret);
+		//mutex_unlock(&fb_data->power_mutex);
+		return;
+	}
+
+	ret = regulator_enable(fb_data->v3p3_regulator[1]);
+	if (IS_ERR((void *)ret)) {
+		dev_err(fb_data->dev, "Unable to enable V3P3_2 regulator."
+			"err = 0x%x\n", ret);
+		//mutex_unlock(&fb_data->power_mutex);
+		return;
+	}
+
+#else
+	if (regulator_is_enabled(fb_data->v3p3_regulator[0]))
+		regulator_disable(fb_data->v3p3_regulator[0]);
+	if (regulator_is_enabled(fb_data->v3p3_regulator[1]))
+		regulator_disable(fb_data->v3p3_regulator[1]);
+#endif
+	msleep(10);	
+#endif
+}
+
+static void v3p3_powerup(struct mxc_epdc_fb_data *fb_data){
+	dev_dbg(fb_data->dev, "/* turn on the V3p3 */\n");
+#if 0
+	msleep(10);
+	int ret = regulator_enable(fb_data->v3p3_regulator[0]);
+	if (IS_ERR((void *)ret)) {
+		dev_err(fb_data->dev, "Unable to enable V3P3_1 regulator."
+			"err = 0x%x\n", ret);
+		mutex_unlock(&fb_data->power_mutex);
+		return;
+	}
+
+	ret = regulator_enable(fb_data->v3p3_regulator[1]);
+	if (IS_ERR((void *)ret)) {
+		dev_err(fb_data->dev, "Unable to enable V3P3_2 regulator."
+			"err = 0x%x\n", ret);
+		mutex_unlock(&fb_data->power_mutex);
+		return;
+	}
+#else
+	msleep(10);
+	if (regulator_is_enabled(fb_data->v3p3_regulator[0]))
+		regulator_disable(fb_data->v3p3_regulator[0]);
+	if (regulator_is_enabled(fb_data->v3p3_regulator[1]))
+		regulator_disable(fb_data->v3p3_regulator[1]);
+#endif
+	msleep(10);
+
+}
+
 static void epdc_powerup(struct mxc_epdc_fb_data *fb_data)
 {
-
 	int ret = 0;
 	mutex_lock(&fb_data->power_mutex);
+	
 	/*
 	 * If power down request is pending, clear
 	 * powering_down to cancel the request.
@@ -2579,35 +2648,8 @@ static void epdc_powerup(struct mxc_epdc_fb_data *fb_data)
 	dev_dbg(fb_data->dev, "EPDC Powerup\n");
 
 	fb_data->updates_active = true;
-#if 0
-	msleep(10);
-	ret = regulator_enable(fb_data->v3p3_regulator[0]);
-	if (IS_ERR((void *)ret)) {
-		dev_err(fb_data->dev, "Unable to enable V3P3_1 regulator."
-			"err = 0x%x\n", ret);
-		mutex_unlock(&fb_data->power_mutex);
-		return;
-	}
-	if(fb_data->cur_mode->dual_scan){
-		ret = regulator_enable(fb_data->v3p3_regulator[1]);
-		if (IS_ERR((void *)ret)) {
-			dev_err(fb_data->dev, "Unable to enable V3P3_2 regulator."
-				"err = 0x%x\n", ret);
-			mutex_unlock(&fb_data->power_mutex);
-			return;
-		}
-	}
-	#else
-	msleep(10);
-	if (regulator_is_enabled(fb_data->v3p3_regulator[0]))
-		regulator_disable(fb_data->v3p3_regulator[0]);
-	if(fb_data->cur_mode->dual_scan){
-		if (regulator_is_enabled(fb_data->v3p3_regulator[1]))
-			regulator_disable(fb_data->v3p3_regulator[1]);
-	}
-	#endif
-	msleep(10);
-//#endif
+	
+	v3p3_powerup(fb_data);
 
 	pm_runtime_get_sync(fb_data->dev);
 
@@ -2632,12 +2674,10 @@ static void epdc_powerup(struct mxc_epdc_fb_data *fb_data)
 		goto err_exit;
 	}
 	
-	//*
 	if(mxc_epdc_fb_set_vcom_voltage(fb_data->vcom_regulator[0], fb_data->vcom[0])){
 		dev_err(fb_data->dev, "Unable to set VCOM1 Voltage to %i mV\n", fb_data->vcom[0]);
 		goto err_exit;
 	}		
-	//*/	
 	
 	if(fb_data->cur_mode->dual_scan){
 		ret = regulator_enable(fb_data->display_regulator[1]);
@@ -2658,7 +2698,6 @@ static void epdc_powerup(struct mxc_epdc_fb_data *fb_data)
 			goto err_exit;
 		}
 	}
-//#endif
 
 	fb_data->power_state = POWER_STATE_ON;
 
@@ -2671,7 +2710,6 @@ static void epdc_powerdown(struct mxc_epdc_fb_data *fb_data)
 
 	int ret;
 	mutex_lock(&fb_data->power_mutex);
-
 	/* If powering_down has been cleared, a powerup
 	 * request is pre-empting this powerdown request.
 	 */
@@ -2681,8 +2719,6 @@ static void epdc_powerdown(struct mxc_epdc_fb_data *fb_data)
 		dev_dbg(fb_data->dev, "epdc_powerdown:return: power not on - nothing to do");
 		return;
 	}
-
-	
 
 	/* Disable power to the EPD panel */
 	ret = regulator_disable(fb_data->vcom_regulator[0]);
@@ -2701,34 +2737,8 @@ static void epdc_powerdown(struct mxc_epdc_fb_data *fb_data)
 
 	pm_runtime_put_sync_suspend(fb_data->dev);
 
-	/* turn off the V3p3 */
-	msleep(10);
-#if 1
-	ret = regulator_enable(fb_data->v3p3_regulator[0]);
-	if (IS_ERR((void *)ret)) {
-		dev_err(fb_data->dev, "Unable to enable V3P3_1 regulator."
-			"err = 0x%x\n", ret);
-		mutex_unlock(&fb_data->power_mutex);
-		return;
-	}
-	if(fb_data->cur_mode->dual_scan){
-		ret = regulator_enable(fb_data->v3p3_regulator[1]);
-		if (IS_ERR((void *)ret)) {
-			dev_err(fb_data->dev, "Unable to enable V3P3_2 regulator."
-				"err = 0x%x\n", ret);
-			mutex_unlock(&fb_data->power_mutex);
-			return;
-		}
-	}
-#else
-	if (regulator_is_enabled(fb_data->v3p3_regulator[0]))
-		regulator_disable(fb_data->v3p3_regulator[0]);
-	if(fb_data->cur_mode->dual_scan){
-		if (regulator_is_enabled(fb_data->v3p3_regulator[1]))
-			regulator_disable(fb_data->v3p3_regulator[1]);
-	}
-#endif
-	msleep(10);
+	v3p3_powerdown(fb_data);
+
 	fb_data->power_state = POWER_STATE_OFF;
 	fb_data->powering_down = false;
 
@@ -6236,9 +6246,11 @@ static void mxc_epdc_fb_fw_handler(const struct firmware *fw,
 	int ret;
 	struct mxcfb_waveform_data_file *wv_file;
 	int wv_data_offs;
-	int i, x = 0;
+	int i;
+	/*
 	struct mxcfb_update_data update;
 	struct mxcfb_update_marker_data upd_marker_data;
+	* */
 	struct fb_var_screeninfo *screeninfo = &fb_data->epdc_fb_var;
 	u32 xres, yres;
 	struct clk *epdc_parent;
@@ -6300,10 +6312,10 @@ static void mxc_epdc_fb_fw_handler(const struct firmware *fw,
 	/******************************************************************/
 	/**//* Read field to determine if 4-bit or 5-bit mode */		/**/
 	/**/if ((wv_file->wdh.luts & 0xC) == 0x4){						/**/
-	/**/	dev_err(fb_data->dev,"%s %iBit", __func__, EPDC_FORMAT_BUF_PIXEL_FORMAT_P5N);			/**/
+	/**/	dev_dbg(fb_data->dev,"%s %iBit", __func__, EPDC_FORMAT_BUF_PIXEL_FORMAT_P5N);			/**/
 	/**/	fb_data->buf_pix_fmt = EPDC_FORMAT_BUF_PIXEL_FORMAT_P5N;/**/
 	/**/}else {														/**/
-	/**/	dev_err(fb_data->dev,"%s %iBIT", __func__, EPDC_FORMAT_BUF_PIXEL_FORMAT_P4N);			/**/
+	/**/	dev_dbg(fb_data->dev,"%s %iBIT", __func__, EPDC_FORMAT_BUF_PIXEL_FORMAT_P4N);			/**/
 	/**/	fb_data->buf_pix_fmt = EPDC_FORMAT_BUF_PIXEL_FORMAT_P4N;/**/
 	/**/} 															/**/
 	/******************************************************************/
@@ -6503,7 +6515,6 @@ MODULE_DEVICE_TABLE(of, imx_epdc_dt_ids);
 
 int mxc_epdc_fb_probe(struct platform_device *pdev)
 {
-
 	int ret = 0;
 	struct pinctrl *pinctrl;
 	struct mxc_epdc_fb_data *fb_data;
@@ -6725,7 +6736,6 @@ int mxc_epdc_fb_probe(struct platform_device *pdev)
 			dev_info(fb_data->dev,"Read WF name: %s\n", wf_path);
 
 			if((nvm_result & NVM_WFLEN_VALID) && (nvm_result & NVM_WAVEFORM_VALID)){
-				dev_dbg(fb_data->dev,"Read WF successfully: %s\n", wf_path);
 #ifdef CONFIG_LZSS				
 				char* decompressed_waveform = kzalloc(0x500000, GFP_KERNEL);
 
@@ -6757,6 +6767,7 @@ int mxc_epdc_fb_probe(struct platform_device *pdev)
 				dev_err(fb_data->dev, "No LZSS Algo found! Cannot decompress the NVM waveform!\n");
 				dev_err(fb_data->dev, "Hope we find the Waveform on the FS!\n");
 #endif
+				dev_dbg(fb_data->dev,"Read WF successfully: %s\n", wf_path);
 			}
 			//*/
 			strcpy(wf_path, fb_data->nvm.wf_name);
@@ -7683,10 +7694,7 @@ static const struct dev_pm_ops mxc_epdc_fb_pm_ops = {
 
 static void mxc_epdc_fb_shutdown(struct platform_device *pdev)
 {
-
-	int ret;
 	struct mxc_epdc_fb_data *fb_data = platform_get_drvdata(pdev);
-	
 
 	/* Disable power to the EPD panel */
 	if (regulator_is_enabled(fb_data->vcom_regulator[0]))
@@ -7708,8 +7716,8 @@ static void mxc_epdc_fb_shutdown(struct platform_device *pdev)
 	clk_disable_unprepare(fb_data->epdc_clk_axi);
 
 	/* turn off the V3p3 */
-#if 1
-	ret = regulator_enable(fb_data->v3p3_regulator[0]);
+#if 0
+	int ret = regulator_enable(fb_data->v3p3_regulator[0]);
 	if (IS_ERR((void *)ret)) {
 		dev_err(fb_data->dev, "Unable to enable V3P3_1 regulator."
 			"err = 0x%x\n", ret);
@@ -7725,15 +7733,12 @@ static void mxc_epdc_fb_shutdown(struct platform_device *pdev)
 			return;
 		}
 	}
-	#else
+#else
 	if (regulator_is_enabled(fb_data->v3p3_regulator[0]))
 		regulator_disable(fb_data->v3p3_regulator[0]);
-	if(fb_data->cur_mode->dual_scan){
-		if (regulator_is_enabled(fb_data->v3p3_regulator[1]))
-			regulator_disable(fb_data->v3p3_regulator[1]);
-	}
-	#endif
-//#endif
+	if (regulator_is_enabled(fb_data->v3p3_regulator[1]))
+		regulator_disable(fb_data->v3p3_regulator[1]);
+#endif
 }
 
 static struct platform_driver mxc_epdc_fb_driver = {
@@ -7814,7 +7819,7 @@ static int regal_process_update(struct mxc_epdc_fb_data *fb_data,
 	int16_t *top_neighbor,*bot_neighbor,*left_neighbor,*right_neighbor;
 	int i,j;
 	uint16_t mask, regal_offset, do_regal;
-	int dst_line_step = 0, dst_step = 0, dst_stride = 0;
+	int dst_stride = 0;
 #ifdef DEBUG
 	ktime_t t1, t2;
 #endif
@@ -7834,7 +7839,7 @@ static int regal_process_update(struct mxc_epdc_fb_data *fb_data,
 	}
 	
 	src = (uint16_t *)src_buf_virt + src_update_region->top * src_update_region->width + src_update_region->left;
-	prev = fb_data->prev_image + src_update_region->top * src_update_region->width + src_update_region->left;
+	prev = (uint16_t *)fb_data->prev_image + src_update_region->top * src_update_region->width + src_update_region->left;
 
 	for (i = 0; i < src_update_region->height; i++) {
 		srcp = src;
