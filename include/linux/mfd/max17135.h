@@ -166,6 +166,9 @@ struct max17135 {
 
 	/* powerup/powerdown wait time */
 	int max_wait;
+	
+	/* workaround for imx6sl gpio bug */
+	int v3p3_enabled;
 };
 
 enum {

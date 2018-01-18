@@ -1788,6 +1788,26 @@ int file_sync(struct file *file)
 /********************************************************
  * Start Low-Level EPDC Functions
  ********************************************************/
+int get_mtd_channel(const char name[64]){
+	int i = 0, channel = -1;
+
+	while(name[i]){
+		if(name[i] <= '2' && name[i] >= '0'){
+			channel = name[i] - '0';
+		}
+		i++;
+	}
+	//printk("MTD %s has channel %i\n" ,name, channel);
+	return channel;
+ }
+
+int check_vcom_valid(int vcom_mv){
+	if(vcom_mv > -2000 && vcom_mv < 15000)
+		return 1;
+	return 0;	
+}
+
+ 
 int check_mtd_flash(struct mxc_epdc_fb_data *fb_data){
 	struct nvm_content* nvm = &fb_data->nvm;
 	int result = 0;
@@ -1801,7 +1821,11 @@ int check_mtd_flash(struct mxc_epdc_fb_data *fb_data){
 	size_t len;
 	
     for(num = 0; num < 16; num++) {
+		int channel, ret;
         mtd_info = get_mtd_device(NULL, num);
+        
+        
+        
         if(IS_ERR(mtd_info)) {
             //printk("No device for num %d\n", num);
             continue;
@@ -1810,6 +1834,17 @@ int check_mtd_flash(struct mxc_epdc_fb_data *fb_data){
             put_mtd_device(mtd_info);
             continue;
         }
+        
+        v3p3_powerdown(fb_data);
+		channel = get_mtd_channel(mtd_info->name);
+        
+		ret = regulator_enable(fb_data->v3p3_regulator[channel]);
+		if (IS_ERR((void *)ret)) {
+			dev_err(fb_data->dev, "Unable to enable V3P3_1 regulator."
+				"err = 0x%x\n", ret);
+			return;
+		}
+
         if( !strncmp(mtd_info->name, "part", 4) || 
 			!strncmp(mtd_info->name, "vcom", 4) || 
 			!strncmp(mtd_info->name, "wfle", 4) || 
@@ -1858,7 +1893,7 @@ int check_mtd_flash(struct mxc_epdc_fb_data *fb_data){
 
 				}
 				if(!strncmp(mtd_info->name, "part", 4)){
-					if(!partno_valid){
+					//if(!partno_valid){
 						mtd_read(mtd_info, 0x0, sizeof(nvm->paneltype), &len, nvm->paneltype);
 						partno_valid = sizeof(nvm->paneltype);
 						
@@ -1874,7 +1909,7 @@ int check_mtd_flash(struct mxc_epdc_fb_data *fb_data){
 							partno_valid = NVM_PANELTYPE_VALID;
 							dev_info(fb_data->dev, "We read Panel: %s\n", nvm->paneltype);
 						}
-					}
+					//}
 				}
 				if(!strncmp(mtd_info->name, "vcom", 4)){
 					
@@ -1949,7 +1984,7 @@ int mxc_epdc_fb_set_vcom_voltage(struct regulator* reg, int millivolts){
 	int microvolts = 0,reg_voltage = -1;
 	int timeout = 5;
 	if(millivolts < -10000 || millivolts > 15000){
-		printk( "Recalculate VCOM voltage: Unsupported VCOM Value\n");
+		printk( "Recalculate VCOM voltage: Unsupported VCOM Value %i\n", millivolts);
 		millivolts = 5000;
 	}
 	if(millivolts < 0)
@@ -1969,7 +2004,7 @@ int mxc_epdc_fb_set_vcom_voltage(struct regulator* reg, int millivolts){
 		//printk("Set VCOM to: %i uV\n", microvolts);
 		if(timeout > 0) timeout--;
 	};
-	
+
 	return 0;
 }
 
@@ -2388,7 +2423,7 @@ static void epdc_init_settings(struct mxc_epdc_fb_data *fb_data)
 	__raw_writel(reg_val, EPDC_CTRL_SET);
 	dev_dbg(fb_data->dev, "EPDC_FORMAT - 4bit Buf pixel format\n");
 	/* EPDC_FORMAT - 4bit Buf pixel format */
-	dev_err(fb_data->dev, "%s %i\n",__func__, fb_data->buf_pix_fmt); 
+	dev_dbg(fb_data->dev, "%s %i\n",__func__, fb_data->buf_pix_fmt); 
 	reg_val = fb_data->buf_pix_fmt
 	    | ((0x0 << EPDC_FORMAT_DEFAULT_TFT_PIXEL_OFFSET) &
 	       EPDC_FORMAT_DEFAULT_TFT_PIXEL_MASK);
@@ -2565,12 +2600,12 @@ static void epdc_init_settings(struct mxc_epdc_fb_data *fb_data)
 
 
 static void v3p3_powerdown(struct mxc_epdc_fb_data *fb_data){
-#if 1	
+#if 0	
 	return;
 #else	
-	dev_dbg(fb_data->dev, "/* turn off the V3p3 */\n");
+	//dev_info(fb_data->dev, "/* turn off the V3p3 */\n");
 	msleep(10);
-#if 1
+#if 0
 	int ret = regulator_enable(fb_data->v3p3_regulator[0]);
 	if (IS_ERR((void *)ret)) {
 		dev_err(fb_data->dev, "Unable to enable V3P3_1 regulator."
@@ -2598,8 +2633,8 @@ static void v3p3_powerdown(struct mxc_epdc_fb_data *fb_data){
 }
 
 static void v3p3_powerup(struct mxc_epdc_fb_data *fb_data){
-	dev_dbg(fb_data->dev, "/* turn on the V3p3 */\n");
-#if 0
+	//dev_info(fb_data->dev, "/* turn on the V3p3 */\n");
+#if 1
 	msleep(10);
 	int ret = regulator_enable(fb_data->v3p3_regulator[0]);
 	if (IS_ERR((void *)ret)) {
@@ -6607,13 +6642,13 @@ int mxc_epdc_fb_probe(struct platform_device *pdev)
 		ret = -ENODEV;
 		//goto out_dma_work_buf;
 	}
-
+/*
 	if (regulator_is_enabled(fb_data->v3p3_regulator[0]))
 		regulator_disable(fb_data->v3p3_regulator[0]);
 
 	if (regulator_is_enabled(fb_data->v3p3_regulator[1]))
 		regulator_disable(fb_data->v3p3_regulator[1]);
-	
+*/	
 
 	/* Set default (first defined mode) before searching for a match */
 	fb_data->cur_mode = &fb_data->pdata->epdc_mode[0];
@@ -6685,6 +6720,7 @@ int mxc_epdc_fb_probe(struct platform_device *pdev)
 		}
 	}else{
 		dev_info(fb_data->dev,"Read Panel data from NVM\n");
+			
 		if(nvm_result & NVM_PANELTYPE_VALID && !strcmp(mxc_epdc_fb_panel_type_modparam, "")){
 			// partno read
 			if(!strcmp(fb_data->nvm.paneltype, "70022x_MG036")){
@@ -6699,7 +6735,7 @@ int mxc_epdc_fb_probe(struct platform_device *pdev)
 			if(fb_data->nvm.vcom[1] < 15000 && fb_data->nvm.vcom[1] > 2000){
 				//Seems we have two displays attached
 				if(!strcmp(fb_data->nvm.paneltype, "D107C_T3.1"))
-					strcpy(fb_data->nvm.paneltype, "Q154_T3.1");
+					strcpy(fb_data->nvm.paneltype, "T154_T3.1");
 				if(!strcmp(fb_data->nvm.paneltype, "D107_T3.1"))
 					strcpy(fb_data->nvm.paneltype, "Q154_T3.1");
 				if(!strcmp(fb_data->nvm.paneltype, "S115_T1.1"))
@@ -6713,8 +6749,8 @@ int mxc_epdc_fb_probe(struct platform_device *pdev)
 			found_mode = mxc_epdc_find_mode(fb_data, 
 						mxc_epdc_fb_panel_type_modparam, NULL);
 		}
-		
-		if(nvm_result & NVM_VCOM_VALID && mxc_epdc_fb_vcom_modparam[0] == 0){
+		//dev_err(fb_data->dev,"%i, %i, i\n",nvm_result & NVM_VCOM_VALID, mxc_epdc_fb_vcom_modparam[0], mxc_epdc_fb_vcom_modparam[1]);
+		if(nvm_result & NVM_VCOM_VALID && !check_vcom_valid(mxc_epdc_fb_vcom_modparam[0])){
 			fb_data->vcom[0] = fb_data->nvm.vcom[0];
 			dev_info(fb_data->dev,"VCOM[0] = %i\n", fb_data->vcom[0]);
 			if(fb_data->nvm.vcom[1] < 15000 && fb_data->nvm.vcom[1] > 2000){
@@ -6722,9 +6758,19 @@ int mxc_epdc_fb_probe(struct platform_device *pdev)
 				dev_info(fb_data->dev,"VCOM[1] = %i\n", fb_data->vcom[1]);
 			}
 		}else{
-			fb_data->vcom[0] = mxc_epdc_fb_vcom_modparam[0];
+			if(check_vcom_valid(mxc_epdc_fb_vcom_modparam[0])){
+				fb_data->vcom[0] = mxc_epdc_fb_vcom_modparam[0];
+			}else{
+				fb_data->vcom[0] = 5000;
+				dev_err(fb_data->dev,"VCOM0 (%imV) invalid. Setting to 5000mV!\n", mxc_epdc_fb_vcom_modparam[0]);
+			}
 			if(mxc_epdc_fb_vcom_n_modparam == 2){
-				fb_data->vcom[1] = mxc_epdc_fb_vcom_modparam[1];
+				if(check_vcom_valid(mxc_epdc_fb_vcom_modparam[1])){
+					fb_data->vcom[1] = mxc_epdc_fb_vcom_modparam[1];
+				}else{
+					fb_data->vcom[1] = 5000;
+					dev_err(fb_data->dev,"VCOM1 (%imV) invalid. Setting to 5000mV!\n", mxc_epdc_fb_vcom_modparam[0]);
+				}
 			}
 		}
 		if(nvm_result & NVM_WF_NAME_VALID && !strcmp(mxc_epdc_fb_waveform_modparam, "")){

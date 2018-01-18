@@ -1206,7 +1206,13 @@ static int spi_imx_probe(struct platform_device *pdev)
 			dev_err(&pdev->dev, "can't get cs gpios\n");
 			goto out_master_put;
 		}
+		#if 1
+		gpio_direction_output(spi_imx->chipselect[i], 1);
+		gpio_set_value(spi_imx->chipselect[i], 1);
+		#endif
 	}
+	
+	
 
 	spi_imx->bitbang.chipselect = spi_imx_chipselect;
 	spi_imx->bitbang.setup_transfer = spi_imx_setupxfer;

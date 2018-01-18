@@ -232,22 +232,30 @@
 */
 
 &ecspi1 {
-	fsl,spi-num-chipselects = <2>;
-	/* lcd_dat4 lcd_dat5 */
-	cs-gpios =  <&gpio2 24 0>, 
+	fsl,spi-num-chipselects = <3>;
+	/* lcd_dat2 lcd_dat4 lcd_dat5 */
+	cs-gpios =  <&gpio2 22 0>,
+				<&gpio2 24 0>, 
 				<&gpio2 25 0>;
+	/* lcd_dat2 lcd_dat4 lcd_dat5 */
 	pinctrl-names = "default";
 	pinctrl-0 = <&pinctrl_ecspi1>;
 	status = "okay";
+	spidev@0x00 {
+		compatible = "spidev";
+		spi-max-frequency = <20000000>;
+		reg = <0>;
+	};
 	/* NVM Flash on Plasticlogic Display */
-	nvm1@0 {
+	nvm1@1 {
 		#address-cells = <1>;
 		#size-cells = <1>;
 		/*compatible = "st,m25p32";*/
 		compatible = "mx25l4005a";
-		reg = <0>;
-		spi-max-frequency = <2000000>;
+		reg = <1>;
+		spi-max-frequency = <1000000>;
 		mode = <0>;
+		V3P3-supply = <&V3P31_reg>;
 		waveform@35000 {
 			reg = <0x00035000 0x0003AFFF>;
 			label = "waveform0";
@@ -274,14 +282,15 @@
 			read-only;
 		};
 	};
-	nvm1@1 {
+	nvm1@2 {
 		#address-cells = <1>;
 		#size-cells = <1>;
 		/*compatible = "st,m25p32";*/
 		compatible = "mx25l4005a";
-		reg = <1>;
-		spi-max-frequency = <2000000>;
+		reg = <2>;
+		spi-max-frequency = <1000000>;
 		mode = <0>;
+		V3P3-supply = <&V3P32_reg>;
 		waveform@35000 {
 			reg = <0x00035000 0x0003AFFF>;
 			label = "waveform1";
@@ -766,8 +775,8 @@
 				/*MX6SL_PAD_EPDC_PWRCOM__GPIO2_IO11 0x80000000*/
 				/*MX6SL_PAD_EPDC_VCOM0__GPIO2_IO03 0x80000000*/
 				/*MX6SL_PAD_EPDC_VCOM1__GPIO2_IO04 0x80000000*/
-				MX6SL_PAD_EPDC_PWRCTRL0__GPIO2_IO07 0x1b0b0
-				MX6SL_PAD_EPDC_PWRCTRL1__GPIO2_IO08 0x1b0b0
+				/*MX6SL_PAD_EPDC_PWRCTRL0__GPIO2_IO07 0x80000000*/
+				/*MX6SL_PAD_EPDC_PWRCTRL1__GPIO2_IO08 0x80000000*/
 				/*MX6SL_PAD_EPDC_PWRSTAT__GPIO2_IO13 0x80000000*/
 				/*MX6SL_PAD_EPDC_PWRWAKEUP__GPIO2_IO14 0x80000000*/
 				MX6SL_PAD_ECSPI1_MISO__GPIO4_IO10	0x100b1

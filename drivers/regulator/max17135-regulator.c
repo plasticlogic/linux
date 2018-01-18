@@ -149,8 +149,7 @@ static int max17135_hvinp_get_voltage(struct regulator_dev *reg)
 		volt = (fld_val * MAX17135_HVINP_STEP_uV) +
 			MAX17135_HVINP_MIN_uV;
 	} else {
-		dev_err(&reg->dev, "MAX17135: HVINP voltage is out of range\n");
-		//printk(KERN_ERR "MAX17135: HVINP voltage is out of range\n");
+		dev_err(&reg->dev, "HVINP voltage is out of range\n");
 		volt = 0;
 	}
 	return volt;
@@ -374,28 +373,44 @@ static int max17135_display_is_enabled(struct regulator_dev *reg)
 static int max17135_v3p3_enable(struct regulator_dev *reg)
 {
 	struct max17135 *max17135 = rdev_get_drvdata(reg);
-
+#if 0
 	gpio_set_value(max17135->gpio_pmic_v3p3, 1);
+#else /* workaround for imx6sl gpio bug */
+	gpio_set_value(max17135->gpio_pmic_v3p3, 1);
+	msleep(1);
+	gpio_set_value(max17135->gpio_pmic_v3p3, 0);
+	max17135->v3p3_enabled = 1;
+#endif
 	return 0;
 }
 
 static int max17135_v3p3_disable(struct regulator_dev *reg)
 {
 	struct max17135 *max17135 = rdev_get_drvdata(reg);
-
 	gpio_set_value(max17135->gpio_pmic_v3p3, 0);
+	msleep(1);
+	gpio_set_value(max17135->gpio_pmic_v3p3, 1);
+	#if 1 /* workaround for imx6sl gpio bug */
+	max17135->v3p3_enabled = 0;
+	#endif
 	return 0;
 }
 
 static int max17135_v3p3_is_enabled(struct regulator_dev *reg)
 {
 	struct max17135 *max17135 = rdev_get_drvdata(reg);
+#if 0	
 	int gpio = gpio_get_value(max17135->gpio_pmic_v3p3);
-
 	if (gpio == 0)
 		return 0;
 	else
 		return 1;
+#else /* workaround for imx6sl gpio bug */
+	if(max17135->v3p3_enabled)
+		return 1;
+	else
+		return 0;
+#endif	
 }
 
 /*
@@ -662,9 +677,10 @@ static int max17135_pmic_dt_parse_pdata(struct platform_device *pdev,
 		goto err;
 	}
 	ret = devm_gpio_request_one(&pdev->dev, max17135->gpio_pmic_v3p3,
-				GPIOF_OUT_INIT_LOW, "epdc-v3p3");
+				GPIOF_OUT_INIT_HIGH, "epdc-v3p3");
 	if (ret < 0)
 		goto err;
+	max17135->v3p3_enabled = 0;
 
 	max17135->gpio_pmic_intr = of_get_named_gpio(pmic_np,
 					"gpio_pmic_intr", 0);
@@ -711,7 +727,6 @@ static int max17135_regulator_probe(struct platform_device *pdev)
 	struct regulator_dev **rdev;
 	struct regulator_config config = { };
 	int size, i, ret = 0;
-	//dev_err(&pdev->dev, "%s\n", __func__);
 	if (max17135->dev->of_node) {
 		ret = max17135_pmic_dt_parse_pdata(pdev, pdata);
 		if (ret)

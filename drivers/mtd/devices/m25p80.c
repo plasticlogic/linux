@@ -27,24 +27,64 @@
 #include <linux/spi/flash.h>
 #include <linux/mtd/spi-nor.h>
 
+#include <linux/regulator/driver.h>
+
 #define	MAX_CMD_SIZE		6
 struct m25p {
 	struct spi_device	*spi;
 	struct spi_nor		spi_nor;
 	struct mtd_info		mtd;
 	u8			command[MAX_CMD_SIZE];
+	struct regulator* power_regulator;
 };
+
+static int m25p80_enable(struct spi_nor *nor, const char* caller){
+	struct m25p *flash = nor->priv;
+	dev_dbg(nor->dev, "%s: enable v3p3\n",caller);
+	if(flash->power_regulator){
+#if 1
+		int ret = regulator_enable(flash->power_regulator);
+		if (IS_ERR((void *)ret)) {
+			dev_err(nor->dev, "Unable to enable V3P3_1 regulator."
+				"err = 0x%x\n", ret);
+			return -1;
+		}
+#else
+		if (regulator_is_enabled(flash->power_regulator))
+			regulator_disable(flash->power_regulator);
+#endif
+	}
+	return 0;
+}
+
+static int m25p80_disable(struct spi_nor *nor, const char* caller){
+	//return 0;
+	struct m25p *flash = nor->priv;
+	dev_dbg(nor->dev, "%s: disable v3p3\n",caller);
+	if(flash->power_regulator){
+#if 0
+		int ret = regulator_enable(flash->power_regulator);
+		if (IS_ERR((void *)ret)) {
+			dev_err(nor->dev, "Unable to enable V3P3_1 regulator."
+				"err = 0x%x\n", ret);
+			return -1;
+		}
+#else
+		if (regulator_is_enabled(flash->power_regulator))
+			regulator_disable(flash->power_regulator);
+#endif
+	}
+	return 0;
+}
 
 static int m25p80_read_reg(struct spi_nor *nor, u8 code, u8 *val, int len)
 {
 	struct m25p *flash = nor->priv;
 	struct spi_device *spi = flash->spi;
 	int ret;
-
 	ret = spi_write_then_read(spi, &code, 1, val, len);
 	if (ret < 0)
 		dev_err(&spi->dev, "error %d reading %x\n", ret, code);
-
 	return ret;
 }
 
@@ -65,14 +105,14 @@ static int m25p_cmdsz(struct spi_nor *nor)
 static int m25p80_write_reg(struct spi_nor *nor, u8 opcode, u8 *buf, int len,
 			int wr_en)
 {
+	int ret;
 	struct m25p *flash = nor->priv;
 	struct spi_device *spi = flash->spi;
-
 	flash->command[0] = opcode;
 	if (buf)
 		memcpy(&flash->command[1], buf, len);
-
-	return spi_write(spi, flash->command, len + 1);
+	ret = spi_write(spi, flash->command, len + 1);
+	return ret;
 }
 
 static void m25p80_write(struct spi_nor *nor, loff_t to, size_t len,
@@ -83,7 +123,6 @@ static void m25p80_write(struct spi_nor *nor, loff_t to, size_t len,
 	struct spi_transfer t[2] = {};
 	struct spi_message m;
 	int cmd_sz = m25p_cmdsz(nor);
-
 	spi_message_init(&m);
 
 	if (nor->program_opcode == SPINOR_OP_AAI_WP && nor->sst_write_second)
@@ -130,7 +169,6 @@ static int m25p80_read(struct spi_nor *nor, loff_t from, size_t len,
 	struct spi_message m;
 	unsigned int dummy = nor->read_dummy;
 	int ret;
-
 	/* convert the dummy cycles to the number of bytes */
 	dummy /= 8;
 
@@ -164,7 +202,6 @@ static int m25p80_erase(struct spi_nor *nor, loff_t offset)
 {
 	struct m25p *flash = nor->priv;
 	int ret;
-
 	dev_dbg(nor->dev, "%dKiB at 0x%08x\n",
 		flash->mtd.erasesize / 1024, (u32)offset);
 
@@ -183,7 +220,6 @@ static int m25p80_erase(struct spi_nor *nor, loff_t offset)
 	m25p_addr2cmd(nor, offset, flash->command);
 
 	spi_write(flash->spi, flash->command, m25p_cmdsz(nor));
-
 	return 0;
 }
 
@@ -200,7 +236,7 @@ static int m25p_probe(struct spi_device *spi)
 	struct spi_nor *nor;
 	enum read_mode mode = SPI_NOR_NORMAL;
 	int ret;
-
+	dev_dbg(&spi->dev, "%s: probing %i", __func__, spi->chip_select);
 	flash = devm_kzalloc(&spi->dev, sizeof(*flash), GFP_KERNEL);
 	if (!flash)
 		return -ENOMEM;
@@ -223,6 +259,15 @@ static int m25p_probe(struct spi_device *spi)
 	flash->mtd.priv = nor;
 	flash->spi = spi;
 
+	flash->power_regulator = devm_regulator_get(&spi->dev, "V3P3");
+	if (IS_ERR(flash->power_regulator)) {
+		dev_err(&spi->dev, "Unable to get V3P3_1 regulator."
+			"err = 0x%x\n", (int)flash->power_regulator);
+		flash->power_regulator = 0;
+	}
+	dev_dbg(&spi->dev, "enabling V3P3\n");
+	m25p80_enable(nor, __func__);
+	
 	if (spi->mode & SPI_RX_QUAD)
 		mode = SPI_NOR_QUAD;
 	else if (spi->mode & SPI_RX_DUAL)
@@ -234,16 +279,18 @@ static int m25p_probe(struct spi_device *spi)
 	data = dev_get_platdata(&spi->dev);
 	ppdata.of_node = spi->dev.of_node;
 
-	return mtd_device_parse_register(&flash->mtd, NULL, &ppdata,
+	ret = mtd_device_parse_register(&flash->mtd, NULL, &ppdata,
 			data ? data->parts : NULL,
 			data ? data->nr_parts : 0);
+			
+	m25p80_disable(nor, __func__);		
+	return ret;
 }
 
 
 static int m25p_remove(struct spi_device *spi)
 {
 	struct m25p	*flash = spi_get_drvdata(spi);
-
 	/* Clean up MTD stuff. */
 	return mtd_device_unregister(&flash->mtd);
 }
