@@ -376,22 +376,20 @@ static int max17135_v3p3_enable(struct regulator_dev *reg)
 #if 0
 	gpio_set_value(max17135->gpio_pmic_v3p3, 1);
 #else /* workaround for imx6sl gpio bug */
-	gpio_set_value(max17135->gpio_pmic_v3p3, 1);
-	msleep(1);
 	gpio_set_value(max17135->gpio_pmic_v3p3, 0);
 	max17135->v3p3_enabled = 1;
 #endif
+	dev_dbg(&reg->dev, "%s: ON\n", __func__);
 	return 0;
 }
 
 static int max17135_v3p3_disable(struct regulator_dev *reg)
 {
 	struct max17135 *max17135 = rdev_get_drvdata(reg);
-	gpio_set_value(max17135->gpio_pmic_v3p3, 0);
-	msleep(1);
 	gpio_set_value(max17135->gpio_pmic_v3p3, 1);
 	#if 1 /* workaround for imx6sl gpio bug */
 	max17135->v3p3_enabled = 0;
+	dev_dbg(&reg->dev, "%s: OFF\n", __func__);
 	#endif
 	return 0;
 }
@@ -402,10 +400,11 @@ static int max17135_v3p3_is_enabled(struct regulator_dev *reg)
 #if 0	
 	int gpio = gpio_get_value(max17135->gpio_pmic_v3p3);
 	if (gpio == 0)
-		return 0;
-	else
 		return 1;
+	else
+		return 0;
 #else /* workaround for imx6sl gpio bug */
+	dev_dbg(&reg->dev, "%s: %s\n", __func__, max17135->v3p3_enabled==0?"OFF":"ON");
 	if(max17135->v3p3_enabled)
 		return 1;
 	else

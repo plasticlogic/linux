@@ -217,5 +217,7 @@ struct mxcfb_csc_matrix {
 #define MXCFB_POWERUP				_IO('F', 0x3A)
 #define MXCFB_POWERDOWN				_IO('F', 0x3B)
 #define MXCFB_CHECK_FOR_UPDATE_COMPLETE	_IOWR('F', 0x37, struct mxcfb_update_marker_data)
+#define MXCFB_DISPLAY_ENABLE		_IOW('F', 0x3C, int32_t)
+#define MXCFB_DISPLAY_DISABLE		_IOW('F', 0x3D, int32_t)
 #endif
 #endif

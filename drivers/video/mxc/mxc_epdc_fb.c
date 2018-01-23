@@ -1973,7 +1973,7 @@ int check_mtd_flash(struct mxc_epdc_fb_data *fb_data){
         //return 0;
     }
     mtd_info = NULL;
-    
+    v3p3_powerdown(fb_data);
     result = partno_valid + wf_name_valid  + vcom_valid + wf_read + wflen_valid;
     dev_dbg(fb_data->dev, "%s: Result: %x\n", __func__, result);
     return result;
@@ -5329,6 +5329,70 @@ static int mxc_epdc_fb_ioctl(struct fb_info *info, unsigned int cmd,
 		break;		
 		
 	}
+	case MXCFB_DISPLAY_ENABLE:{
+
+		struct mxc_epdc_fb_data *fb_data = (struct mxc_epdc_fb_data *)info;
+		int ret, channel;
+
+		if (get_user(channel, (__u32 __user *) arg))
+			ret = -EFAULT;
+
+		dev_dbg(fb_data->dev, "%s: MXCFB_DISPLAY_ENABLE %i %i %i\n", __func__, channel,regulator_is_enabled(fb_data->v3p3_regulator[0]),regulator_is_enabled(fb_data->v3p3_regulator[1]));
+		switch (channel){
+			case 1:
+				ret = regulator_enable(fb_data->v3p3_regulator[0]);
+				break;
+			case 2:
+				ret = regulator_enable(fb_data->v3p3_regulator[1]);
+				break;
+			case 3:
+				ret = regulator_enable(fb_data->v3p3_regulator[0]);
+				if(ret)
+					return ret;
+				ret = regulator_enable(fb_data->v3p3_regulator[1]);
+				break;
+			default: 
+				return -EINVAL;
+		}
+		break;
+	}
+	case MXCFB_DISPLAY_DISABLE:{
+		struct mxc_epdc_fb_data *fb_data = (struct mxc_epdc_fb_data *)info;
+
+		int ret, channel;
+		
+		if (get_user(channel, (__u32 __user *) arg))
+			ret = -EFAULT;
+
+		dev_dbg(fb_data->dev, "%s: MXCFB_DISPLAY_DISABLE %i %i %i\n", __func__, channel, regulator_is_enabled(fb_data->v3p3_regulator[0]), regulator_is_enabled(fb_data->v3p3_regulator[1]));
+		
+		switch (channel){
+			case -1:
+				if(regulator_is_enabled(fb_data->v3p3_regulator[0])){
+					ret = regulator_disable(fb_data->v3p3_regulator[0]);
+				}
+				break;
+			case -2:
+				if(regulator_is_enabled(fb_data->v3p3_regulator[1])){
+					ret = regulator_disable(fb_data->v3p3_regulator[1]);
+				}
+				break;
+			case -3:
+				if(regulator_is_enabled(fb_data->v3p3_regulator[0])){
+					ret = regulator_disable(fb_data->v3p3_regulator[0]);
+				}
+				if(ret)
+					return ret;
+				if(regulator_is_enabled(fb_data->v3p3_regulator[1])){
+					ret = regulator_disable(fb_data->v3p3_regulator[1]);
+				}
+				break;
+			default: 
+				return -EINVAL;
+		}
+		break;
+	}
+
 	default:
 		break;
 	}
@@ -6506,6 +6570,8 @@ static ssize_t store_update(struct device *device,
 	return count;
 }
 
+
+
 static struct device_attribute fb_attrs[] = {
 	__ATTR(update, S_IRUGO|S_IWUSR, NULL, store_update),
 };
@@ -6642,13 +6708,13 @@ int mxc_epdc_fb_probe(struct platform_device *pdev)
 		ret = -ENODEV;
 		//goto out_dma_work_buf;
 	}
-/*
+//*
 	if (regulator_is_enabled(fb_data->v3p3_regulator[0]))
 		regulator_disable(fb_data->v3p3_regulator[0]);
 
 	if (regulator_is_enabled(fb_data->v3p3_regulator[1]))
 		regulator_disable(fb_data->v3p3_regulator[1]);
-*/	
+//*/	
 
 	/* Set default (first defined mode) before searching for a match */
 	fb_data->cur_mode = &fb_data->pdata->epdc_mode[0];

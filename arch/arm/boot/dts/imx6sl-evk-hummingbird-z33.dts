@@ -232,48 +232,21 @@
 */
 
 &ecspi1 {
-	fsl,spi-num-chipselects = <2>;
-	/* lcd_dat4 lcd_dat5 */
-	cs-gpios =  <&gpio2 24 0>, 
+	fsl,spi-num-chipselects = <3>;
+	/* lcd_dat2 lcd_dat4 lcd_dat5 */
+	cs-gpios =  <&gpio2 22 0>,
+				<&gpio2 24 0>, 
 				<&gpio2 25 0>;
+	/* lcd_dat2 lcd_dat4 lcd_dat5 */
 	pinctrl-names = "default";
 	pinctrl-0 = <&pinctrl_ecspi1>;
 	status = "okay";
-	/* NVM Flash on Plasticlogic Display */
-	nvm1@0 {
-		#address-cells = <1>;
-		#size-cells = <1>;
-		/*compatible = "st,m25p32";*/
-		compatible = "mx25l4005a";
+	spidev@0x00 {
+		compatible = "spidev";
+		spi-max-frequency = <20000000>;
 		reg = <0>;
-		spi-max-frequency = <2000000>;
-		mode = <0>;
-		waveform@35000 {
-			reg = <0x00035000 0x0003AFFF>;
-			label = "waveform0";
-			read-only;
-		};
-		partno@70000 {
-			reg = <0x00070000 0x0000000F>;
-			label = "partnumber0";
-			read-only;
-		};
-		vcom@70010 {
-			reg = <0x00070010 0x0000000F>;
-			label = "vcom0";
-			read-only;
-		};
-		wfname@70020 {
-			reg = <0x00070020 0x0000001F>;
-			label = "wfname0";
-			read-only;
-		};
-		wflength@700AC {
-			reg = <0x000700AC 0x00000004>;
-			label = "wflength0";
-			read-only;
-		};
 	};
+	/* NVM Flash on Plasticlogic Display */
 	nvm1@1 {
 		#address-cells = <1>;
 		#size-cells = <1>;
@@ -282,6 +255,55 @@
 		reg = <1>;
 		spi-max-frequency = <2000000>;
 		mode = <0>;
+		V3P3-supply = <&V3P31_reg>;
+		waveform@35000 {
+			reg = <0x00035000 0x0003AFFF>;
+			label = "waveform0";
+			
+		};
+		partno@70000 {
+			reg = <0x00070000 0x0000000F>;
+			label = "partnumber0";
+			
+		};
+		vcom@70010 {
+			reg = <0x00070010 0x0000000F>;
+			label = "vcom0";
+			
+		};
+		wfname@70020 {
+			reg = <0x00070020 0x0000001F>;
+			label = "wfname0";
+			
+		};
+		fplversion@70040 {
+			reg = <0x00070050 0x0000000F>;
+			label = "fplversion0";
+		};
+		materialid@70050 {
+			reg = <0x00070050 0x0000002F>;
+			label = "materialid0";
+		};
+		wflength@700AC {
+			reg = <0x000700AC 0x00000004>;
+			label = "wflength0";
+			
+		};
+		blob@0{
+			reg = <0x0 0x80000>;
+			label = "blob0";
+		};
+		
+	};
+	nvm1@2 {
+		#address-cells = <1>;
+		#size-cells = <1>;
+		/*compatible = "st,m25p32";*/
+		compatible = "mx25l4005a";
+		reg = <2>;
+		spi-max-frequency = <2000000>;
+		mode = <0>;
+		V3P3-supply = <&V3P32_reg>;
 		waveform@35000 {
 			reg = <0x00035000 0x0003AFFF>;
 			label = "waveform1";
@@ -302,12 +324,23 @@
 			label = "wfname1";
 			read-only;
 		};
+		fplversion@70040 {
+			reg = <0x00070050 0x0000000F>;
+			label = "fplversion1";
+		};
+		materialid@70050 {
+			reg = <0x00070050 0x0000002F>;
+			label = "materialid1";
+		};
 		wflength@700AC {
 			reg = <0x000700AC 0x00000004>;
 			label = "wflength1";
 			read-only;
 		};
-		
+		blob@0{
+			reg = <0x0 0x80000>;
+			label = "blob1";
+		};
 	};					
 	
 };
@@ -767,6 +800,7 @@
 				/*MX6SL_PAD_EPDC_VCOM0__GPIO2_IO03 0x80000000*/
 				/*MX6SL_PAD_EPDC_VCOM1__GPIO2_IO04 0x80000000*/
 				/*MX6SL_PAD_EPDC_PWRCTRL0__GPIO2_IO07 0x80000000*/
+				/*MX6SL_PAD_EPDC_PWRCTRL1__GPIO2_IO08 0x80000000*/
 				/*MX6SL_PAD_EPDC_PWRSTAT__GPIO2_IO13 0x80000000*/
 				/*MX6SL_PAD_EPDC_PWRWAKEUP__GPIO2_IO14 0x80000000*/
 				MX6SL_PAD_ECSPI1_MISO__GPIO4_IO10	0x100b1
@@ -792,13 +826,17 @@
 
 		pinctrl_ecspi1: ecspi1grp {
 			fsl,pins = <
+			/*
 				MX6SL_PAD_LCD_DAT1__ECSPI1_MISO	0x1b0b0
 				MX6SL_PAD_LCD_DAT0__ECSPI1_MOSI	0x1b0b0
 				MX6SL_PAD_LCD_DAT3__ECSPI1_SCLK	0x1b0b0
-				/*MX6SL_PAD_LCD_DAT2__ECSPI1_SS0	0x1b0b0
+				MX6SL_PAD_LCD_DAT2__ECSPI1_SS0	0x1b0b0
 				MX6SL_PAD_LCD_DAT4__ECSPI1_SS1	0x1b0b0
-				MX6SL_PAD_LCD_DAT5__ECSPI1_SS2	0x1b0b0*/
-
+				MX6SL_PAD_LCD_DAT5__ECSPI1_SS2	0x1b0b0
+			*/
+				MX6SL_PAD_LCD_DAT1__ECSPI1_MISO	0x100b1
+				MX6SL_PAD_LCD_DAT0__ECSPI1_MOSI	0x100b1
+				MX6SL_PAD_LCD_DAT3__ECSPI1_SCLK	0x100b1
 			/*
 				MX6SL_PAD_ECSPI1_MISO__ECSPI1_MISO	0x100b1
 				MX6SL_PAD_ECSPI1_MOSI__ECSPI1_MOSI	0x100b1
@@ -847,21 +885,7 @@
 				MX6SL_PAD_EPDC_SDCE2__EPDC_SDCE2 0x80000000
                         >;
                 };
-/*
-		pinctrl_epdc_pl_init: epdcgrp-1 {
-			fsl,pins = <
-				MX6SL_PAD_EPDC_GDCLK__GPIO1_IO31	0x80000000
-				MX6SL_PAD_EPDC_GDSP__GPIO2_IO02		0x80000000
-			>;
-		};
-		
-		pinctrl_epdc_pl_init: epdcgrp-1 {
-			fsl,pins = <
-				MX6SL_PAD_EPDC_GDCLK__GPIO1_IO31	0x80000000
-				MX6SL_PAD_EPDC_GDSP__GPIO2_IO02		0x80000000
-			>;
-		};
-*/
+
 		pinctrl_fec: fecgrp {
 			fsl,pins = <
 				MX6SL_PAD_FEC_MDC__FEC_MDC		0x1b0b0
@@ -1007,7 +1031,7 @@
 		pinctrl_usbotg1: usbotg1grp {
 			fsl,pins = <
 				/*MX6SL_PAD_LCD_DAT1__USB_OTG1_ID	0x1b0b0*/
-				MX6SL_PAD_EPDC_PWRCOM__USB_OTG1_ID	0x17059
+				MX6SL_PAD_EPDC_PWRCOM__USB_OTG1_ID	0x1b0b0 /*0x17059*/
 			>;
 		};
 		
