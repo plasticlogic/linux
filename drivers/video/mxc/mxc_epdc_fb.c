@@ -437,6 +437,7 @@ struct mxc_epdc_fb_data {
 	struct dma_async_tx_descriptor *txd;
 	dma_cookie_t cookie;
 	struct scatterlist sg[2];
+	int no_powerdown;
 	struct mutex pxp_mutex; /* protects access to PxP */
 };
 
@@ -2744,6 +2745,11 @@ static void epdc_powerdown(struct mxc_epdc_fb_data *fb_data)
 {
 
 	int ret;
+	
+	if(fb_data->no_powerdown){
+		return;
+	}
+	
 	mutex_lock(&fb_data->power_mutex);
 	/* If powering_down has been cleared, a powerup
 	 * request is pre-empting this powerdown request.
@@ -4460,8 +4466,24 @@ static void epdc_submit_work_func(struct work_struct *work)
 				
 
 		kfree(err_dist);
-	}
+	}else if (upd_data_list->update_desc->upd_data.flags &
+		EPDC_FLAG_USE_ORDERED_DITHERING) {
 
+		err_dist = kzalloc((fb_data->info.var.xres_virtual + 3) * 3
+				* sizeof(int), GFP_KERNEL);
+
+		/* Dithering Y8 -> Y1 */
+		do_ordered_dithering_processing((uint8_t *)(upd_data_list->virt_addr +
+				upd_data_list->update_desc->epdc_offs),
+				&adj_update_region,
+				(fb_data->rev < 20) ?
+				ALIGN(adj_update_region.width, 8) :
+				adj_update_region.width,
+				err_dist);
+				
+
+		kfree(err_dist);
+	}
 	/*
 	 * If there are no LUTs available,
 	 * then we must wait for the resource to become free.
@@ -4671,6 +4693,12 @@ static int mxc_epdc_fb_send_single_update(struct mxcfb_update_data *upd_data,
 		dev_dbg(fb_data->dev,"EPDC_USE_ALT_VSOURCE_H = 0\n");
 		gpio_set_value(fb_data->hbz_gpio->gpio_vsource_high1, 0);
 		gpio_set_value(fb_data->hbz_gpio->gpio_vsource_high2, 0);
+	}
+	
+	if(upd_data->flags & EPDC_FLAG_KEEP_POWER_ON){
+		fb_data->no_powerdown = 1;
+	}else{
+		fb_data->no_powerdown = 0;
 	}
 
 	mutex_lock(&fb_data->queue_mutex);
@@ -6686,6 +6714,8 @@ int mxc_epdc_fb_probe(struct platform_device *pdev)
 		}
 
 	fb_data->dev = &pdev->dev;
+	
+	fb_data->no_powerdown = 0;
 	
 	if(!panel_str)
 		dev_err(fb_data->dev,"No panel specified!");
