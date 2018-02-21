@@ -2605,7 +2605,7 @@ static void v3p3_powerdown(struct mxc_epdc_fb_data *fb_data){
 	return;
 #else	
 	//dev_info(fb_data->dev, "/* turn off the V3p3 */\n");
-	msleep(10);
+	//msleep(10);
 #if 0
 	int ret = regulator_enable(fb_data->v3p3_regulator[0]);
 	if (IS_ERR((void *)ret)) {
@@ -2629,14 +2629,14 @@ static void v3p3_powerdown(struct mxc_epdc_fb_data *fb_data){
 	if (regulator_is_enabled(fb_data->v3p3_regulator[1]))
 		regulator_disable(fb_data->v3p3_regulator[1]);
 #endif
-	msleep(10);	
+	//msleep(10);	
 #endif
 }
 
 static void v3p3_powerup(struct mxc_epdc_fb_data *fb_data){
 	//dev_info(fb_data->dev, "/* turn on the V3p3 */\n");
 #if 1
-	msleep(10);
+	//msleep(10);
 	int ret = regulator_enable(fb_data->v3p3_regulator[0]);
 	if (IS_ERR((void *)ret)) {
 		dev_err(fb_data->dev, "Unable to enable V3P3_1 regulator."
@@ -2653,13 +2653,13 @@ static void v3p3_powerup(struct mxc_epdc_fb_data *fb_data){
 		return;
 	}
 #else
-	msleep(10);
+	//msleep(10);
 	if (regulator_is_enabled(fb_data->v3p3_regulator[0]))
 		regulator_disable(fb_data->v3p3_regulator[0]);
 	if (regulator_is_enabled(fb_data->v3p3_regulator[1]))
 		regulator_disable(fb_data->v3p3_regulator[1]);
 #endif
-	msleep(10);
+	//msleep(10);
 
 }
 
